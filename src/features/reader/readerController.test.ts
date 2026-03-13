@@ -19,4 +19,6 @@ it("opens a stored book and restores the saved CFI in paginated mode", async () 
   expect(controller.currentCfi).toBe("epubcfi(/6/2[chap]!/4/1:0)");
   expect(await controller.getToc()).toEqual([{ id: "chap-1", label: "Chapter 1" }]);
   expect(display).toHaveBeenCalledWith("epubcfi(/6/2[chap]!/4/1:0)");
+  expect(controller.observeSelection).toEqual(expect.any(Function));
+  expect(controller.observeChapterChanges).toEqual(expect.any(Function));
 });

@@ -119,6 +119,35 @@
     );
 }
 
+.epub-viewport {
+  display: grid;
+  gap: 1rem;
+  min-height: 0;
+  padding: 1.5rem;
+  border-radius: 1.4rem;
+  border: 1px solid rgba(79, 49, 24, 0.1);
+  background:
+    linear-gradient(180deg, rgba(246, 236, 219, 0.82), rgba(255, 249, 239, 0.95)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(121, 82, 43, 0.035) 0,
+      rgba(121, 82, 43, 0.035) 0.35rem,
+      transparent 0.35rem,
+      transparent 1.15rem
+    );
+}
+
+.epub-root {
+  display: grid;
+  align-content: start;
+  width: min(44rem, 100%);
+  min-height: 26rem;
+  padding: 3rem;
+  border-radius: 1.2rem;
+  background: #fffdf9;
+  box-shadow: 0 1.2rem 3rem rgba(77, 50, 28, 0.12);
+}
+
 .reader-page-card {
   width: min(44rem, 100%);
   padding: 3rem;
@@ -137,6 +166,12 @@
   max-width: 34rem;
   color: #5c4635;
   font-size: 1.02rem;
+}
+
+.reader-status,
+.reader-selection-preview {
+  margin: 0;
+  color: #5c4635;
 }
 
 .selection-popover {

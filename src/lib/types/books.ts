@@ -17,6 +17,15 @@ export type ProgressRecord = {
   progress: number;
 };
 
+export type TocItem = {
+  id: string;
+  label: string;
+};
+
+export type ChapterChange = {
+  cfi: string;
+};
+
 export type BookshelfListItem = {
   id: string;
   title: string;
