@@ -16,3 +16,10 @@ export type ProgressRecord = {
   cfi: string;
   progress: number;
 };
+
+export type BookshelfListItem = {
+  id: string;
+  title: string;
+  author: string;
+  progressLabel: string;
+};

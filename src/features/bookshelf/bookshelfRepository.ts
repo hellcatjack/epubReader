@@ -17,6 +17,10 @@ export async function saveBook(book: BookRecord) {
   await db.books.put(book);
 }
 
+export async function getBookByHash(importHash: string) {
+  return (await db.books.where("importHash").equals(importHash).first()) ?? null;
+}
+
 export async function getBook(bookId: string) {
   const book = await db.books.get(bookId);
   if (!book) {
