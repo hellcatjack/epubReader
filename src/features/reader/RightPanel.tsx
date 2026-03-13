@@ -11,6 +11,7 @@ export function RightPanel(props: RightPanelProps) {
       <AiResultPanel />
       <NoteEditorPanel />
       <TtsStatusPanel />
+      <p className="reader-tools-hint">Bookmarks, highlights, and notes are stored only in this browser.</p>
     </aside>
   );
 }

@@ -11,7 +11,7 @@ export function ReaderPage() {
       <LeftRail />
       <section className="reader-center" aria-label="Reading workspace">
         <TopBar />
-        <EpubViewport />
+        <EpubViewport visibleAnnotations={[]} />
         <SelectionPopover />
       </section>
       <RightPanel aria-label="Reader tools" />

@@ -13,6 +13,7 @@ export function TopBar() {
         >
           <span className="reader-progress-fill" style={{ width: "18%" }} />
         </div>
+        <p className="reader-topbar-label">Local annotations enabled</p>
       </div>
       <button className="reader-bookmark-button" type="button" aria-label="Bookmark this location">
         Bookmark

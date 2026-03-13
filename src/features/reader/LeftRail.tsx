@@ -13,6 +13,14 @@ export function LeftRail() {
         <h2>Bookmarks</h2>
         <p>No bookmarks at this location yet.</p>
       </section>
+      <section className="reader-panel reader-panel-muted" aria-label="Saved highlights">
+        <h2>Highlights</h2>
+        <p>Highlights pinned to the current chapter will appear here.</p>
+      </section>
+      <section className="reader-panel reader-panel-muted" aria-label="Saved notes">
+        <h2>Notes</h2>
+        <p>Local notes stay attached to the selected passage.</p>
+      </section>
     </aside>
   );
 }

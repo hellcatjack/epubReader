@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { AnnotationRecord } from "../../lib/types/annotations";
+import { annotationRenderer } from "./annotationRenderer";
 import type { ReaderController } from "./readerController";
 import { selectionBridge } from "./selectionBridge";
 
@@ -6,11 +8,26 @@ type EpubViewportProps = {
   bookId?: string;
   controller?: ReaderController;
   initialCfi?: string;
+  visibleAnnotations?: AnnotationRecord[];
 };
 
-export function EpubViewport({ bookId, controller, initialCfi }: EpubViewportProps) {
+export function EpubViewport({
+  bookId,
+  controller,
+  initialCfi,
+  visibleAnnotations = [],
+}: EpubViewportProps) {
   const [statusMessage, setStatusMessage] = useState("Open a book from the shelf to start reading.");
   const [selectionPreview, setSelectionPreview] = useState("");
+
+  useEffect(() => {
+    annotationRenderer.clear();
+    annotationRenderer.paint(visibleAnnotations);
+
+    return () => {
+      annotationRenderer.clear();
+    };
+  }, [visibleAnnotations]);
 
   useEffect(() => {
     if (!controller) {
@@ -82,6 +99,9 @@ export function EpubViewport({ bookId, controller, initialCfi }: EpubViewportPro
         </p>
       </div>
       <p className="reader-status">{statusMessage}</p>
+      <p className="reader-status">
+        {visibleAnnotations.length} local annotation{visibleAnnotations.length === 1 ? "" : "s"} in view
+      </p>
       {selectionPreview ? <p className="reader-selection-preview">Selection: {selectionPreview}</p> : null}
     </section>
   );
