@@ -20,7 +20,7 @@ test("ai actions translate explain and save a note for selected text", async ({ 
 
   await page.goto("/");
   await page.setInputFiles("input[type=file]", fixturePath);
-  await page.getByRole("link", { name: /minimal valid epub/i }).click();
+  await expect(page).toHaveURL(/\/books\//);
 
   const selected = await selectTextInIframe(page);
   expect(selected.length).toBeGreaterThan(0);

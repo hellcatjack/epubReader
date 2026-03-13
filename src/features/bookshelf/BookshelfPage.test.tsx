@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
 import { getBook, saveBook } from "./bookshelfRepository";
@@ -93,6 +93,24 @@ it("imports an epub into the persisted bookshelf when using the default import f
 
   expect(await screen.findByText("Minimal Valid EPUB")).toBeInTheDocument();
   expect(screen.getByText("Author")).toBeInTheDocument();
+});
+
+it("opens the reader route immediately after a successful default import", async () => {
+  const user = userEvent.setup();
+  const file = await loadFixtureFile("minimal-valid.epub");
+
+  render(
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route path="/" element={<BookshelfPage />} />
+        <Route path="/books/:bookId" element={<p>Reader route opened</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await user.upload(screen.getByLabelText(/import epub/i), file);
+
+  expect(await screen.findByText("Reader route opened")).toBeInTheDocument();
 });
 
 it("deletes a persisted book from the local bookshelf", async () => {

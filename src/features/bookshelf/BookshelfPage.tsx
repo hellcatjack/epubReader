@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type ChangeEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import type { BookshelfListItem } from "../../lib/types/books";
 import { importBook } from "./importBook";
 import { deleteBook, listBookshelfItems } from "./bookshelfRepository";
@@ -11,6 +12,7 @@ type BookshelfPageProps = {
 };
 
 export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) {
+  const navigate = useNavigate();
   const importInputId = useId();
   const [storedBooks, setStoredBooks] = useState<BookshelfListItem[]>([]);
   const usesExternalBooks = onImportFile != null || books.length > 0;
@@ -37,11 +39,16 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
     if (onImportFile) {
       await onImportFile(file);
     } else {
-      await importBook(file);
+      const record = await importBook(file);
       await refreshBookshelf();
+      navigate(`/books/${record.id}`);
     }
 
     event.target.value = "";
+  }
+
+  function handleOpenBook(bookId: string) {
+    navigate(`/books/${bookId}`);
   }
 
   async function handleDeleteBook(bookId: string) {
@@ -68,7 +75,7 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
       </section>
       <section aria-label="Local books">
         {visibleBooks.map((book) => (
-          <BookCard key={book.id} book={book} onDelete={handleDeleteBook} />
+          <BookCard key={book.id} book={book} onDelete={handleDeleteBook} onOpen={handleOpenBook} />
         ))}
       </section>
     </main>
