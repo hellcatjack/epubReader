@@ -64,3 +64,12 @@ export async function listBookshelfItems(): Promise<BookshelfListItem[]> {
       progressLabel: formatProgressLabel(progressByBookId.get(book.id)),
     }));
 }
+
+export async function deleteBook(bookId: string) {
+  await db.transaction("rw", db.books, db.bookFiles, db.progress, db.annotations, async () => {
+    await db.books.delete(bookId);
+    await db.bookFiles.delete(bookId);
+    await db.progress.delete(bookId);
+    await db.annotations.where("bookId").equals(bookId).delete();
+  });
+}

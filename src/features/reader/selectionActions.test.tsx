@@ -5,6 +5,7 @@ import { afterEach, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { resetDb } from "../../lib/db/appDb";
+import { saveSettings } from "../settings/settingsRepository";
 import { ReaderPage } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
 
@@ -92,5 +93,39 @@ it("stores local highlight and note entries for the active selection", async () 
 
   await waitFor(() => {
     expect(screen.getByLabelText(/saved notes/i)).toHaveTextContent("Remember this line");
+  });
+});
+
+it("uses the persisted target language setting for AI actions", async () => {
+  const user = userEvent.setup();
+  const ai = {
+    translateSelection: vi.fn(async () => "你好"),
+    explainSelection: vi.fn(async () => "解释"),
+    synthesizeSpeech: vi.fn(async () => {
+      throw new Error("unsupported");
+    }),
+  };
+
+  await saveSettings({
+    apiKey: "",
+    targetLanguage: "zh-CN",
+    theme: "sepia",
+    ttsVoice: "disabled",
+    fontScale: 1,
+  });
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({ text: "Hello world" });
+  });
+
+  await user.click(screen.getByRole("button", { name: /translate/i }));
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledWith(
+      "Hello world",
+      expect.objectContaining({ targetLanguage: "zh-CN" }),
+    );
   });
 });

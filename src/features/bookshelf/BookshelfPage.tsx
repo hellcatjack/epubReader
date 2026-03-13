@@ -1,8 +1,9 @@
 import { useEffect, useId, useState, type ChangeEvent } from "react";
 import type { BookshelfListItem } from "../../lib/types/books";
 import { importBook } from "./importBook";
-import { listBookshelfItems } from "./bookshelfRepository";
+import { deleteBook, listBookshelfItems } from "./bookshelfRepository";
 import { BookCard } from "./BookCard";
+import { SettingsDialog } from "../settings/SettingsDialog";
 
 type BookshelfPageProps = {
   books?: BookshelfListItem[];
@@ -43,6 +44,15 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
     event.target.value = "";
   }
 
+  async function handleDeleteBook(bookId: string) {
+    if (onImportFile) {
+      return;
+    }
+
+    await deleteBook(bookId);
+    await refreshBookshelf();
+  }
+
   return (
     <main>
       <h1>Bookshelf</h1>
@@ -54,10 +64,11 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
           onChange={handleImportChange}
           type="file"
         />
+        <SettingsDialog />
       </section>
       <section aria-label="Local books">
         {visibleBooks.map((book) => (
-          <BookCard key={book.id} book={book} />
+          <BookCard key={book.id} book={book} onDelete={handleDeleteBook} />
         ))}
       </section>
     </main>

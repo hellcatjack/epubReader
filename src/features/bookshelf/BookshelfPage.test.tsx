@@ -2,12 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach } from "vitest";
+import { afterEach, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
-import { saveBook } from "./bookshelfRepository";
+import { getBook, saveBook } from "./bookshelfRepository";
 import { BookshelfPage } from "./BookshelfPage";
 
 afterEach(async () => {
@@ -93,4 +93,31 @@ it("imports an epub into the persisted bookshelf when using the default import f
 
   expect(await screen.findByText("Minimal Valid EPUB")).toBeInTheDocument();
   expect(screen.getByText("Author")).toBeInTheDocument();
+});
+
+it("deletes a persisted book from the local bookshelf", async () => {
+  const user = userEvent.setup();
+
+  await saveBook({
+    id: "book-delete",
+    title: "Delete Me",
+    author: "Cleanup Author",
+    importHash: "hash-delete",
+    coverThumbnailBlob: null,
+  });
+
+  render(
+    <MemoryRouter>
+      <BookshelfPage />
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByText("Delete Me")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /delete book delete me/i }));
+
+  await waitFor(async () => {
+    expect(screen.queryByText("Delete Me")).not.toBeInTheDocument();
+    expect(await getBook("book-delete")).toBeNull();
+  });
 });

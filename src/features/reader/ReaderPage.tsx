@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import type { AnnotationRecord } from "../../lib/types/annotations";
 import type { TocItem } from "../../lib/types/books";
+import type { SettingsInput } from "../../lib/types/settings";
 import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
 import { getProgress } from "../bookshelf/progressRepository";
+import { defaultSettings, getResolvedSettings } from "../settings/settingsRepository";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
 import type { EpubViewportRuntime } from "./epubRuntime";
@@ -32,6 +34,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [noteDraft, setNoteDraft] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
+  const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
 
   useEffect(() => {
     if (!bookId) {
@@ -44,6 +47,18 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setLocationTarget(progress?.cfi);
     });
   }, [bookId]);
+
+  useEffect(() => {
+    void getResolvedSettings().then((nextSettings) => {
+      setSettings({
+        apiKey: nextSettings.apiKey,
+        targetLanguage: nextSettings.targetLanguage,
+        theme: nextSettings.theme,
+        ttsVoice: nextSettings.ttsVoice,
+        fontScale: nextSettings.fontScale,
+      });
+    });
+  }, []);
 
   useEffect(() => {
     const unsubscribe = selectionBridge.subscribe((selection) => {
@@ -86,7 +101,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     try {
       const result = await ai.translateSelection(selectedText, {
-        targetLanguage: navigator.language || "zh-CN",
+        targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
       });
       setAiResult(result);
     } catch (error) {
@@ -105,7 +120,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     try {
       const result = await ai.explainSelection(selectedText, {
-        targetLanguage: navigator.language || "zh-CN",
+        targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
       });
       setAiResult(result);
     } catch (error) {
@@ -163,9 +178,12 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const notes = visibleAnnotations
     .filter((annotation) => annotation.kind === "note")
     .map((annotation) => annotation.body);
+  const readerStyle: CSSProperties & Record<"--reader-font-scale", string> = {
+    "--reader-font-scale": String(settings.fontScale),
+  };
 
   return (
-    <main className="reader-layout">
+    <main className={`reader-layout theme-${settings.theme}`} style={readerStyle}>
       <LeftRail
         highlights={highlights}
         notes={notes}
