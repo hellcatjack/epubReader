@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { BookRecord } from "../../lib/types/books";
 import {
   getBookByHash,
@@ -8,8 +7,8 @@ import {
 import { extractPackageMetadata } from "./extractPackageMetadata";
 
 async function hashFile(file: File) {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  return createHash("sha256").update(buffer).digest("hex");
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function normalizeBookRecord(

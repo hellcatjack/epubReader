@@ -11,32 +11,23 @@ type SpeechOptions = {
 };
 
 type OpenAIAdapterDeps = {
-  apiKey: string;
   fetch?: FetchLike;
-  speechModel?: string;
+  endpoint?: string;
   textModel?: string;
 };
 
 type OpenAIErrorKind =
   | "aborted"
-  | "auth"
   | "network-or-cors"
   | "provider"
-  | "quota-or-billing";
+  | "quota-or-billing"
+  | "unsupported";
 
 export type OpenAIError = {
   kind: OpenAIErrorKind;
 };
 
-const RESPONSES_URL = "https://api.openai.com/v1/responses";
-const SPEECH_URL = "https://api.openai.com/v1/audio/speech";
-
-function createAuthHeaders(apiKey: string) {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-  };
-}
+const DEFAULT_CHAT_COMPLETIONS_URL = "http://192.168.1.31:8001/v1/chat/completions";
 
 function createTextPrompt(kind: "translate" | "explain", text: string, targetLanguage: string) {
   if (kind === "translate") {
@@ -51,36 +42,23 @@ function extractOutputText(payload: unknown) {
     return "";
   }
 
-  const output = Reflect.get(payload, "output");
-  if (!Array.isArray(output)) {
+  const choices = Reflect.get(payload, "choices");
+  if (!Array.isArray(choices)) {
     return "";
   }
 
-  const textParts = output.flatMap((item) => {
-    if (!item || typeof item !== "object") {
-      return [];
-    }
+  const firstChoice = choices[0];
+  if (!firstChoice || typeof firstChoice !== "object") {
+    return "";
+  }
 
-    const content = Reflect.get(item, "content");
-    if (!Array.isArray(content)) {
-      return [];
-    }
+  const message = Reflect.get(firstChoice, "message");
+  if (!message || typeof message !== "object") {
+    return "";
+  }
 
-    return content.flatMap((contentItem) => {
-      if (!contentItem || typeof contentItem !== "object") {
-        return [];
-      }
-
-      if (Reflect.get(contentItem, "type") !== "output_text") {
-        return [];
-      }
-
-      const text = Reflect.get(contentItem, "text");
-      return typeof text === "string" ? [text] : [];
-    });
-  });
-
-  return textParts.join("\n").trim();
+  const content = Reflect.get(message, "content");
+  return typeof content === "string" ? content.trim() : "";
 }
 
 async function assertOk(response: Response) {
@@ -93,48 +71,36 @@ async function assertOk(response: Response) {
 
 async function requestText(
   fetchFn: FetchLike,
-  apiKey: string,
+  endpoint: string,
   textModel: string,
   kind: "translate" | "explain",
   text: string,
   context: RequestContext,
 ) {
-  const response = await fetchFn(RESPONSES_URL, {
+  const response = await fetchFn(endpoint, {
     method: "POST",
-    headers: createAuthHeaders(apiKey),
+    headers: {
+      "Content-Type": "application/json",
+    },
     signal: context.signal,
     body: JSON.stringify({
       model: textModel,
-      input: createTextPrompt(kind, text, context.targetLanguage),
+      messages: [
+        {
+          role: "system",
+          content: `You are an EPUB reader assistant. Reply in ${context.targetLanguage}.`,
+        },
+        {
+          role: "user",
+          content: createTextPrompt(kind, text, context.targetLanguage),
+        },
+      ],
     }),
   });
 
   await assertOk(response);
   const payload = await response.json();
   return extractOutputText(payload);
-}
-
-async function requestSpeech(
-  fetchFn: FetchLike,
-  apiKey: string,
-  speechModel: string,
-  text: string,
-  options: SpeechOptions,
-) {
-  const response = await fetchFn(SPEECH_URL, {
-    method: "POST",
-    headers: createAuthHeaders(apiKey),
-    signal: options.signal,
-    body: JSON.stringify({
-      model: speechModel,
-      input: text,
-      voice: options.voice,
-      response_format: "mp3",
-    }),
-  });
-
-  await assertOk(response);
-  return response.blob();
 }
 
 export function normalizeOpenAIError(error: unknown): OpenAIError {
@@ -147,10 +113,6 @@ export function normalizeOpenAIError(error: unknown): OpenAIError {
   }
 
   if (error instanceof Response) {
-    if (error.status === 401 || error.status === 403) {
-      return { kind: "auth" };
-    }
-
     if (error.status === 402 || error.status === 429) {
       return { kind: "quota-or-billing" };
     }
@@ -158,24 +120,40 @@ export function normalizeOpenAIError(error: unknown): OpenAIError {
     return { kind: "provider" };
   }
 
+  if (error instanceof Error && error.message === "unsupported") {
+    return { kind: "unsupported" };
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "kind" in error &&
+    Reflect.get(error, "kind") === "unsupported"
+  ) {
+    return { kind: "unsupported" };
+  }
+
   return { kind: "provider" };
 }
 
 export function createOpenAIAdapter({
-  apiKey,
   fetch: fetchFn = fetch,
-  speechModel = "gpt-4o-mini-tts",
-  textModel = "gpt-4.1",
-}: OpenAIAdapterDeps) {
+  endpoint = DEFAULT_CHAT_COMPLETIONS_URL,
+  textModel = "local-reader-chat",
+}: OpenAIAdapterDeps = {}) {
   return {
     translateSelection(text: string, context: RequestContext) {
-      return requestText(fetchFn, apiKey, textModel, "translate", text, context);
+      return requestText(fetchFn, endpoint, textModel, "translate", text, context).catch((error) => {
+        throw normalizeOpenAIError(error);
+      });
     },
     explainSelection(text: string, context: RequestContext) {
-      return requestText(fetchFn, apiKey, textModel, "explain", text, context);
+      return requestText(fetchFn, endpoint, textModel, "explain", text, context).catch((error) => {
+        throw normalizeOpenAIError(error);
+      });
     },
-    synthesizeSpeech(text: string, options: SpeechOptions) {
-      return requestSpeech(fetchFn, apiKey, speechModel, text, options);
+    async synthesizeSpeech(_text: string, _options: SpeechOptions) {
+      throw { kind: "unsupported" } satisfies OpenAIError;
     },
   };
 }

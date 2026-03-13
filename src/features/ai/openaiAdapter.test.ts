@@ -1,18 +1,13 @@
 import { expect, it, vi } from "vitest";
 import { createOpenAIAdapter, normalizeOpenAIError } from "./openaiAdapter";
 
-it("normalizes translation, explanation, speech, aborts, and provider errors through one OpenAI contract", async () => {
+it("sends translate and explain requests to the local chat completions endpoint without auth headers", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          output: [
-            {
-              type: "message",
-              content: [{ type: "output_text", text: "hello" }],
-            },
-          ],
+          choices: [{ message: { content: "hello" } }],
         }),
         {
           status: 200,
@@ -23,34 +18,7 @@ it("normalizes translation, explanation, speech, aborts, and provider errors thr
     .mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          output: [
-            {
-              type: "message",
-              content: [{ type: "output_text", text: "transient means short-lived" }],
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    )
-    .mockResolvedValueOnce(
-      new Response("speech", {
-        status: 200,
-        headers: { "Content-Type": "audio/mpeg" },
-      }),
-    )
-    .mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          output: [
-            {
-              type: "message",
-              content: [{ type: "output_text", text: "hello again" }],
-            },
-          ],
+          choices: [{ message: { content: "ephemeral means short-lived" } }],
         }),
         {
           status: 200,
@@ -58,50 +26,47 @@ it("normalizes translation, explanation, speech, aborts, and provider errors thr
         },
       ),
     );
-  const abortController = new AbortController();
-  const adapter = createOpenAIAdapter({ apiKey: "test-key", fetch: fakeFetch });
+  const adapter = createOpenAIAdapter({ fetch: fakeFetch });
 
   await expect(adapter.translateSelection("hola", { targetLanguage: "en" })).resolves.toBe("hello");
   await expect(adapter.explainSelection("ephemeral", { targetLanguage: "zh-CN" })).resolves.toBe(
-    "transient means short-lived",
+    "ephemeral means short-lived",
   );
-  await expect(
-    adapter.synthesizeSpeech("hello world", { voice: "alloy" }).then((blob) => ({
-      size: blob.size,
-      type: blob.type,
-    })),
-  ).resolves.toEqual({
-    size: 6,
-    type: "audio/mpeg",
-  });
-  await expect(
-    adapter.translateSelection("hola", { targetLanguage: "en", signal: abortController.signal }),
-  ).resolves.toBe("hello again");
 
-  expect(fakeFetch).toHaveBeenCalledTimes(4);
+  expect(fakeFetch).toHaveBeenCalledTimes(2);
   expect(fakeFetch).toHaveBeenNthCalledWith(
     1,
-    "https://api.openai.com/v1/responses",
+    "http://192.168.1.31:8001/v1/chat/completions",
     expect.objectContaining({
       method: "POST",
-      headers: expect.objectContaining({
-        Authorization: "Bearer test-key",
+      headers: {
         "Content-Type": "application/json",
-      }),
+      },
     }),
   );
-  expect(fakeFetch).toHaveBeenNthCalledWith(
-    3,
-    "https://api.openai.com/v1/audio/speech",
+
+  const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(requestBody.messages).toEqual([
     expect.objectContaining({
-      method: "POST",
-      headers: expect.objectContaining({
-        Authorization: "Bearer test-key",
-        "Content-Type": "application/json",
-      }),
+      role: "system",
     }),
-  );
-  expect(fakeFetch.mock.calls[3]?.[1]?.signal).toBe(abortController.signal);
-  expect(normalizeOpenAIError(new Response(null, { status: 401 }))).toEqual({ kind: "auth" });
-  expect(normalizeOpenAIError(new TypeError("Failed to fetch"))).toEqual({ kind: "network-or-cors" });
+    expect.objectContaining({
+      role: "user",
+      content: expect.stringContaining("hola"),
+    }),
+  ]);
+});
+
+it("reports local network errors and marks speech synthesis as unsupported for now", async () => {
+  const adapter = createOpenAIAdapter({
+    fetch: vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+  });
+
+  await expect(adapter.translateSelection("hola", { targetLanguage: "en" })).rejects.toEqual({
+    kind: "network-or-cors",
+  });
+  await expect(adapter.synthesizeSpeech("hello world", { voice: "alloy" })).rejects.toEqual({
+    kind: "unsupported",
+  });
+  expect(normalizeOpenAIError(new Error("unsupported"))).toEqual({ kind: "unsupported" });
 });

@@ -1,18 +1,13 @@
 import { useMemo, useState } from "react";
 import { createOpenAIAdapter, normalizeOpenAIError } from "./openaiAdapter";
-import { createAudioPlayer } from "../tts/audioPlayer";
-
-const player = createAudioPlayer();
 
 export function OpenAISpikePage() {
-  const [apiKey, setApiKey] = useState("");
   const [selectionText, setSelectionText] = useState("Hola mundo");
   const [targetLanguage, setTargetLanguage] = useState("en");
-  const [voice, setVoice] = useState("alloy");
   const [result, setResult] = useState("No request sent yet.");
-  const [audioStatus, setAudioStatus] = useState("No audio generated yet.");
+  const [audioStatus] = useState("TTS is temporarily disabled for the local model flow.");
 
-  const adapter = useMemo(() => createOpenAIAdapter({ apiKey }), [apiKey]);
+  const adapter = useMemo(() => createOpenAIAdapter(), []);
 
   async function handleTranslate() {
     try {
@@ -34,27 +29,11 @@ export function OpenAISpikePage() {
     }
   }
 
-  async function handleSpeech() {
-    try {
-      setAudioStatus("Requesting speech...");
-      const blob = await adapter.synthesizeSpeech(selectionText, { voice });
-      await player.load(blob);
-      await player.play();
-      setAudioStatus("Speech generated and queued through the shared player.");
-    } catch (error) {
-      setAudioStatus(`Speech failed: ${normalizeOpenAIError(error).kind}`);
-    }
-  }
-
   return (
     <main>
       <section aria-label="OpenAI browser spike">
-        <h1>OpenAI Browser Spike</h1>
-        <p>OpenAI recommends keeping API keys server-side. This page exists only to validate the pure frontend MVP path.</p>
-        <label>
-          API key
-          <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
-        </label>
+        <h1>Local Translation Spike</h1>
+        <p>Translation and explanation now default to the local OpenAI-compatible endpoint at `192.168.1.31:8001` without authentication.</p>
         <label>
           Selection text
           <textarea value={selectionText} onChange={(event) => setSelectionText(event.target.value)} />
@@ -66,22 +45,12 @@ export function OpenAISpikePage() {
             <option value="zh-CN">Chinese</option>
           </select>
         </label>
-        <label>
-          Voice
-          <select value={voice} onChange={(event) => setVoice(event.target.value)}>
-            <option value="alloy">Alloy</option>
-            <option value="verse">Verse</option>
-          </select>
-        </label>
         <div>
           <button type="button" onClick={handleTranslate}>
             Translate
           </button>
           <button type="button" onClick={handleExplain}>
             Explain
-          </button>
-          <button type="button" onClick={handleSpeech}>
-            Generate speech
           </button>
         </div>
         <p>{result}</p>

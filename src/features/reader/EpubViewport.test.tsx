@@ -24,3 +24,23 @@ it("falls back to chapter start when a saved cfi is invalid", async () => {
   expect(controller.open).toHaveBeenNthCalledWith(1, "book-1", "epubcfi(invalid)");
   expect(controller.open).toHaveBeenNthCalledWith(2, "book-1", undefined);
 });
+
+it("uses the runtime renderer for persisted books when no test controller is provided", async () => {
+  const runtime = {
+    render: vi.fn(async () => ({
+      destroy() {
+        return undefined;
+      },
+    })),
+  };
+
+  render(<EpubViewport bookId="book-1" runtime={runtime} />);
+
+  expect(await screen.findByText(/opened from chapter start/i)).toBeInTheDocument();
+  expect(runtime.render).toHaveBeenCalledWith(
+    expect.objectContaining({
+      bookId: "book-1",
+      initialCfi: undefined,
+    }),
+  );
+});

@@ -1,4 +1,4 @@
-import type { BookRecord } from "../../lib/types/books";
+import type { BookRecord, BookshelfListItem } from "../../lib/types/books";
 import { db } from "../../lib/db/appDb";
 
 function normalizeBlob(value: unknown) {
@@ -40,4 +40,27 @@ export async function saveBookFile(bookId: string, file: Blob) {
 export async function getBookFile(bookId: string) {
   const record = await db.bookFiles.get(bookId);
   return normalizeBlob(record?.file);
+}
+
+function formatProgressLabel(progress: number | undefined) {
+  if (progress == null || progress <= 0) {
+    return "Unread";
+  }
+
+  return `${Math.round(progress * 100)}% read`;
+}
+
+export async function listBookshelfItems(): Promise<BookshelfListItem[]> {
+  const [books, progressRecords] = await Promise.all([db.books.toArray(), db.progress.toArray()]);
+  const progressByBookId = new Map(progressRecords.map((record) => [record.bookId, record.progress]));
+
+  return books
+    .slice()
+    .sort((left, right) => left.title.localeCompare(right.title))
+    .map((book) => ({
+      id: book.id,
+      title: book.title,
+      author: book.author,
+      progressLabel: formatProgressLabel(progressByBookId.get(book.id)),
+    }));
 }
