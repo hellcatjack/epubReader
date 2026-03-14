@@ -33,14 +33,14 @@ it("routes selection actions to translate, explain, and note editing while read 
   await user.click(screen.getByRole("button", { name: /translate/i }));
   expect(ai.translateSelection).toHaveBeenCalledWith(
     "Hello world",
-    expect.objectContaining({ targetLanguage: expect.any(String) }),
+    expect.objectContaining({ targetLanguage: "zh-CN" }),
   );
   expect(await screen.findByText("你好，世界")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
   expect(ai.explainSelection).toHaveBeenCalledWith(
     "Hello world",
-    expect.objectContaining({ targetLanguage: expect.any(String) }),
+    expect.objectContaining({ targetLanguage: "zh-CN" }),
   );
   expect(await screen.findByText("A short contextual explanation")).toBeInTheDocument();
 

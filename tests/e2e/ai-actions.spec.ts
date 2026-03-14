@@ -4,9 +4,12 @@ import { selectTextInIframe } from "./helpers/epubSelection";
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
 
 test("ai actions translate explain and save a note for selected text", async ({ page }) => {
+  const requestPrompts: string[] = [];
+
   await page.route("http://192.168.1.31:8001/v1/chat/completions", async (route) => {
     const body = route.request().postDataJSON();
     const prompt = JSON.stringify(body);
+    requestPrompts.push(prompt);
     const content = prompt.includes("Explain") ? "Stub explanation" : "Stub translation";
 
     await route.fulfill({
@@ -30,6 +33,9 @@ test("ai actions translate explain and save a note for selected text", async ({ 
 
   await page.getByRole("button", { name: "Explain" }).click();
   await expect(page.getByLabel("AI result")).toContainText("Stub explanation");
+  expect(requestPrompts[0]).toContain("Simplified Chinese");
+  expect(requestPrompts[1]).toContain("Chinese explanation");
+  expect(requestPrompts[1]).toContain("English explanation");
 
   await page.getByRole("button", { name: "Add note" }).click();
   await page.getByRole("textbox", { name: /note body/i }).fill("Remember this sentence");

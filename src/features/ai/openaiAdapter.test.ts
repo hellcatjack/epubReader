@@ -55,6 +55,10 @@ it("sends translate and explain requests to the local chat completions endpoint 
       content: expect.stringContaining("hola"),
     }),
   ]);
+
+  const explainRequestBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
+  expect(explainRequestBody.messages[1]?.content).toContain("Chinese explanation");
+  expect(explainRequestBody.messages[1]?.content).toContain("English explanation");
 });
 
 it("reports local network errors and marks speech synthesis as unsupported for now", async () => {

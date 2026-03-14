@@ -29,12 +29,39 @@ export type OpenAIError = {
 
 const DEFAULT_CHAT_COMPLETIONS_URL = "http://192.168.1.31:8001/v1/chat/completions";
 
-function createTextPrompt(kind: "translate" | "explain", text: string, targetLanguage: string) {
-  if (kind === "translate") {
-    return `Translate the following text into ${targetLanguage}. Return only the translation.\n\n${text}`;
+function describeLanguage(targetLanguage: string) {
+  if (targetLanguage === "zh-CN") {
+    return "Simplified Chinese";
   }
 
-  return `Explain the following reading selection in ${targetLanguage}. Keep it concise and contextual.\n\n${text}`;
+  if (targetLanguage === "en") {
+    return "English";
+  }
+
+  return targetLanguage;
+}
+
+function createTextPrompt(kind: "translate" | "explain", text: string, targetLanguage: string) {
+  if (kind === "translate") {
+    return `Translate the following reading selection into ${describeLanguage(targetLanguage)}. Return only the translation.\n\n${text}`;
+  }
+
+  return [
+    "Explain the following reading selection briefly and bilingually.",
+    "Return two short sections in this order:",
+    "1. Chinese explanation",
+    "2. English explanation",
+    "",
+    text,
+  ].join("\n");
+}
+
+function createSystemPrompt(kind: "translate" | "explain", targetLanguage: string) {
+  if (kind === "translate") {
+    return `You are an EPUB reader assistant. Reply only in ${describeLanguage(targetLanguage)}.`;
+  }
+
+  return "You are an EPUB reader assistant. For explanation requests, always answer with a concise Chinese explanation followed by a concise English explanation.";
 }
 
 function extractOutputText(payload: unknown) {
@@ -88,7 +115,7 @@ async function requestText(
       messages: [
         {
           role: "system",
-          content: `You are an EPUB reader assistant. Reply in ${context.targetLanguage}.`,
+          content: createSystemPrompt(kind, context.targetLanguage),
         },
         {
           role: "user",

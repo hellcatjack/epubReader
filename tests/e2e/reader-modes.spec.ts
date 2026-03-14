@@ -21,8 +21,12 @@ test("reader switches modes, keeps text selected, and applies appearance changes
   const initialLineHeight = await page.locator(".epub-root iframe").evaluate((node) =>
     node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).lineHeight : "",
   );
+  const initialFontSize = await page.locator(".epub-root iframe").evaluate((node) =>
+    node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).fontSize : "",
+  );
 
   await page.getByLabel("Line height").fill("2");
+  await page.getByLabel("Font size").fill("1.3");
 
   await expect
     .poll(async () =>
@@ -31,6 +35,14 @@ test("reader switches modes, keeps text selected, and applies appearance changes
       ),
     )
     .not.toBe(initialLineHeight);
+
+  await expect
+    .poll(async () =>
+      page.locator(".epub-root iframe").evaluate((node) =>
+        node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).fontSize : "",
+      ),
+    )
+    .not.toBe(initialFontSize);
 
   const selected = await selectTextInIframe(page);
   expect(selected.length).toBeGreaterThan(0);

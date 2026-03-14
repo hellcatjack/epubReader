@@ -3,7 +3,7 @@ import { createOpenAIAdapter, normalizeOpenAIError } from "./openaiAdapter";
 
 export function OpenAISpikePage() {
   const [selectionText, setSelectionText] = useState("Hola mundo");
-  const [targetLanguage, setTargetLanguage] = useState("en");
+  const [targetLanguage, setTargetLanguage] = useState("zh-CN");
   const [result, setResult] = useState("No request sent yet.");
   const [audioStatus] = useState("TTS is temporarily disabled for the local model flow.");
 

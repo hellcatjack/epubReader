@@ -46,6 +46,18 @@ export function AppearancePanel({ onChange, preferences }: AppearancePanelProps)
           </select>
         </label>
         <label className="appearance-field">
+          <span>Font size</span>
+          <input
+            aria-label="Font size"
+            max="2"
+            min="0.8"
+            onChange={(event) => parseNumericPatch(event.target.value, onChange, "fontScale")}
+            step="0.05"
+            type="number"
+            value={preferences.fontScale}
+          />
+        </label>
+        <label className="appearance-field">
           <span>Line height</span>
           <input
             aria-label="Line height"

@@ -43,14 +43,18 @@ export function resolveReaderFontFamily(fontFamily: ReaderPreferences["fontFamil
 
 export function buildReaderTheme(preferences: ReaderPreferences) {
   const columnGap = Math.max(preferences.contentPadding, 32);
+  const fontSize = `${Math.round(preferences.fontScale * 100)}%`;
 
   return {
+    html: {
+      "font-size": fontSize,
+    },
     body: {
       "box-sizing": "border-box",
       "column-count": String(preferences.columnCount),
       "column-gap": `${columnGap}px`,
       "font-family": resolveReaderFontFamily(preferences.fontFamily),
-      "font-size": `${Math.round(preferences.fontScale * 100)}%`,
+      "font-size": fontSize,
       "letter-spacing": `${preferences.letterSpacing}em`,
       "line-height": String(preferences.lineHeight),
       "margin": "0 auto",

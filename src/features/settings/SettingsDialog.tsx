@@ -6,8 +6,8 @@ const themeOptions: ThemeName[] = ["light", "sepia", "dark"];
 const readingModeOptions: ReadingMode[] = ["scrolled", "paginated"];
 const fontFamilyOptions: ReaderFontFamily[] = ["book", "serif", "sans"];
 const languageOptions = [
-  { label: "English", value: "en" },
   { label: "Chinese", value: "zh-CN" },
+  { label: "English", value: "en" },
   { label: "French", value: "fr" },
 ];
 

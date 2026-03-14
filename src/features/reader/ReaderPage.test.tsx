@@ -111,4 +111,16 @@ it("applies live appearance changes through the active rendition handle", async 
       }),
     );
   });
+
+  fireEvent.change(screen.getByLabelText(/font size/i), {
+    target: { value: "1.3" },
+  });
+
+  await waitFor(() => {
+    expect(applyPreferences).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fontScale: 1.3,
+      }),
+    );
+  });
 });

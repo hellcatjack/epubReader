@@ -3,7 +3,7 @@ import type { SettingsInput, SettingsPatch } from "../../lib/types/settings";
 
 export const defaultSettings: SettingsInput = {
   apiKey: "",
-  targetLanguage: "en",
+  targetLanguage: "zh-CN",
   theme: "sepia",
   ttsVoice: "disabled",
   fontScale: 1,
