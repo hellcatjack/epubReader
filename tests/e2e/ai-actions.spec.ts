@@ -10,7 +10,7 @@ test("ai actions translate explain and save a note for selected text", async ({ 
     const body = route.request().postDataJSON();
     const prompt = JSON.stringify(body);
     requestPrompts.push(prompt);
-    const content = prompt.includes("Explain") ? "Stub explanation" : "Stub translation";
+    const content = prompt.includes("Explain") ? "中文解释\nEnglish explanation" : "中文翻译";
 
     await route.fulfill({
       status: 200,
@@ -29,10 +29,10 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   expect(selected.length).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "Translate" }).click();
-  await expect(page.getByLabel("AI result")).toContainText("Stub translation");
+  await expect(page.getByLabel("AI result")).toContainText("中文翻译");
 
   await page.getByRole("button", { name: "Explain" }).click();
-  await expect(page.getByLabel("AI result")).toContainText("Stub explanation");
+  await expect(page.getByLabel("AI result")).toContainText("中文解释");
   expect(requestPrompts[0]).toContain("Simplified Chinese");
   expect(requestPrompts[1]).toContain("Chinese explanation");
   expect(requestPrompts[1]).toContain("English explanation");

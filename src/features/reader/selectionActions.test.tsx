@@ -101,6 +101,56 @@ it("stores local highlight and note entries for the active selection", async () 
   });
 });
 
+it("removes a saved highlight from the current chapter", async () => {
+  const user = userEvent.setup();
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      spineItemId: "chap-1",
+      text: "Hello world",
+    });
+  });
+
+  await user.click(screen.getByRole("button", { name: /highlight/i }));
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/saved highlights/i)).toHaveTextContent("Hello world");
+  });
+
+  await user.click(screen.getByRole("button", { name: /remove highlight hello world/i }));
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/saved highlights/i)).not.toHaveTextContent("Hello world");
+  });
+});
+
 it("uses the persisted target language setting for AI actions", async () => {
   const user = userEvent.setup();
   const ai = {

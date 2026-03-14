@@ -247,6 +247,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     await refreshBookmarks();
   }
 
+  async function handleRemoveHighlight(id: string) {
+    await annotationService.removeAnnotation(id);
+    await refreshAnnotations();
+  }
+
   async function updateSettings(patch: Partial<SettingsInput>) {
     const nextSettings = { ...settings, ...patch };
     settingsDirtyRef.current = true;
@@ -264,10 +269,16 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
   const highlights = visibleAnnotations
     .filter((annotation) => annotation.kind === "highlight")
-    .map((annotation) => annotation.textQuote);
+    .map((annotation) => ({
+      id: annotation.id,
+      text: annotation.textQuote,
+    }));
   const notes = visibleAnnotations
     .filter((annotation) => annotation.kind === "note")
-    .map((annotation) => annotation.body);
+    .map((annotation) => ({
+      id: annotation.id,
+      text: annotation.body,
+    }));
   const bookmarkItems = bookmarks.map((bookmark, index) => ({
     cfi: bookmark.cfi,
     id: bookmark.id,
@@ -285,6 +296,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         highlights={highlights}
         notes={notes}
         onNavigateToBookmark={setLocationTarget}
+        onRemoveHighlight={handleRemoveHighlight}
         onNavigateToTocItem={setLocationTarget}
         toc={toc}
       />

@@ -71,6 +71,9 @@ export const annotationService = {
   removeBookmark(id: string) {
     return annotationRepository.remove(id);
   },
+  removeAnnotation(id: string) {
+    return annotationRepository.remove(id);
+  },
   queryVisible(bookId: string, spineItemId: string) {
     return annotationRepository.queryBySpineItem(bookId, spineItemId);
   },

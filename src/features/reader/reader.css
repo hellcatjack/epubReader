@@ -92,6 +92,23 @@
   text-align: left;
 }
 
+.reader-saved-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.reader-inline-action {
+  border: 0;
+  background: transparent;
+  color: #8a6647;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
 .reader-topbar {
   display: grid;
   gap: 1rem;

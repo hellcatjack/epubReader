@@ -6,11 +6,22 @@ type BookmarkListItem = {
   label: string;
 };
 
+type HighlightListItem = {
+  id: string;
+  text: string;
+};
+
+type NoteListItem = {
+  id: string;
+  text: string;
+};
+
 type LeftRailProps = {
   bookmarks?: BookmarkListItem[];
-  highlights?: string[];
-  notes?: string[];
+  highlights?: HighlightListItem[];
+  notes?: NoteListItem[];
   onNavigateToBookmark?: (target: string) => void;
+  onRemoveHighlight?: (id: string) => void;
   onNavigateToTocItem?: (target: string) => void;
   toc?: TocItem[];
 };
@@ -20,6 +31,7 @@ export function LeftRail({
   highlights = [],
   notes = [],
   onNavigateToBookmark,
+  onRemoveHighlight,
   onNavigateToTocItem,
   toc = [],
 }: LeftRailProps) {
@@ -70,7 +82,19 @@ export function LeftRail({
         {highlights.length > 0 ? (
           <ol className="reader-list">
             {highlights.map((highlight) => (
-              <li key={highlight}>{highlight}</li>
+              <li key={highlight.id}>
+                <div className="reader-saved-item">
+                  <span>{highlight.text}</span>
+                  <button
+                    aria-label={`Remove highlight ${highlight.text}`}
+                    className="reader-inline-action"
+                    onClick={() => onRemoveHighlight?.(highlight.id)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </li>
             ))}
           </ol>
         ) : (
@@ -82,7 +106,7 @@ export function LeftRail({
         {notes.length > 0 ? (
           <ol className="reader-list">
             {notes.map((note) => (
-              <li key={note}>{note}</li>
+              <li key={note.id}>{note.text}</li>
             ))}
           </ol>
         ) : (
