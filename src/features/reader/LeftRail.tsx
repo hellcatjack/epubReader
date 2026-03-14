@@ -1,15 +1,25 @@
 import type { TocItem } from "../../lib/types/books";
 
+type BookmarkListItem = {
+  cfi: string;
+  id: string;
+  label: string;
+};
+
 type LeftRailProps = {
+  bookmarks?: BookmarkListItem[];
   highlights?: string[];
   notes?: string[];
+  onNavigateToBookmark?: (target: string) => void;
   onNavigateToTocItem?: (target: string) => void;
   toc?: TocItem[];
 };
 
 export function LeftRail({
+  bookmarks = [],
   highlights = [],
   notes = [],
+  onNavigateToBookmark,
   onNavigateToTocItem,
   toc = [],
 }: LeftRailProps) {
@@ -37,7 +47,23 @@ export function LeftRail({
       </nav>
       <section className="reader-panel reader-panel-muted" aria-label="Saved markers">
         <h2>Bookmarks</h2>
-        <p>No bookmarks at this location yet.</p>
+        {bookmarks.length > 0 ? (
+          <ol className="reader-list">
+            {bookmarks.map((bookmark) => (
+              <li key={bookmark.id}>
+                <button
+                  className="reader-toc-link"
+                  onClick={() => onNavigateToBookmark?.(bookmark.cfi)}
+                  type="button"
+                >
+                  {bookmark.label}
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p>No bookmarks saved yet.</p>
+        )}
       </section>
       <section className="reader-panel reader-panel-muted" aria-label="Saved highlights">
         <h2>Highlights</h2>

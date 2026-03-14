@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
-import type { AnnotationRecord } from "../../lib/types/annotations";
+import type { AnnotationRecord, BookmarkRecord } from "../../lib/types/annotations";
 import type { TocItem } from "../../lib/types/books";
 import type { SettingsInput } from "../../lib/types/settings";
 import { aiService, type AiService } from "../ai/aiService";
@@ -31,6 +31,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [aiError, setAiError] = useState("");
   const [aiResult, setAiResult] = useState("");
   const [aiTitle, setAiTitle] = useState("AI result");
+  const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
+  const [currentLocation, setCurrentLocation] = useState({ cfi: "", progress: 0, spineItemId: "" });
   const [noteDraft, setNoteDraft] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
@@ -78,6 +80,18 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     void annotationService.queryVisible(bookId, currentSpineItemId).then(setVisibleAnnotations);
   }, [bookId, currentSpineItemId]);
 
+  useEffect(() => {
+    if (!bookId) {
+      setBookmarks([]);
+      return;
+    }
+
+    void annotationService
+      .listByBook(bookId)
+      .then((records) => records.filter((record): record is BookmarkRecord => record.kind === "bookmark"))
+      .then(setBookmarks);
+  }, [bookId]);
+
   const selectedText = selectedSelection?.text ?? "";
   const selectedCfiRange = selectedSelection?.cfiRange ?? "";
   const selectedSpineItemId = selectedSelection?.spineItemId ?? currentSpineItemId;
@@ -88,6 +102,17 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     }
 
     setVisibleAnnotations(await annotationService.queryVisible(bookId, selectedSpineItemId));
+  }
+
+  async function refreshBookmarks() {
+    if (!bookId) {
+      return;
+    }
+
+    const nextBookmarks = await annotationService
+      .listByBook(bookId)
+      .then((records) => records.filter((record): record is BookmarkRecord => record.kind === "bookmark"));
+    setBookmarks(nextBookmarks);
   }
 
   async function handleTranslate() {
@@ -172,12 +197,34 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     await refreshAnnotations();
   }
 
+  async function handleToggleBookmark() {
+    if (!bookId || !currentLocation.cfi || !currentLocation.spineItemId) {
+      return;
+    }
+
+    const existingBookmark = bookmarks.find((bookmark) => bookmark.cfi === currentLocation.cfi);
+
+    if (existingBookmark) {
+      await annotationService.removeBookmark(existingBookmark.id);
+    } else {
+      await annotationService.createBookmark(bookId, currentLocation.spineItemId, currentLocation.cfi);
+    }
+
+    await refreshBookmarks();
+  }
+
   const highlights = visibleAnnotations
     .filter((annotation) => annotation.kind === "highlight")
     .map((annotation) => annotation.textQuote);
   const notes = visibleAnnotations
     .filter((annotation) => annotation.kind === "note")
     .map((annotation) => annotation.body);
+  const bookmarkItems = bookmarks.map((bookmark, index) => ({
+    cfi: bookmark.cfi,
+    id: bookmark.id,
+    label: toc.find((item) => item.id === bookmark.spineItemId)?.label ?? `Saved location ${index + 1}`,
+  }));
+  const isCurrentLocationBookmarked = bookmarks.some((bookmark) => bookmark.cfi === currentLocation.cfi);
   const readerStyle: CSSProperties & Record<"--reader-font-scale", string> = {
     "--reader-font-scale": String(settings.fontScale),
   };
@@ -185,17 +232,27 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   return (
     <main className={`reader-layout theme-${settings.theme}`} style={readerStyle}>
       <LeftRail
+        bookmarks={bookmarkItems}
         highlights={highlights}
         notes={notes}
+        onNavigateToBookmark={setLocationTarget}
         onNavigateToTocItem={setLocationTarget}
         toc={toc}
       />
       <section className="reader-center" aria-label="Reading workspace">
-        <TopBar />
+        <TopBar
+          canToggleBookmark={Boolean(bookId && currentLocation.cfi && currentLocation.spineItemId)}
+          isBookmarked={isCurrentLocationBookmarked}
+          onToggleBookmark={handleToggleBookmark}
+          progress={currentLocation.progress}
+        />
         <EpubViewport
           bookId={bookId}
           initialCfi={locationTarget ?? initialCfi}
-          onLocationChange={({ spineItemId }) => setCurrentSpineItemId(spineItemId)}
+          onLocationChange={({ cfi, progress, spineItemId }) => {
+            setCurrentLocation({ cfi, progress, spineItemId });
+            setCurrentSpineItemId(spineItemId);
+          }}
           onTocChange={setToc}
           runtime={runtime}
           visibleAnnotations={visibleAnnotations}

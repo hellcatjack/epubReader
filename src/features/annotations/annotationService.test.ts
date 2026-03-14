@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
 import { annotationService } from "./annotationService";
 
@@ -30,4 +30,21 @@ it("creates, removes, and rehydrates bookmark, highlight, and note records", asy
 
   expect(await annotationService.listByBook("book-1")).toHaveLength(2);
   expect(await annotationService.queryVisible("book-1", "chap-1")).toHaveLength(2);
+});
+
+it("creates annotation ids even when crypto.randomUUID is unavailable", async () => {
+  const originalCrypto = globalThis.crypto;
+
+  vi.stubGlobal("crypto", {
+    ...originalCrypto,
+    randomUUID: undefined,
+  });
+
+  try {
+    const bookmark = await annotationService.createBookmark("book-1", "chap-1", "epubcfi(/6/2!/4/1:0)");
+    expect(bookmark.id).toBeTruthy();
+    expect(await annotationService.listByBook("book-1")).toHaveLength(1);
+  } finally {
+    vi.stubGlobal("crypto", originalCrypto);
+  }
 });

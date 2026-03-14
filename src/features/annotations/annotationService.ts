@@ -11,7 +11,12 @@ function timestamp() {
 }
 
 function createId() {
-  return crypto.randomUUID();
+  const randomUuid = globalThis.crypto?.randomUUID;
+  if (typeof randomUuid === "function") {
+    return randomUuid.call(globalThis.crypto);
+  }
+
+  return `annotation-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export const annotationService = {

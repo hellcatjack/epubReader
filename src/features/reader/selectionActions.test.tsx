@@ -129,3 +129,55 @@ it("uses the persisted target language setting for AI actions", async () => {
     );
   });
 });
+
+it("updates reading progress and toggles a bookmark for the current location", async () => {
+  const user = userEvent.setup();
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated, onTocChange }) => {
+                  onTocChange?.([{ id: "chap-1", label: "Chapter One" }]);
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.42,
+                    spineItemId: "chap-1",
+                  });
+
+                  return {
+                    destroy() {
+                      return undefined;
+                    },
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("progressbar", { name: /reading progress/i })).toHaveAttribute("aria-valuenow", "42");
+  });
+
+  await user.click(screen.getByRole("button", { name: /bookmark this location/i }));
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/saved markers/i)).toHaveTextContent("Chapter One");
+    expect(screen.getByRole("button", { name: /remove bookmark from this location/i })).toBeInTheDocument();
+  });
+
+  await user.click(screen.getByRole("button", { name: /remove bookmark from this location/i }));
+
+  await waitFor(() => {
+    expect(screen.getByLabelText(/saved markers/i)).toHaveTextContent("No bookmarks saved yet.");
+    expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
+  });
+});
