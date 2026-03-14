@@ -14,7 +14,7 @@ afterEach(async () => {
   await resetDb();
 });
 
-it("routes selection actions to translate, explain, and note editing while read aloud stays disabled", async () => {
+it("automatically translates a new selection while keeping explain and note actions available", async () => {
   const user = userEvent.setup();
   const ai = {
     translateSelection: vi.fn(async () => "你好，世界"),
@@ -27,14 +27,15 @@ it("routes selection actions to translate, explain, and note editing while read 
   render(<ReaderPage ai={ai} />);
 
   act(() => {
-    selectionBridge.publish({ text: "Hello world" });
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
   });
 
-  await user.click(screen.getByRole("button", { name: /translate/i }));
-  expect(ai.translateSelection).toHaveBeenCalledWith(
-    "Hello world",
-    expect.objectContaining({ targetLanguage: "zh-CN" }),
-  );
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledWith(
+      "Hello world",
+      expect.objectContaining({ targetLanguage: "zh-CN" }),
+    );
+  });
   expect(await screen.findByText("你好，世界")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
@@ -48,6 +49,43 @@ it("routes selection actions to translate, explain, and note editing while read 
   expect(screen.getByRole("textbox", { name: /note body/i })).toBeInTheDocument();
   expect(screen.getAllByText(/hello world/i).length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: /read aloud unavailable/i })).toBeDisabled();
+});
+
+it("does not auto-translate the same selection twice until the selection is cleared", async () => {
+  const ai = {
+    translateSelection: vi.fn(async () => "你好，世界"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => {
+      throw new Error("unsupported");
+    }),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  });
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  });
+
+  act(() => {
+    selectionBridge.publish(null);
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(2);
+  });
 });
 
 it("stores local highlight and note entries for the active selection", async () => {

@@ -32,7 +32,6 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   const selected = await selectTextInIframe(page);
   expect(selected.length).toBeGreaterThan(0);
 
-  await page.getByRole("button", { name: "Translate" }).click();
   await expect(page.getByLabel("AI result")).toContainText("中文翻译");
 
   await page.getByRole("button", { name: "Explain" }).click();

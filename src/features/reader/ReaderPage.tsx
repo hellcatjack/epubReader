@@ -40,6 +40,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
   const settingsDirtyRef = useRef(false);
+  const aiRequestVersionRef = useRef(0);
+  const lastAutoTranslatedSelectionKeyRef = useRef("");
 
   useEffect(() => {
     if (!bookId) {
@@ -100,10 +102,32 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     const unsubscribe = selectionBridge.subscribe((selection) => {
       setSelectedSelection(selection);
       setAiError("");
+
+      if (!selection?.text.trim()) {
+        lastAutoTranslatedSelectionKeyRef.current = "";
+      }
     });
 
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const nextText = selectedSelection?.text.trim() ?? "";
+    if (!nextText) {
+      return;
+    }
+
+    const selectionKey = [selectedSelection?.spineItemId ?? "", selectedSelection?.cfiRange ?? "", nextText].join(
+      "::",
+    );
+
+    if (lastAutoTranslatedSelectionKeyRef.current === selectionKey) {
+      return;
+    }
+
+    lastAutoTranslatedSelectionKeyRef.current = selectionKey;
+    void requestTranslation(nextText);
+  }, [selectedSelection]);
 
   useEffect(() => {
     if (!bookId || !currentSpineItemId) {
@@ -149,42 +173,66 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     setBookmarks(nextBookmarks);
   }
 
-  async function handleTranslate() {
-    if (!selectedText) {
+  async function requestTranslation(text: string) {
+    const nextText = text.trim();
+    if (!nextText) {
       return;
     }
 
+    const requestVersion = ++aiRequestVersionRef.current;
     setAiTitle("Translation");
     setAiError("");
     setAiResult("");
 
     try {
-      const result = await ai.translateSelection(selectedText, {
+      const result = await ai.translateSelection(nextText, {
         targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
       });
+      if (aiRequestVersionRef.current !== requestVersion) {
+        return;
+      }
       setAiResult(result);
     } catch (error) {
+      if (aiRequestVersionRef.current !== requestVersion) {
+        return;
+      }
       setAiError(`Translate failed: ${String(error)}`);
     }
   }
 
-  async function handleExplain() {
-    if (!selectedText) {
+  async function requestExplanation(text: string) {
+    const nextText = text.trim();
+    if (!nextText) {
       return;
     }
 
+    const requestVersion = ++aiRequestVersionRef.current;
     setAiTitle("Explanation");
     setAiError("");
     setAiResult("");
 
     try {
-      const result = await ai.explainSelection(selectedText, {
+      const result = await ai.explainSelection(nextText, {
         targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
       });
+      if (aiRequestVersionRef.current !== requestVersion) {
+        return;
+      }
       setAiResult(result);
     } catch (error) {
+      if (aiRequestVersionRef.current !== requestVersion) {
+        return;
+      }
       setAiError(`Explain failed: ${String(error)}`);
     }
+  }
+
+  async function handleTranslate() {
+    await requestTranslation(selectedText);
+  }
+
+  async function handleExplain() {
+    await requestExplanation(selectedText);
   }
 
   async function handleHighlight() {
