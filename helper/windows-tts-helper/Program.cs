@@ -25,7 +25,7 @@ app.UseCors("LocalOrigins");
 app.MapGet("/health", async (IWindowsVoiceService voices, CancellationToken cancellationToken) =>
 {
     var availableVoices = await voices.GetVoicesAsync(cancellationToken);
-    return Results.Ok(new HealthResponse("ok", "0.1.0", "windows-native", availableVoices.Count));
+    return Results.Ok(new HealthResponse("ok", "0.1.0", "windows-winrt", availableVoices.Count));
 });
 
 app.MapGet("/voices", async (IWindowsVoiceService voices, CancellationToken cancellationToken) =>

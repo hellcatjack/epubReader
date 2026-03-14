@@ -20,7 +20,7 @@ Expected shape:
 {
   "status": "ok",
   "version": "0.1.0",
-  "backend": "windows-native",
+  "backend": "windows-winrt",
   "voiceCount": 1
 }
 ```
@@ -52,4 +52,5 @@ curl \
 - The helper binds to `127.0.0.1` only.
 - CORS is limited to `localhost`, loopback, and private LAN origins.
 - On non-Windows hosts, `/health` and `/voices` still run, but `/voices` returns an empty list and `/speak` is unsupported.
-- The current implementation uses Windows-local PowerShell access to installed voices. Voice availability still depends on what the host Windows speech stack exposes.
+- The helper uses WinRT `Windows.Media.SpeechSynthesis`.
+- Voice availability still depends on what the host Windows speech stack exposes through the WinRT API.

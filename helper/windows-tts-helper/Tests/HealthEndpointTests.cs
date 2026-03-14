@@ -17,7 +17,7 @@ public class HealthEndpointTests
 
         Assert.NotNull(response);
         Assert.Equal("ok", response!.Status);
-        Assert.Equal("windows-native", response.Backend);
+        Assert.Equal("windows-winrt", response.Backend);
     }
 
     [Fact]
