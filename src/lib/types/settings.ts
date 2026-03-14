@@ -6,6 +6,7 @@ export type SettingsRecord = {
   id: "settings";
   apiKey: string;
   targetLanguage: string;
+  targetLanguageCustomized: boolean;
   theme: ThemeName;
   ttsVoice: string;
   fontScale: number;

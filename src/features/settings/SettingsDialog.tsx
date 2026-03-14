@@ -81,7 +81,13 @@ export function SettingsDialog() {
             Target language
             <select
               aria-label="Target language"
-              onChange={(event) => setSettings((current) => ({ ...current, targetLanguage: event.target.value }))}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  targetLanguage: event.target.value,
+                  targetLanguageCustomized: true,
+                }))
+              }
               value={settings.targetLanguage}
             >
               {languageOptions.map((option) => (

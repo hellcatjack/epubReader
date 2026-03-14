@@ -4,6 +4,7 @@ import type { SettingsInput, SettingsPatch } from "../../lib/types/settings";
 export const defaultSettings: SettingsInput = {
   apiKey: "",
   targetLanguage: "zh-CN",
+  targetLanguageCustomized: false,
   theme: "sepia",
   ttsVoice: "disabled",
   fontScale: 1,
@@ -18,6 +19,48 @@ export const defaultSettings: SettingsInput = {
   fontFamily: "book",
 };
 
+function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | null) {
+  if (!record) {
+    return false;
+  }
+
+  return (
+    typeof record.readingMode !== "string" ||
+    typeof record.lineHeight !== "number" ||
+    typeof record.letterSpacing !== "number" ||
+    typeof record.paragraphSpacing !== "number" ||
+    typeof record.paragraphIndent !== "number" ||
+    typeof record.contentPadding !== "number" ||
+    typeof record.maxLineWidth !== "number" ||
+    typeof record.columnCount !== "number" ||
+    typeof record.fontFamily !== "string"
+  );
+}
+
+async function migrateSettings(record: Partial<SettingsInput> | null) {
+  if (!record) {
+    return null;
+  }
+
+  const migratedSettings: SettingsInput = {
+    ...defaultSettings,
+    ...record,
+  };
+
+  if (record.targetLanguageCustomized !== true && migratedSettings.targetLanguage === "en") {
+    migratedSettings.targetLanguage = "zh-CN";
+  }
+
+  if (isLegacySettingsRecord(record) || record.targetLanguageCustomized !== migratedSettings.targetLanguageCustomized || migratedSettings.targetLanguage !== record.targetLanguage) {
+    await db.settings.put({
+      id: "settings",
+      ...migratedSettings,
+    });
+  }
+
+  return migratedSettings;
+}
+
 export async function saveSettings(settings: SettingsPatch) {
   const existingSettings = await db.settings.get("settings");
 
@@ -30,7 +73,8 @@ export async function saveSettings(settings: SettingsPatch) {
 }
 
 export async function getSettings() {
-  return db.settings.get("settings") ?? null;
+  const settings = await db.settings.get("settings");
+  return migrateSettings(settings ?? null);
 }
 
 export async function getResolvedSettings() {

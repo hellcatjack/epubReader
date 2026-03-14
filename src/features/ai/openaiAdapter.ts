@@ -64,6 +64,14 @@ function createSystemPrompt(kind: "translate" | "explain", targetLanguage: strin
   return "You are an EPUB reader assistant. For explanation requests, always answer with a concise Chinese explanation followed by a concise English explanation.";
 }
 
+function createExplainSectionPrompt(text: string, language: "zh-CN" | "en") {
+  if (language === "zh-CN") {
+    return `Explain the following reading selection in Simplified Chinese. Return only the explanation.\n\n${text}`;
+  }
+
+  return `Explain the following reading selection in English. Return only the explanation.\n\n${text}`;
+}
+
 function extractOutputText(payload: unknown) {
   if (!payload || typeof payload !== "object") {
     return "";
@@ -100,34 +108,69 @@ async function requestText(
   fetchFn: FetchLike,
   endpoint: string,
   textModel: string,
-  kind: "translate" | "explain",
-  text: string,
-  context: RequestContext,
+  messages: Array<{ role: "system" | "user"; content: string }>,
+  signal?: AbortSignal,
 ) {
   const response = await fetchFn(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    signal: context.signal,
+    signal,
     body: JSON.stringify({
       model: textModel,
-      messages: [
-        {
-          role: "system",
-          content: createSystemPrompt(kind, context.targetLanguage),
-        },
-        {
-          role: "user",
-          content: createTextPrompt(kind, text, context.targetLanguage),
-        },
-      ],
+      messages,
     }),
   });
 
   await assertOk(response);
   const payload = await response.json();
   return extractOutputText(payload);
+}
+
+async function requestBilingualExplain(
+  fetchFn: FetchLike,
+  endpoint: string,
+  textModel: string,
+  text: string,
+  context: RequestContext,
+) {
+  const [chineseExplanation, englishExplanation] = await Promise.all([
+    requestText(
+      fetchFn,
+      endpoint,
+      textModel,
+      [
+        {
+          role: "system",
+          content: "You are an EPUB reader assistant. Reply only in Simplified Chinese.",
+        },
+        {
+          role: "user",
+          content: createExplainSectionPrompt(text, "zh-CN"),
+        },
+      ],
+      context.signal,
+    ),
+    requestText(
+      fetchFn,
+      endpoint,
+      textModel,
+      [
+        {
+          role: "system",
+          content: "You are an EPUB reader assistant. Reply only in English.",
+        },
+        {
+          role: "user",
+          content: createExplainSectionPrompt(text, "en"),
+        },
+      ],
+      context.signal,
+    ),
+  ]);
+
+  return `中文解释：${chineseExplanation}\n\nEnglish explanation: ${englishExplanation}`;
 }
 
 export function normalizeOpenAIError(error: unknown): OpenAIError {
@@ -170,12 +213,27 @@ export function createOpenAIAdapter({
 }: OpenAIAdapterDeps = {}) {
   return {
     translateSelection(text: string, context: RequestContext) {
-      return requestText(fetchFn, endpoint, textModel, "translate", text, context).catch((error) => {
+      return requestText(
+        fetchFn,
+        endpoint,
+        textModel,
+        [
+          {
+            role: "system",
+            content: createSystemPrompt("translate", context.targetLanguage),
+          },
+          {
+            role: "user",
+            content: createTextPrompt("translate", text, context.targetLanguage),
+          },
+        ],
+        context.signal,
+      ).catch((error) => {
         throw normalizeOpenAIError(error);
       });
     },
     explainSelection(text: string, context: RequestContext) {
-      return requestText(fetchFn, endpoint, textModel, "explain", text, context).catch((error) => {
+      return requestBilingualExplain(fetchFn, endpoint, textModel, text, context).catch((error) => {
         throw normalizeOpenAIError(error);
       });
     },

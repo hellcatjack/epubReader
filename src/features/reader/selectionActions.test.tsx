@@ -4,7 +4,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
-import { resetDb } from "../../lib/db/appDb";
+import { db, resetDb } from "../../lib/db/appDb";
 import { saveSettings } from "../settings/settingsRepository";
 import { ReaderPage } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
@@ -168,6 +168,41 @@ it("uses the persisted target language setting for AI actions", async () => {
     ttsVoice: "disabled",
     fontScale: 1,
   });
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({ text: "Hello world" });
+  });
+
+  await user.click(screen.getByRole("button", { name: /translate/i }));
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledWith(
+      "Hello world",
+      expect.objectContaining({ targetLanguage: "zh-CN" }),
+    );
+  });
+});
+
+it("migrates legacy english defaults to chinese for translation requests", async () => {
+  const user = userEvent.setup();
+  const ai = {
+    translateSelection: vi.fn(async () => "你好"),
+    explainSelection: vi.fn(async () => "中文解释\nEnglish explanation"),
+    synthesizeSpeech: vi.fn(async () => {
+      throw new Error("unsupported");
+    }),
+  };
+
+  await db.settings.put({
+    id: "settings",
+    apiKey: "",
+    targetLanguage: "en",
+    theme: "sepia",
+    ttsVoice: "disabled",
+    fontScale: 1,
+  } as never);
 
   render(<ReaderPage ai={ai} />);
 

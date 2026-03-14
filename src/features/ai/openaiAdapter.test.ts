@@ -18,7 +18,18 @@ it("sends translate and explain requests to the local chat completions endpoint 
     .mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          choices: [{ message: { content: "ephemeral means short-lived" } }],
+          choices: [{ message: { content: "短暂存在的。" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "It means short-lived." } }],
         }),
         {
           status: 200,
@@ -29,11 +40,11 @@ it("sends translate and explain requests to the local chat completions endpoint 
   const adapter = createOpenAIAdapter({ fetch: fakeFetch });
 
   await expect(adapter.translateSelection("hola", { targetLanguage: "en" })).resolves.toBe("hello");
-  await expect(adapter.explainSelection("ephemeral", { targetLanguage: "zh-CN" })).resolves.toBe(
-    "ephemeral means short-lived",
-  );
+  const explanation = await adapter.explainSelection("ephemeral", { targetLanguage: "zh-CN" });
+  expect(explanation).toContain("中文解释");
+  expect(explanation).toContain("English explanation");
 
-  expect(fakeFetch).toHaveBeenCalledTimes(2);
+  expect(fakeFetch).toHaveBeenCalledTimes(3);
   expect(fakeFetch).toHaveBeenNthCalledWith(
     1,
     "http://192.168.1.31:8001/v1/chat/completions",
@@ -57,8 +68,11 @@ it("sends translate and explain requests to the local chat completions endpoint 
   ]);
 
   const explainRequestBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
-  expect(explainRequestBody.messages[1]?.content).toContain("Chinese explanation");
-  expect(explainRequestBody.messages[1]?.content).toContain("English explanation");
+  expect(explainRequestBody.messages[1]?.content).toContain("Explain the following reading selection in Simplified Chinese");
+
+  const fallbackEnglishBody = JSON.parse(String(fakeFetch.mock.calls[2]?.[1]?.body));
+  expect(fallbackEnglishBody.messages[0]?.content).toContain("Reply only in English");
+  expect(fallbackEnglishBody.messages[1]?.content).toContain("Explain the following reading selection in English");
 });
 
 it("reports local network errors and marks speech synthesis as unsupported for now", async () => {
