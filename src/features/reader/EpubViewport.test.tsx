@@ -28,9 +28,14 @@ it("falls back to chapter start when a saved cfi is invalid", async () => {
 it("uses the runtime renderer for persisted books when no test controller is provided", async () => {
   const runtime = {
     render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
       destroy() {
         return undefined;
       },
+      goTo: vi.fn(async () => undefined),
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setFlow: vi.fn(async () => undefined),
     })),
   };
 

@@ -1,19 +1,20 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import type { AnnotationRecord, BookmarkRecord } from "../../lib/types/annotations";
 import type { TocItem } from "../../lib/types/books";
-import type { SettingsInput } from "../../lib/types/settings";
+import type { ReadingMode, SettingsInput } from "../../lib/types/settings";
 import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
 import { getProgress } from "../bookshelf/progressRepository";
-import { defaultSettings, getResolvedSettings } from "../settings/settingsRepository";
+import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
-import type { EpubViewportRuntime } from "./epubRuntime";
+import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
 import { LeftRail } from "./LeftRail";
 import { RightPanel } from "./RightPanel";
 import { SelectionPopover } from "./SelectionPopover";
 import { TopBar } from "./TopBar";
+import { toReaderPreferences, type ReaderPreferences } from "./readerPreferences";
 import { selectionBridge, type ReaderSelection } from "./selectionBridge";
 
 type ReaderPageProps = {
@@ -35,8 +36,10 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [currentLocation, setCurrentLocation] = useState({ cfi: "", progress: 0, spineItemId: "" });
   const [noteDraft, setNoteDraft] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
+  const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
+  const settingsDirtyRef = useRef(false);
 
   useEffect(() => {
     if (!bookId) {
@@ -52,15 +55,46 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
   useEffect(() => {
     void getResolvedSettings().then((nextSettings) => {
-      setSettings({
-        apiKey: nextSettings.apiKey,
-        targetLanguage: nextSettings.targetLanguage,
-        theme: nextSettings.theme,
-        ttsVoice: nextSettings.ttsVoice,
-        fontScale: nextSettings.fontScale,
-      });
+      if (!settingsDirtyRef.current) {
+        setSettings({ ...defaultSettings, ...nextSettings });
+      }
     });
   }, []);
+
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      if (settings.readingMode !== "paginated" || !runtimeHandle) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (tagName === "input" || tagName === "textarea" || tagName === "select") {
+        return;
+      }
+
+      if (event.key === "ArrowRight" || event.key === "PageDown" || (event.key === " " && !event.shiftKey)) {
+        event.preventDefault();
+        void runtimeHandle.next();
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "PageUp" || (event.key === " " && event.shiftKey)) {
+        event.preventDefault();
+        void runtimeHandle.prev();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [runtimeHandle, settings.readingMode]);
+
+  useEffect(() => {
+    if (!runtimeHandle || typeof runtimeHandle.applyPreferences !== "function") {
+      return;
+    }
+
+    void runtimeHandle.applyPreferences(toReaderPreferences(settings));
+  }, [runtimeHandle, settings]);
 
   useEffect(() => {
     const unsubscribe = selectionBridge.subscribe((selection) => {
@@ -213,6 +247,21 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     await refreshBookmarks();
   }
 
+  async function updateSettings(patch: Partial<SettingsInput>) {
+    const nextSettings = { ...settings, ...patch };
+    settingsDirtyRef.current = true;
+    setSettings(nextSettings);
+    await saveSettings(patch);
+  }
+
+  async function handleChangeReadingMode(mode: ReadingMode) {
+    await updateSettings({ readingMode: mode });
+  }
+
+  async function handleAppearanceChange(patch: Partial<ReaderPreferences>) {
+    await updateSettings(patch);
+  }
+
   const highlights = visibleAnnotations
     .filter((annotation) => annotation.kind === "highlight")
     .map((annotation) => annotation.textQuote);
@@ -242,9 +291,14 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       <section className="reader-center" aria-label="Reading workspace">
         <TopBar
           canToggleBookmark={Boolean(bookId && currentLocation.cfi && currentLocation.spineItemId)}
+          canTurnPages={Boolean(runtimeHandle)}
           isBookmarked={isCurrentLocationBookmarked}
+          onChangeReadingMode={handleChangeReadingMode}
+          onNextPage={() => void runtimeHandle?.next()}
+          onPrevPage={() => void runtimeHandle?.prev()}
           onToggleBookmark={handleToggleBookmark}
           progress={currentLocation.progress}
+          readingMode={settings.readingMode}
         />
         <EpubViewport
           bookId={bookId}
@@ -253,7 +307,9 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
             setCurrentLocation({ cfi, progress, spineItemId });
             setCurrentSpineItemId(spineItemId);
           }}
+          onReady={setRuntimeHandle}
           onTocChange={setToc}
+          readingMode={settings.readingMode}
           runtime={runtime}
           visibleAnnotations={visibleAnnotations}
         />
@@ -269,9 +325,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         aiError={aiError}
         aiResult={aiResult}
         aiTitle={aiTitle}
+        appearance={toReaderPreferences(settings)}
         aria-label="Reader tools"
         noteDraft={noteDraft}
         noteOpen={noteOpen}
+        onAppearanceChange={handleAppearanceChange}
         onNoteDraftChange={setNoteDraft}
         onNoteSave={handleSaveNote}
         selectedText={selectedText}

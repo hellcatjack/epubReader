@@ -62,9 +62,14 @@ it("stores local highlight and note entries for the active selection", async () 
             <ReaderPage
               runtime={{
                 render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
                   destroy() {
                     return undefined;
                   },
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
                 })),
               }}
             />
@@ -150,9 +155,14 @@ it("updates reading progress and toggles a bookmark for the current location", a
                   });
 
                   return {
+                    applyPreferences: vi.fn(async () => undefined),
                     destroy() {
                       return undefined;
                     },
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
                   };
                 }),
               }}

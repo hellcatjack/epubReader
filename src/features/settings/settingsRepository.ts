@@ -1,5 +1,5 @@
 import { db } from "../../lib/db/appDb";
-import type { SettingsInput } from "../../lib/types/settings";
+import type { SettingsInput, SettingsPatch } from "../../lib/types/settings";
 
 export const defaultSettings: SettingsInput = {
   apiKey: "",
@@ -7,12 +7,24 @@ export const defaultSettings: SettingsInput = {
   theme: "sepia",
   ttsVoice: "disabled",
   fontScale: 1,
+  readingMode: "scrolled",
+  lineHeight: 1.7,
+  letterSpacing: 0,
+  paragraphSpacing: 0.85,
+  paragraphIndent: 1.8,
+  contentPadding: 32,
+  maxLineWidth: 760,
+  columnCount: 1,
+  fontFamily: "book",
 };
 
-export async function saveSettings(settings: SettingsInput) {
+export async function saveSettings(settings: SettingsPatch) {
+  const existingSettings = await db.settings.get("settings");
+
   await db.settings.put({
     id: "settings",
     ...defaultSettings,
+    ...existingSettings,
     ...settings,
   });
 }

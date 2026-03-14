@@ -57,3 +57,34 @@ it("persists imported book blobs, settings, and reading progress", async () => {
     progress: 0.2,
   });
 });
+
+it("merges partial settings updates with existing persisted reader preferences", async () => {
+  await saveSettings({
+    apiKey: "",
+    columnCount: 2,
+    contentPadding: 40,
+    fontFamily: "book",
+    fontScale: 1.15,
+    letterSpacing: 0.03,
+    lineHeight: 1.9,
+    maxLineWidth: 780,
+    paragraphIndent: 2,
+    paragraphSpacing: 1.1,
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    theme: "dark",
+    ttsVoice: "disabled",
+  });
+
+  await saveSettings({
+    readingMode: "scrolled",
+  });
+
+  await expect(getSettings()).resolves.toMatchObject({
+    columnCount: 2,
+    lineHeight: 1.9,
+    readingMode: "scrolled",
+    targetLanguage: "zh-CN",
+    theme: "dark",
+  });
+});

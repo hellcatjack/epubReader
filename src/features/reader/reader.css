@@ -93,15 +93,22 @@
 }
 
 .reader-topbar {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
+  display: grid;
   gap: 1rem;
   padding: 1rem 1.25rem;
   border-radius: 1rem;
   background: rgba(255, 252, 248, 0.88);
   border: 1px solid rgba(79, 49, 24, 0.14);
   box-shadow: 0 0.65rem 1.8rem rgba(87, 57, 35, 0.08);
+}
+
+.reader-topbar-actions,
+.reader-mode-toggle,
+.reader-page-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .reader-topbar-label,
@@ -130,6 +137,8 @@
 }
 
 .reader-bookmark-button,
+.reader-mode-button,
+.reader-page-button,
 .selection-action {
   border: 0;
   border-radius: 999px;
@@ -138,9 +147,16 @@
   cursor: pointer;
 }
 
-.reader-bookmark-button {
+.reader-bookmark-button,
+.reader-mode-button,
+.reader-page-button {
   padding: 0.7rem 1.1rem;
   font: inherit;
+  flex: 0 0 auto;
+}
+
+.reader-mode-button[aria-pressed="true"] {
+  background: #ba6a2f;
 }
 
 .reader-viewport-shell {
@@ -224,6 +240,29 @@
   font-size: 0.92rem;
 }
 
+.appearance-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.appearance-field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+  color: #5c4635;
+}
+
+.appearance-field input,
+.appearance-field select {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(79, 49, 24, 0.18);
+  border-radius: 0.75rem;
+  background: rgba(255, 252, 248, 0.92);
+  color: inherit;
+  font: inherit;
+}
+
 .selection-popover {
   display: flex;
   flex-wrap: wrap;
@@ -247,5 +286,16 @@
 
   .reader-progress {
     width: min(18rem, 100%);
+  }
+}
+
+@media (min-width: 1450px) {
+  .reader-topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .reader-topbar-actions {
+    justify-content: flex-end;
   }
 }

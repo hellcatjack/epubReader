@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnnotationRecord } from "../../lib/types/annotations";
+import type { ReadingMode } from "../../lib/types/settings";
 import { saveProgress } from "../bookshelf/progressRepository";
 import type { TocItem } from "../../lib/types/books";
 import { annotationRenderer } from "./annotationRenderer";
-import { epubViewportRuntime, type EpubViewportRuntime } from "./epubRuntime";
+import { epubViewportRuntime, type EpubViewportRuntime, type RuntimeRenderHandle } from "./epubRuntime";
 import type { ReaderController } from "./readerController";
 import { selectionBridge } from "./selectionBridge";
 
@@ -12,7 +13,9 @@ type EpubViewportProps = {
   controller?: ReaderController;
   initialCfi?: string;
   onLocationChange?: (location: { cfi: string; progress: number; spineItemId: string }) => void;
+  onReady?: (handle: RuntimeRenderHandle | null) => void;
   onTocChange?: (toc: TocItem[]) => void;
+  readingMode?: ReadingMode;
   visibleAnnotations?: AnnotationRecord[];
   runtime?: EpubViewportRuntime;
 };
@@ -22,13 +25,16 @@ export function EpubViewport({
   controller,
   initialCfi,
   onLocationChange,
+  onReady,
   onTocChange,
+  readingMode = "scrolled",
   runtime = epubViewportRuntime,
   visibleAnnotations = [],
 }: EpubViewportProps) {
   const [statusMessage, setStatusMessage] = useState("Open a book from the shelf to start reading.");
   const [selectionPreview, setSelectionPreview] = useState("");
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const runtimeHandleRef = useRef<RuntimeRenderHandle | null>(null);
 
   useEffect(() => {
     annotationRenderer.clear();
@@ -65,13 +71,14 @@ export function EpubViewport({
       const activeBookId = bookId;
       const activeHost = hostRef.current;
       let cancelled = false;
-      let handle: { destroy(): void } | null = null;
+      let handle: RuntimeRenderHandle | null = null;
 
       async function openPersistedBook(nextCfi?: string) {
         handle?.destroy();
         handle = await runtime.render({
           bookId: activeBookId,
           element: activeHost,
+          flow: readingMode,
           initialCfi: nextCfi,
           onRelocated: ({ cfi, progress, spineItemId }) => {
             void saveProgress(activeBookId, { cfi, progress });
@@ -83,6 +90,8 @@ export function EpubViewport({
           },
           onTocChange,
         });
+        runtimeHandleRef.current = handle;
+        onReady?.(handle);
       }
 
       async function run() {
@@ -119,6 +128,8 @@ export function EpubViewport({
       return () => {
         cancelled = true;
         handle?.destroy();
+        runtimeHandleRef.current = null;
+        onReady?.(null);
         selectionBridge.publish(null);
       };
     }
@@ -160,13 +171,20 @@ export function EpubViewport({
 
     return () => {
       cancelled = true;
+      onReady?.(null);
       selectionBridge.publish(null);
     };
   }, [bookId, controller, initialCfi]);
 
+  useEffect(() => {
+    if (!controller && runtimeHandleRef.current) {
+      void runtimeHandleRef.current.setFlow(readingMode);
+    }
+  }, [controller, readingMode]);
+
   return (
     <section className="epub-viewport" aria-label="Book content">
-      <div className="epub-root" data-reader-mode={controller?.mode ?? "paginated"} ref={hostRef}>
+      <div className="epub-root" data-reader-mode={controller?.mode ?? readingMode} ref={hostRef}>
         {!bookId ? (
           <>
             <p className="reader-eyebrow">Current chapter</p>
