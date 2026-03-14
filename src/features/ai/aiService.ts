@@ -1,4 +1,5 @@
 import { createOpenAIAdapter, normalizeOpenAIError } from "./openaiAdapter";
+import { createLocalTtsClient } from "../tts/localTtsClient";
 
 type ServiceContext = {
   signal?: AbortSignal;
@@ -6,8 +7,11 @@ type ServiceContext = {
 };
 
 type SpeechContext = {
+  helperUrl: string;
+  rate: number;
   signal?: AbortSignal;
   voice: string;
+  volume: number;
 };
 
 export function createAiService() {
@@ -28,7 +32,13 @@ export function createAiService() {
     },
     async synthesizeSpeech(text: string, context: SpeechContext) {
       try {
-        return await createOpenAIAdapter().synthesizeSpeech(text, context);
+        return await createLocalTtsClient({ baseUrl: context.helperUrl }).speak({
+          format: "wav",
+          rate: context.rate,
+          text,
+          voiceId: context.voice,
+          volume: context.volume,
+        });
       } catch (error) {
         throw normalizeOpenAIError(error);
       }

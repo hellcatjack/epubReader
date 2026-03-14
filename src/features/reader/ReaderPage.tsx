@@ -7,6 +7,9 @@ import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
 import { getProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
+import { createAudioPlayer, type AudioPlayer } from "../tts/audioPlayer";
+import { chunkText } from "../tts/chunkText";
+import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
 import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
@@ -20,9 +23,17 @@ import { selectionBridge, type ReaderSelection } from "./selectionBridge";
 type ReaderPageProps = {
   ai?: Pick<AiService, "explainSelection" | "synthesizeSpeech" | "translateSelection">;
   runtime?: EpubViewportRuntime;
+  ttsPlayer?: AudioPlayer;
 };
 
-export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
+type ReaderTtsState = {
+  currentText: string;
+  error: string;
+  mode: "continuous" | "idle" | "selection";
+  status: "error" | "idle" | "loading" | "paused" | "playing";
+};
+
+export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const [initialCfi, setInitialCfi] = useState<string>();
   const [locationTarget, setLocationTarget] = useState<string>();
@@ -39,9 +50,51 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
+  const [ttsState, setTtsState] = useState<ReaderTtsState>({
+    currentText: "",
+    error: "",
+    mode: "idle",
+    status: "idle",
+  });
   const settingsDirtyRef = useRef(false);
   const aiRequestVersionRef = useRef(0);
   const lastAutoTranslatedSelectionKeyRef = useRef("");
+  const activeSelectionSpeechRequestRef = useRef(0);
+  const continuousSpineItemIdRef = useRef("");
+  const settingsRef = useRef(settings);
+  const aiRef = useRef(ai);
+  const ttsPlayerRef = useRef<AudioPlayer | null>(ttsPlayer ?? null);
+  const ttsQueueRef = useRef<ReturnType<typeof createTtsQueue> | null>(null);
+
+  function ensureTtsQueue() {
+    if (!ttsPlayerRef.current) {
+      ttsPlayerRef.current = ttsPlayer ?? createAudioPlayer();
+    }
+
+    if (!ttsQueueRef.current) {
+      ttsQueueRef.current = createTtsQueue({
+        onStateChange(nextState) {
+          setTtsState((currentState) => ({
+            ...currentState,
+            currentText: nextState.currentText,
+            mode:
+              nextState.status === "idle" ? "idle" : currentState.mode === "idle" ? "continuous" : currentState.mode,
+            status: nextState.status,
+          }));
+        },
+        player: ttsPlayerRef.current,
+        speak: (request) =>
+          aiRef.current.synthesizeSpeech(request.text, {
+            helperUrl: settingsRef.current.ttsHelperUrl,
+            rate: request.rate,
+            voice: request.voiceId,
+            volume: request.volume,
+          }),
+      });
+    }
+
+    return ttsQueueRef.current;
+  }
 
   useEffect(() => {
     if (!bookId) {
@@ -62,6 +115,14 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       }
     });
   }, []);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    aiRef.current = ai;
+  }, [ai]);
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
@@ -150,6 +211,32 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       .then(setBookmarks);
   }, [bookId]);
 
+  useEffect(() => {
+    if (
+      ttsState.mode === "continuous" &&
+      ttsState.status !== "idle" &&
+      continuousSpineItemIdRef.current &&
+      currentSpineItemId &&
+      currentSpineItemId !== continuousSpineItemIdRef.current
+    ) {
+      ttsQueueRef.current?.stop();
+      continuousSpineItemIdRef.current = "";
+      setTtsState({
+        currentText: "",
+        error: "Reading position changed.",
+        mode: "idle",
+        status: "idle",
+      });
+    }
+  }, [currentSpineItemId, ttsState.mode, ttsState.status]);
+
+  useEffect(() => {
+    return () => {
+      ttsQueueRef.current?.stop();
+      ttsPlayerRef.current?.destroy();
+    };
+  }, []);
+
   const selectedText = selectedSelection?.text ?? "";
   const selectedCfiRange = selectedSelection?.cfiRange ?? "";
   const selectedSpineItemId = selectedSelection?.spineItemId ?? currentSpineItemId;
@@ -235,6 +322,80 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     await requestExplanation(selectedText);
   }
 
+  async function handleReadAloud() {
+    if (!selectedText) {
+      return;
+    }
+
+    const player = ttsPlayerRef.current ?? (ttsPlayerRef.current = ttsPlayer ?? createAudioPlayer());
+
+    activeSelectionSpeechRequestRef.current += 1;
+    const requestId = activeSelectionSpeechRequestRef.current;
+    continuousSpineItemIdRef.current = "";
+    ttsQueueRef.current?.stop();
+    player.stop();
+    setTtsState({
+      currentText: selectedText,
+      error: "",
+      mode: "selection",
+      status: "loading",
+    });
+
+    try {
+      const audio = await ai.synthesizeSpeech(selectedText, {
+        helperUrl: settings.ttsHelperUrl,
+        rate: settings.ttsRate,
+        voice: settings.ttsVoice,
+        volume: settings.ttsVolume,
+      });
+
+      if (activeSelectionSpeechRequestRef.current !== requestId) {
+        return;
+      }
+
+      await player.load(audio);
+      setTtsState({
+        currentText: selectedText,
+        error: "",
+        mode: "selection",
+        status: "playing",
+      });
+      await player.playUntilEnded();
+
+      if (activeSelectionSpeechRequestRef.current !== requestId) {
+        return;
+      }
+
+      setTtsState({
+        currentText: "",
+        error: "",
+        mode: "idle",
+        status: "idle",
+      });
+    } catch (error) {
+      if (activeSelectionSpeechRequestRef.current !== requestId) {
+        return;
+      }
+
+      if (error instanceof Error && error.message === "stopped") {
+        setTtsState({
+          currentText: "",
+          error: "",
+          mode: "idle",
+          status: "idle",
+        });
+        return;
+      }
+
+      setTtsState({
+        currentText: selectedText,
+        error: `TTS failed: ${String(error)}`,
+        mode: "selection",
+        status: "error",
+      });
+    }
+  }
+
   async function handleHighlight() {
     if (!bookId || !selectedText || !selectedCfiRange || !selectedSpineItemId) {
       return;
@@ -315,6 +476,93 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     await updateSettings(patch);
   }
 
+  async function handleStartTts() {
+    if (!runtimeHandle) {
+      setTtsState({
+        currentText: "",
+        error: "No active reading surface is available for TTS.",
+        mode: "idle",
+        status: "error",
+      });
+      return;
+    }
+
+    const queue = ensureTtsQueue();
+    const text = await runtimeHandle.getTextFromCurrentLocation();
+    const chunks = chunkText(text);
+
+    if (!chunks.length) {
+      setTtsState({
+        currentText: "",
+        error: "No readable text is available from the current location.",
+        mode: "idle",
+        status: "error",
+      });
+      return;
+    }
+
+    activeSelectionSpeechRequestRef.current += 1;
+    continuousSpineItemIdRef.current = currentSpineItemId;
+    setTtsState({
+      currentText: chunks[0] ?? "",
+      error: "",
+      mode: "continuous",
+      status: "loading",
+    });
+
+    void queue.start({
+      chunks,
+      request: {
+        format: "wav",
+        rate: settings.ttsRate,
+        voiceId: settings.ttsVoice,
+        volume: settings.ttsVolume,
+      },
+    });
+  }
+
+  function handlePauseTts() {
+    if (ttsState.mode === "continuous") {
+      ttsQueueRef.current?.pause();
+      return;
+    }
+
+    ttsPlayerRef.current?.pause();
+    setTtsState((currentState) => ({
+      ...currentState,
+      status: "paused",
+    }));
+  }
+
+  async function handleResumeTts() {
+    if (ttsState.mode === "continuous") {
+      await ttsQueueRef.current?.resume();
+      return;
+    }
+
+    await ttsPlayerRef.current?.resume();
+    setTtsState((currentState) => ({
+      ...currentState,
+      status: "playing",
+    }));
+  }
+
+  function handleStopTts() {
+    activeSelectionSpeechRequestRef.current += 1;
+    continuousSpineItemIdRef.current = "";
+    if (ttsState.mode === "continuous") {
+      ttsQueueRef.current?.stop();
+    } else {
+      ttsPlayerRef.current?.stop();
+      setTtsState({
+        currentText: "",
+        error: "",
+        mode: "idle",
+        status: "idle",
+      });
+    }
+  }
+
   const highlights = visibleAnnotations
     .filter((annotation) => annotation.kind === "highlight")
     .map((annotation) => ({
@@ -378,6 +626,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           onAddNote={handleAddNote}
           onExplain={handleExplain}
           onHighlight={handleHighlight}
+          onReadAloud={handleReadAloud}
           onTranslate={handleTranslate}
         />
       </section>
@@ -392,7 +641,14 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         onAppearanceChange={handleAppearanceChange}
         onNoteDraftChange={setNoteDraft}
         onNoteSave={handleSaveNote}
+        onTtsPause={handlePauseTts}
+        onTtsResume={handleResumeTts}
+        onTtsStart={handleStartTts}
+        onTtsStop={handleStopTts}
         selectedText={selectedText}
+        ttsCurrentText={ttsState.currentText}
+        ttsError={ttsState.error}
+        ttsStatus={ttsState.status}
       />
     </main>
   );

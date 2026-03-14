@@ -3,6 +3,7 @@ type SelectionPopoverProps = {
   onAddNote?: () => void;
   onExplain?: () => void;
   onHighlight?: () => void;
+  onReadAloud?: () => void;
   onTranslate?: () => void;
 };
 
@@ -11,6 +12,7 @@ export function SelectionPopover({
   onAddNote,
   onExplain,
   onHighlight,
+  onReadAloud,
   onTranslate,
 }: SelectionPopoverProps) {
   return (
@@ -27,8 +29,8 @@ export function SelectionPopover({
       <button className="selection-action" disabled={!hasSelection} onClick={onAddNote} type="button">
         Add note
       </button>
-      <button className="selection-action" disabled type="button">
-        Read aloud unavailable
+      <button className="selection-action" disabled={!hasSelection} onClick={onReadAloud} type="button">
+        Read aloud
       </button>
     </section>
   );

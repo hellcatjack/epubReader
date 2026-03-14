@@ -17,6 +17,7 @@ export type RuntimeRenderArgs = {
 export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   destroy(): void;
+  getTextFromCurrentLocation(): Promise<string>;
   goTo(target: string): Promise<void>;
   next(): Promise<void>;
   prev(): Promise<void>;
@@ -48,6 +49,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       allowScriptedContent: false,
     });
     let currentTarget = initialCfi ?? "";
+    let currentContents: Contents | null = null;
     let activePreferences: ReaderPreferences = {
       ...defaultReaderPreferences,
       readingMode: flow,
@@ -66,8 +68,13 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       onRelocated?.({ cfi, progress, spineItemId: location.start.href });
     };
 
+    const handleRendered = (_section: unknown, contents: Contents) => {
+      currentContents = contents;
+    };
+
     rendition.on("selected", handleSelection);
     rendition.on("relocated", handleRelocated);
+    rendition.on("rendered", handleRendered);
     rendition.themes.default(buildReaderTheme(activePreferences));
 
     const navigation = await book.loaded.navigation;
@@ -85,9 +92,32 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       destroy() {
         rendition.off("selected", handleSelection);
         rendition.off("relocated", handleRelocated);
+        rendition.off("rendered", handleRendered);
         rendition.destroy();
         book.destroy();
         element.innerHTML = "";
+      },
+      async getTextFromCurrentLocation() {
+        const fallbackText = currentContents?.document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
+        if (!currentTarget) {
+          return fallbackText;
+        }
+
+        try {
+          const range = await book.getRange(currentTarget);
+          const body = range?.startContainer?.ownerDocument?.body;
+          if (!range || !body) {
+            return fallbackText;
+          }
+
+          const readingRange = body.ownerDocument.createRange();
+          readingRange.setStart(range.startContainer, range.startOffset);
+          readingRange.setEnd(body, body.childNodes.length);
+          const text = readingRange.toString().replace(/\s+/g, " ").trim();
+          return text || fallbackText;
+        } catch {
+          return fallbackText;
+        }
       },
       async goTo(target) {
         currentTarget = target;

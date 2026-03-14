@@ -8,7 +8,10 @@ export type SettingsRecord = {
   targetLanguage: string;
   targetLanguageCustomized: boolean;
   theme: ThemeName;
+  ttsHelperUrl: string;
+  ttsRate: number;
   ttsVoice: string;
+  ttsVolume: number;
   fontScale: number;
   readingMode: ReadingMode;
   lineHeight: number;

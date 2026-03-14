@@ -15,7 +15,14 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onAppearanceChange?: (patch: Partial<ReaderPreferences>) => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
+  onTtsPause?: () => void;
+  onTtsResume?: () => void;
+  onTtsStart?: () => void;
+  onTtsStop?: () => void;
   selectedText?: string;
+  ttsCurrentText?: string;
+  ttsError?: string;
+  ttsStatus?: "idle" | "loading" | "playing" | "paused" | "error";
 };
 
 export function RightPanel({
@@ -28,7 +35,14 @@ export function RightPanel({
   onAppearanceChange,
   onNoteDraftChange,
   onNoteSave,
+  onTtsPause,
+  onTtsResume,
+  onTtsStart,
+  onTtsStop,
   selectedText,
+  ttsCurrentText,
+  ttsError,
+  ttsStatus,
   ...props
 }: RightPanelProps) {
   return (
@@ -42,7 +56,15 @@ export function RightPanel({
         selectedText={selectedText}
         value={noteDraft}
       />
-      <TtsStatusPanel />
+      <TtsStatusPanel
+        currentText={ttsCurrentText}
+        error={ttsError}
+        onPause={onTtsPause}
+        onResume={onTtsResume}
+        onStart={onTtsStart}
+        onStop={onTtsStop}
+        status={ttsStatus}
+      />
       <p className="reader-tools-hint">Bookmarks, highlights, and notes are stored only in this browser.</p>
     </aside>
   );

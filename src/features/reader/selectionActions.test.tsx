@@ -19,9 +19,7 @@ it("automatically translates a new selection while keeping explain and note acti
   const ai = {
     translateSelection: vi.fn(async () => "你好，世界"),
     explainSelection: vi.fn(async () => "A short contextual explanation"),
-    synthesizeSpeech: vi.fn(async () => {
-      throw new Error("unsupported");
-    }),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
   };
 
   render(<ReaderPage ai={ai} />);
@@ -48,7 +46,48 @@ it("automatically translates a new selection while keeping explain and note acti
   await user.click(screen.getByRole("button", { name: /add note/i }));
   expect(screen.getByRole("textbox", { name: /note body/i })).toBeInTheDocument();
   expect(screen.getAllByText(/hello world/i).length).toBeGreaterThan(0);
-  expect(screen.getByRole("button", { name: /read aloud unavailable/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /read aloud/i })).toBeInTheDocument();
+});
+
+it("reads aloud the selected text through the local helper-backed speech path", async () => {
+  const user = userEvent.setup();
+  const ai = {
+    translateSelection: vi.fn(async () => "你好，世界"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+  const ttsPlayer = {
+    destroy: vi.fn(),
+    load: vi.fn(async () => "blob:mock-audio"),
+    pause: vi.fn(),
+    play: vi.fn(async () => undefined),
+    playUntilEnded: vi.fn(async () => undefined),
+    resume: vi.fn(async () => undefined),
+    stop: vi.fn(),
+  };
+
+  render(<ReaderPage ai={ai} ttsPlayer={ttsPlayer} />);
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
+  });
+
+  await user.click(screen.getByRole("button", { name: /read aloud/i }));
+
+  await waitFor(() => {
+    expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
+      "Hello world",
+      expect.objectContaining({
+        helperUrl: "http://127.0.0.1:43115",
+        rate: 1,
+        voice: "system-default",
+        volume: 1,
+      }),
+    );
+  });
+
+  expect(ttsPlayer.load).toHaveBeenCalledTimes(1);
+  expect(ttsPlayer.playUntilEnded).toHaveBeenCalledTimes(1);
 });
 
 it("does not auto-translate the same selection twice until the selection is cleared", async () => {
@@ -104,6 +143,7 @@ it("stores local highlight and note entries for the active selection", async () 
                   destroy() {
                     return undefined;
                   },
+                  getTextFromCurrentLocation: vi.fn(async () => ""),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
                   prev: vi.fn(async () => undefined),
@@ -155,6 +195,7 @@ it("removes a saved highlight from the current chapter", async () => {
                   destroy() {
                     return undefined;
                   },
+                  getTextFromCurrentLocation: vi.fn(async () => ""),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
                   prev: vi.fn(async () => undefined),
@@ -282,6 +323,7 @@ it("updates reading progress and toggles a bookmark for the current location", a
                     destroy() {
                       return undefined;
                     },
+                    getTextFromCurrentLocation: vi.fn(async () => ""),
                     goTo: vi.fn(async () => undefined),
                     next: vi.fn(async () => undefined),
                     prev: vi.fn(async () => undefined),

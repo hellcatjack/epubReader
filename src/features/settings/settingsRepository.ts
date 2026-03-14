@@ -6,7 +6,10 @@ export const defaultSettings: SettingsInput = {
   targetLanguage: "zh-CN",
   targetLanguageCustomized: false,
   theme: "sepia",
-  ttsVoice: "disabled",
+  ttsHelperUrl: "http://127.0.0.1:43115",
+  ttsRate: 1,
+  ttsVoice: "system-default",
+  ttsVolume: 1,
   fontScale: 1,
   readingMode: "scrolled",
   lineHeight: 1.7,
@@ -33,7 +36,10 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
     typeof record.contentPadding !== "number" ||
     typeof record.maxLineWidth !== "number" ||
     typeof record.columnCount !== "number" ||
-    typeof record.fontFamily !== "string"
+    typeof record.fontFamily !== "string" ||
+    typeof record.ttsHelperUrl !== "string" ||
+    typeof record.ttsRate !== "number" ||
+    typeof record.ttsVolume !== "number"
   );
 }
 
@@ -49,6 +55,10 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
 
   if (record.targetLanguageCustomized !== true && migratedSettings.targetLanguage === "en") {
     migratedSettings.targetLanguage = "zh-CN";
+  }
+
+  if (record.ttsVoice === "disabled") {
+    migratedSettings.ttsVoice = "system-default";
   }
 
   if (isLegacySettingsRecord(record) || record.targetLanguageCustomized !== migratedSettings.targetLanguageCustomized || migratedSettings.targetLanguage !== record.targetLanguage) {

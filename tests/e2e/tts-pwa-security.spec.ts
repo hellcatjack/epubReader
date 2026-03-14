@@ -25,6 +25,6 @@ test("pwa registration and reader sandbox edges behave correctly", async ({ page
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
-  await expect(page.getByRole("button", { name: /read aloud unavailable/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /read aloud/i })).toBeDisabled();
   await expect(page.locator(".epub-root iframe").first()).toHaveAttribute("sandbox", "allow-same-origin");
 });

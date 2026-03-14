@@ -24,8 +24,12 @@ export function SettingsDialog() {
   const [paragraphIndentInput, setParagraphIndentInput] = useState(String(defaultSettings.paragraphIndent));
   const [contentPaddingInput, setContentPaddingInput] = useState(String(defaultSettings.contentPadding));
   const [maxLineWidthInput, setMaxLineWidthInput] = useState(String(defaultSettings.maxLineWidth));
+  const [ttsRateInput, setTtsRateInput] = useState(String(defaultSettings.ttsRate));
+  const [ttsVolumeInput, setTtsVolumeInput] = useState(String(defaultSettings.ttsVolume));
   const [isReady, setIsReady] = useState(false);
-  const [status, setStatus] = useState("Local translation is enabled. TTS is currently disabled.");
+  const [status, setStatus] = useState(
+    "Local translation is enabled. Windows local TTS is available through the configured localhost helper.",
+  );
 
   useEffect(() => {
     void getResolvedSettings().then((nextSettings) => {
@@ -37,6 +41,8 @@ export function SettingsDialog() {
       setParagraphIndentInput(String(nextSettings.paragraphIndent));
       setContentPaddingInput(String(nextSettings.contentPadding));
       setMaxLineWidthInput(String(nextSettings.maxLineWidth));
+      setTtsRateInput(String(nextSettings.ttsRate));
+      setTtsVolumeInput(String(nextSettings.ttsVolume));
       setIsReady(true);
     });
   }, []);
@@ -49,6 +55,8 @@ export function SettingsDialog() {
     const nextParagraphIndent = parseNumberInput(paragraphIndentInput, defaultSettings.paragraphIndent);
     const nextContentPadding = parseNumberInput(contentPaddingInput, defaultSettings.contentPadding);
     const nextMaxLineWidth = parseNumberInput(maxLineWidthInput, defaultSettings.maxLineWidth);
+    const nextTtsRate = parseNumberInput(ttsRateInput, defaultSettings.ttsRate);
+    const nextTtsVolume = parseNumberInput(ttsVolumeInput, defaultSettings.ttsVolume);
     const nextSettings = {
       ...settings,
       fontScale: nextFontScale,
@@ -58,6 +66,8 @@ export function SettingsDialog() {
       paragraphIndent: nextParagraphIndent,
       contentPadding: nextContentPadding,
       maxLineWidth: nextMaxLineWidth,
+      ttsRate: nextTtsRate,
+      ttsVolume: nextTtsVolume,
     };
 
     await saveSettings(nextSettings);
@@ -69,6 +79,8 @@ export function SettingsDialog() {
     setParagraphIndentInput(String(nextParagraphIndent));
     setContentPaddingInput(String(nextContentPadding));
     setMaxLineWidthInput(String(nextMaxLineWidth));
+    setTtsRateInput(String(nextTtsRate));
+    setTtsVolumeInput(String(nextTtsVolume));
     setStatus("Settings saved.");
   }
 
@@ -128,6 +140,48 @@ export function SettingsDialog() {
                 </option>
               ))}
             </select>
+          </label>
+          <label>
+            TTS helper URL
+            <input
+              aria-label="TTS helper URL"
+              onChange={(event) => setSettings((current) => ({ ...current, ttsHelperUrl: event.target.value }))}
+              type="url"
+              value={settings.ttsHelperUrl}
+            />
+          </label>
+          <label>
+            TTS voice
+            <input
+              aria-label="TTS voice"
+              onChange={(event) => setSettings((current) => ({ ...current, ttsVoice: event.target.value }))}
+              type="text"
+              value={settings.ttsVoice}
+            />
+          </label>
+          <label>
+            TTS rate
+            <input
+              aria-label="TTS rate"
+              inputMode="decimal"
+              onChange={(event) => setTtsRateInput(event.target.value)}
+              step="0.05"
+              type="number"
+              value={ttsRateInput}
+            />
+          </label>
+          <label>
+            TTS volume
+            <input
+              aria-label="TTS volume"
+              inputMode="decimal"
+              max="1"
+              min="0"
+              onChange={(event) => setTtsVolumeInput(event.target.value)}
+              step="0.05"
+              type="number"
+              value={ttsVolumeInput}
+            />
           </label>
           <label>
             Font family

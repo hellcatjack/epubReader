@@ -41,6 +41,7 @@ it("switches reading modes and pages through the active rendition", async () => 
                     destroy() {
                       return undefined;
                     },
+                    getTextFromCurrentLocation: vi.fn(async () => ""),
                     goTo: vi.fn(async () => undefined),
                     next,
                     prev,
@@ -87,6 +88,7 @@ it("applies live appearance changes through the active rendition handle", async 
                   destroy() {
                     return undefined;
                   },
+                  getTextFromCurrentLocation: vi.fn(async () => ""),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
                   prev: vi.fn(async () => undefined),
@@ -123,4 +125,95 @@ it("applies live appearance changes through the active rendition handle", async 
       }),
     );
   });
+});
+
+it("starts pauses resumes and stops continuous reading from the current location", async () => {
+  const user = userEvent.setup();
+  const pause = vi.fn();
+  const resume = vi.fn(async () => undefined);
+  const stop = vi.fn();
+  const playResolvers: Array<() => void> = [];
+  const ai = {
+    translateSelection: vi.fn(async () => "你好"),
+    explainSelection: vi.fn(async () => "解释"),
+    synthesizeSpeech: vi.fn(async (text: string) => new Blob([text], { type: "audio/wav" })),
+  };
+  const ttsPlayer = {
+    destroy: vi.fn(),
+    load: vi.fn(async () => "blob:mock-audio"),
+    pause,
+    play: vi.fn(async () => undefined),
+    playUntilEnded: vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          playResolvers.push(resolve);
+        }),
+    ),
+    resume,
+    stop,
+  };
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              ai={ai}
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  getTextFromCurrentLocation: vi.fn(async () => "First chunk.\n\nSecond chunk."),
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+              ttsPlayer={ttsPlayer}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
+      "First chunk.",
+      expect.objectContaining({
+        voice: "system-default",
+      }),
+    );
+  });
+
+  expect(await screen.findByText(/playing/i)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /pause tts/i }));
+  expect(pause).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(/paused/i)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /resume tts/i }));
+  expect(resume).toHaveBeenCalledTimes(1);
+
+  playResolvers.shift()?.();
+
+  await waitFor(() => {
+    expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
+      "Second chunk.",
+      expect.objectContaining({
+        voice: "system-default",
+      }),
+    );
+  });
+
+  await user.click(screen.getByRole("button", { name: /stop tts/i }));
+  expect(stop).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(/idle/i)).toBeInTheDocument();
 });

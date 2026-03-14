@@ -32,6 +32,7 @@ it("uses the runtime renderer for persisted books when no test controller is pro
       destroy() {
         return undefined;
       },
+      getTextFromCurrentLocation: vi.fn(async () => ""),
       goTo: vi.fn(async () => undefined),
       next: vi.fn(async () => undefined),
       prev: vi.fn(async () => undefined),
