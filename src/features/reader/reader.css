@@ -180,11 +180,12 @@
 }
 
 .epub-root {
-  display: grid;
-  align-content: start;
+  display: block;
   width: min(44rem, 100%);
-  min-height: 26rem;
-  padding: 3rem;
+  height: min(72vh, 56rem);
+  min-height: 32rem;
+  padding: 0;
+  overflow: hidden;
   border-radius: 1.2rem;
   background: #fffdf9;
   box-shadow: 0 1.2rem 3rem rgba(77, 50, 28, 0.12);
