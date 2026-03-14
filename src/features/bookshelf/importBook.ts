@@ -5,11 +5,7 @@ import {
   saveBookFile,
 } from "./bookshelfRepository";
 import { extractPackageMetadata } from "./extractPackageMetadata";
-
-async function hashFile(file: File) {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
-}
+import { hashFile } from "./hashFile";
 
 function normalizeBookRecord(
   file: File,

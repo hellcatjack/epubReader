@@ -16,6 +16,7 @@
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@noble/hashes": "^2.0.1",
     "dexie": "^4.3.0",
     "epubjs": "^0.3.93",
     "fflate": "^0.8.2",

@@ -60,6 +60,48 @@ it("forwards imported epub files through the import action", async () => {
   expect(onImportFile).toHaveBeenCalledWith(file);
 });
 
+it("shows an importing status while the selected file is being processed", async () => {
+  const user = userEvent.setup();
+  const importDeferred: { resolve: null | (() => void) } = { resolve: null };
+  const onImportFile = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        importDeferred.resolve = resolve;
+      }),
+  );
+  const file = new File(["epub-bytes"], "demo.epub", { type: "application/epub+zip" });
+
+  render(
+    <MemoryRouter>
+      <BookshelfPage books={[]} onImportFile={onImportFile} />
+    </MemoryRouter>,
+  );
+
+  await user.upload(screen.getByLabelText(/import epub/i), file);
+
+  expect(await screen.findByRole("status")).toHaveTextContent("Importing EPUB...");
+
+  importDeferred.resolve?.();
+});
+
+it("shows a visible error when importing fails", async () => {
+  const user = userEvent.setup();
+  const onImportFile = vi.fn(async () => {
+    throw new Error("Broken archive");
+  });
+  const file = new File(["epub-bytes"], "broken.epub", { type: "application/epub+zip" });
+
+  render(
+    <MemoryRouter>
+      <BookshelfPage books={[]} onImportFile={onImportFile} />
+    </MemoryRouter>,
+  );
+
+  await user.upload(screen.getByLabelText(/import epub/i), file);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Import failed: Broken archive");
+});
+
 it("loads persisted books from the local bookshelf when no props are provided", async () => {
   await saveBook({
     id: "book-2",

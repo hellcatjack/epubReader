@@ -15,6 +15,8 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
   const navigate = useNavigate();
   const importInputId = useId();
   const [storedBooks, setStoredBooks] = useState<BookshelfListItem[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState("");
   const usesExternalBooks = onImportFile != null || books.length > 0;
   const visibleBooks = usesExternalBooks ? books : storedBooks;
 
@@ -36,15 +38,30 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
       return;
     }
 
-    if (onImportFile) {
-      await onImportFile(file);
-    } else {
-      const record = await importBook(file);
-      await refreshBookshelf();
-      navigate(`/books/${record.id}`);
+    let nextBookId = "";
+
+    setIsImporting(true);
+    setImportError("");
+
+    try {
+      if (onImportFile) {
+        await onImportFile(file);
+      } else {
+        const record = await importBook(file);
+        await refreshBookshelf();
+        nextBookId = record.id;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setImportError(`Import failed: ${message}`);
+    } finally {
+      setIsImporting(false);
+      event.target.value = "";
     }
 
-    event.target.value = "";
+    if (nextBookId) {
+      navigate(`/books/${nextBookId}`);
+    }
   }
 
   function handleOpenBook(bookId: string) {
@@ -71,6 +88,8 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
           onChange={handleImportChange}
           type="file"
         />
+        {isImporting ? <p role="status">Importing EPUB...</p> : null}
+        {importError ? <p role="alert">{importError}</p> : null}
         <SettingsDialog />
       </section>
       <section aria-label="Local books">
