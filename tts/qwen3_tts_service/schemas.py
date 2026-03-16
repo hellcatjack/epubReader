@@ -14,3 +14,11 @@ class VoiceResponse(BaseModel):
     locale: str
     gender: str
     isDefault: bool
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    voiceId: str
+    rate: float
+    volume: float
+    format: str

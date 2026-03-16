@@ -20,3 +20,38 @@ def test_voices_returns_qwen_speakers():
 
     assert response.status_code == 200
     assert any(voice["id"] == "Ryan" for voice in payload)
+
+
+def test_speak_returns_wav_audio():
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/speak",
+        json={
+            "text": "Hello world",
+            "voiceId": "Ryan",
+            "rate": 1.0,
+            "volume": 1.0,
+            "format": "wav",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"
+
+
+def test_speak_rejects_unknown_voice():
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/speak",
+        json={
+            "text": "Hello world",
+            "voiceId": "unknown",
+            "rate": 1.0,
+            "volume": 1.0,
+            "format": "wav",
+        },
+    )
+
+    assert response.status_code == 400
