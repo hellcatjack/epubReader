@@ -20,6 +20,16 @@ bash scripts/run-qwen3-tts-service.sh
 
 The service listens on `127.0.0.1:43115`.
 
+The process binds the port immediately and reports `warming_up` from `/health`
+until the first successful synthesis loads the model.
+
+On a CPU-first machine, the first `/speak` request can take a few minutes while
+the model loads and warms up.
+
+If `sox` is missing, `qwen-tts` may print a warning during startup or first
+synthesis. The current service path still works without it, but installing
+`sox` is recommended to match the upstream runtime expectations.
+
 ## Health
 
 ```bash

@@ -1,5 +1,6 @@
-from dataclasses import dataclass
-from typing import Any, Sequence
+from dataclasses import dataclass, field
+from threading import Lock
+from typing import Any, Callable, Sequence
 
 from .config import DEFAULT_CONFIG
 from .runtime import BaseTtsRuntime, encode_wav_bytes
@@ -24,25 +25,33 @@ def infer_language(text: str) -> str:
 @dataclass
 class QwenRuntime(BaseTtsRuntime):
     model: Any | None = None
+    model_loader: Callable[[], Any] | None = None
     voice_catalog: list = None  # type: ignore[assignment]
+    _model_lock: Lock = field(default_factory=Lock, repr=False)
 
     def __post_init__(self):
         if self.voice_catalog is None:
             self.voice_catalog = VOICE_CATALOG.copy()
         self.voices = self.voice_catalog
+        self.warming_up = self.model is None
 
     @classmethod
     def from_pretrained(cls):
-        from qwen_tts import Qwen3TTSModel
+        def load_model():
+            from qwen_tts import Qwen3TTSModel
 
-        model = Qwen3TTSModel.from_pretrained(DEFAULT_CONFIG.model_id)
-        return cls(model=model, voice_catalog=VOICE_CATALOG.copy())
+            return Qwen3TTSModel.from_pretrained(DEFAULT_CONFIG.model_id)
+
+        return cls(model=None, model_loader=load_model, voice_catalog=VOICE_CATALOG.copy())
+
+    def get_status(self) -> str:
+        return "ok" if self.model is not None else "warming_up"
 
     def synthesize(self, text: str, voice_id: str, rate: float, volume: float) -> bytes:
-        if self.model is None:
-            raise RuntimeError("Qwen3-TTS model is not loaded.")
+        del rate
+        model = self._ensure_model_loaded()
 
-        wavs, sample_rate = self.model.generate_custom_voice(
+        wavs, sample_rate = model.generate_custom_voice(
             text=text,
             language=infer_language(text),
             speaker=voice_id,
@@ -50,6 +59,20 @@ class QwenRuntime(BaseTtsRuntime):
         )
         samples = _normalize_samples(wavs)
         return encode_wav_bytes(samples, sample_rate=sample_rate, volume=volume)
+
+    def _ensure_model_loaded(self):
+        if self.model is not None:
+            return self.model
+
+        if self.model_loader is None:
+            raise RuntimeError("Qwen3-TTS model loader is not configured.")
+
+        with self._model_lock:
+            if self.model is None:
+                self.model = self.model_loader()
+                self.warming_up = False
+
+        return self.model
 
 
 def _normalize_samples(wavs: Any) -> Sequence[float]:
