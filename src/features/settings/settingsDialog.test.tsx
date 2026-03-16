@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
-import { createDefaultSettings, getSettings } from "./settingsRepository";
+import { createDefaultSettings, getSettings, migrateLegacyTtsHelperUrl } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
 
 afterEach(async () => {
@@ -18,6 +18,12 @@ it("defaults to the current host for qwen tts settings", async () => {
     ttsRate: 1,
     ttsVolume: 1,
   });
+});
+
+it("migrates legacy localhost tts helper urls to the current reader host", () => {
+  expect(migrateLegacyTtsHelperUrl("http://127.0.0.1:43115", "192.168.1.31")).toBe("http://192.168.1.31:43115");
+  expect(migrateLegacyTtsHelperUrl("http://localhost:43115", "192.168.1.31")).toBe("http://192.168.1.31:43115");
+  expect(migrateLegacyTtsHelperUrl("http://192.168.1.31:43115", "192.168.1.31")).toBe("http://192.168.1.31:43115");
 });
 
 it("persists target language, theme, reading mode, typography settings, and local tts helper fields", async () => {

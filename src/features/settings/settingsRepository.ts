@@ -27,6 +27,28 @@ export function createDefaultSettings(hostname?: string): SettingsInput {
 
 export const defaultSettings: SettingsInput = createDefaultSettings();
 
+export function migrateLegacyTtsHelperUrl(ttsHelperUrl: string | undefined, hostname?: string) {
+  if (!ttsHelperUrl) {
+    return ttsHelperUrl;
+  }
+
+  try {
+    const parsedUrl = new URL(ttsHelperUrl);
+    const currentHostname = hostname?.trim();
+    const isLegacyLoopback = ["127.0.0.1", "localhost"].includes(parsedUrl.hostname);
+    const hasRemoteReaderHost =
+      !!currentHostname && !["127.0.0.1", "localhost"].includes(currentHostname) && currentHostname !== parsedUrl.hostname;
+
+    if (isLegacyLoopback && hasRemoteReaderHost) {
+      return resolveDefaultTtsHelperUrl(currentHostname);
+    }
+  } catch {
+    return ttsHelperUrl;
+  }
+
+  return ttsHelperUrl;
+}
+
 function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | null) {
   if (!record) {
     return false;
@@ -66,7 +88,15 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
     migratedSettings.ttsVoice = "Ryan";
   }
 
-  if (isLegacySettingsRecord(record) || record.targetLanguageCustomized !== migratedSettings.targetLanguageCustomized || migratedSettings.targetLanguage !== record.targetLanguage) {
+  migratedSettings.ttsHelperUrl =
+    migrateLegacyTtsHelperUrl(record.ttsHelperUrl, globalThis.location?.hostname) ?? migratedSettings.ttsHelperUrl;
+
+  if (
+    isLegacySettingsRecord(record) ||
+    record.targetLanguageCustomized !== migratedSettings.targetLanguageCustomized ||
+    migratedSettings.targetLanguage !== record.targetLanguage ||
+    migratedSettings.ttsHelperUrl !== record.ttsHelperUrl
+  ) {
     await db.settings.put({
       id: "settings",
       ...migratedSettings,
