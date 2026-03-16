@@ -8,7 +8,7 @@ export const defaultSettings: SettingsInput = {
   theme: "sepia",
   ttsHelperUrl: "http://127.0.0.1:43115",
   ttsRate: 1,
-  ttsVoice: "system-default",
+  ttsVoice: "Ryan",
   ttsVolume: 1,
   fontScale: 1,
   readingMode: "scrolled",
@@ -57,8 +57,8 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
     migratedSettings.targetLanguage = "zh-CN";
   }
 
-  if (record.ttsVoice === "disabled") {
-    migratedSettings.ttsVoice = "system-default";
+  if (record.ttsVoice === "disabled" || record.ttsVoice === "system-default") {
+    migratedSettings.ttsVoice = "Ryan";
   }
 
   if (isLegacySettingsRecord(record) || record.targetLanguageCustomized !== migratedSettings.targetLanguageCustomized || migratedSettings.targetLanguage !== record.targetLanguage) {

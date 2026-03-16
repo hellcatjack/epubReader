@@ -4,11 +4,20 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
-import { getSettings } from "./settingsRepository";
+import { getResolvedSettings, getSettings } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
 
 afterEach(async () => {
   await resetDb();
+});
+
+it("defaults to qwen localhost tts settings", async () => {
+  await expect(getResolvedSettings()).resolves.toMatchObject({
+    ttsHelperUrl: "http://127.0.0.1:43115",
+    ttsVoice: "Ryan",
+    ttsRate: 1,
+    ttsVolume: 1,
+  });
 });
 
 it("persists target language, theme, reading mode, typography settings, and local tts helper fields", async () => {
@@ -55,7 +64,7 @@ it("persists target language, theme, reading mode, typography settings, and loca
   await user.clear(ttsHelperUrl);
   await user.type(ttsHelperUrl, "http://127.0.0.1:43115");
   await user.clear(ttsVoice);
-  await user.type(ttsVoice, "Microsoft Aria");
+  await user.type(ttsVoice, "Ryan");
   await user.clear(ttsRate);
   await user.type(ttsRate, "1.15");
   await user.clear(ttsVolume);
@@ -78,7 +87,7 @@ it("persists target language, theme, reading mode, typography settings, and loca
     fontFamily: "book",
     ttsHelperUrl: "http://127.0.0.1:43115",
     ttsRate: 1.15,
-    ttsVoice: "Microsoft Aria",
+    ttsVoice: "Ryan",
     ttsVolume: 0.9,
   });
 });

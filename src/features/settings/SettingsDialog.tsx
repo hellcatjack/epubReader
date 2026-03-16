@@ -28,7 +28,7 @@ export function SettingsDialog() {
   const [ttsVolumeInput, setTtsVolumeInput] = useState(String(defaultSettings.ttsVolume));
   const [isReady, setIsReady] = useState(false);
   const [status, setStatus] = useState(
-    "Local translation is enabled. Windows local TTS is available through the configured localhost helper.",
+    "Local translation is enabled. Qwen3-TTS is available through the configured localhost service.",
   );
 
   useEffect(() => {

@@ -10,7 +10,7 @@ describe("localTtsClient", () => {
           JSON.stringify({
             status: "ok",
             version: "0.1.0",
-            backend: "windows-native",
+            backend: "qwen3-tts",
             voiceCount: 1,
           }),
           {
@@ -23,10 +23,10 @@ describe("localTtsClient", () => {
         new Response(
           JSON.stringify([
             {
-              id: "voice-1",
-              displayName: "Microsoft Aria",
+              id: "Ryan",
+              displayName: "Ryan",
               locale: "en-US",
-              gender: "female",
+              gender: "male",
               isDefault: true,
             },
           ]),
@@ -48,8 +48,8 @@ describe("localTtsClient", () => {
     await expect(client.getHealth()).resolves.toMatchObject({ status: "ok", voiceCount: 1 });
     await expect(client.getVoices()).resolves.toEqual([
       expect.objectContaining({
-        id: "voice-1",
-        displayName: "Microsoft Aria",
+        id: "Ryan",
+        displayName: "Ryan",
       }),
     ]);
     await expect(
@@ -57,7 +57,7 @@ describe("localTtsClient", () => {
         format: "wav",
         rate: 1,
         text: "Hello world",
-        voiceId: "voice-1",
+        voiceId: "Ryan",
         volume: 1,
       }),
     ).resolves.toMatchObject({
@@ -83,7 +83,7 @@ describe("localTtsClient", () => {
           format: "wav",
           rate: 1,
           text: "Hello world",
-          voiceId: "voice-1",
+          voiceId: "Ryan",
           volume: 1,
         }),
         method: "POST",

@@ -80,7 +80,7 @@ it("reads aloud the selected text through the local helper-backed speech path", 
       expect.objectContaining({
         helperUrl: "http://127.0.0.1:43115",
         rate: 1,
-        voice: "system-default",
+        voice: "Ryan",
         volume: 1,
       }),
     );

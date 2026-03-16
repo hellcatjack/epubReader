@@ -188,7 +188,7 @@ it("starts pauses resumes and stops continuous reading from the current location
     expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
       "First chunk.",
       expect.objectContaining({
-        voice: "system-default",
+        voice: "Ryan",
       }),
     );
   });
@@ -208,7 +208,7 @@ it("starts pauses resumes and stops continuous reading from the current location
     expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
       "Second chunk.",
       expect.objectContaining({
-        voice: "system-default",
+        voice: "Ryan",
       }),
     );
   });
