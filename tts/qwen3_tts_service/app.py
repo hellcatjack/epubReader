@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .config import DEFAULT_CONFIG, ServiceConfig
@@ -9,6 +10,12 @@ from .schemas import HealthResponse, SpeakRequest
 def create_app(runtime: BaseTtsRuntime | None = None, config: ServiceConfig = DEFAULT_CONFIG):
     app = FastAPI(title="Qwen3-TTS Service", version=config.version)
     service_runtime = runtime or BaseTtsRuntime()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/health", response_model=HealthResponse)
     def health():

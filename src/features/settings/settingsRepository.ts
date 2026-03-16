@@ -1,26 +1,31 @@
 import { db } from "../../lib/db/appDb";
 import type { SettingsInput, SettingsPatch } from "../../lib/types/settings";
+import { resolveDefaultTtsHelperUrl } from "../tts/localTtsClient";
 
-export const defaultSettings: SettingsInput = {
-  apiKey: "",
-  targetLanguage: "zh-CN",
-  targetLanguageCustomized: false,
-  theme: "sepia",
-  ttsHelperUrl: "http://127.0.0.1:43115",
-  ttsRate: 1,
-  ttsVoice: "Ryan",
-  ttsVolume: 1,
-  fontScale: 1,
-  readingMode: "scrolled",
-  lineHeight: 1.7,
-  letterSpacing: 0,
-  paragraphSpacing: 0.85,
-  paragraphIndent: 1.8,
-  contentPadding: 32,
-  maxLineWidth: 760,
-  columnCount: 1,
-  fontFamily: "book",
-};
+export function createDefaultSettings(hostname?: string): SettingsInput {
+  return {
+    apiKey: "",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsHelperUrl: resolveDefaultTtsHelperUrl(hostname),
+    ttsRate: 1,
+    ttsVoice: "Ryan",
+    ttsVolume: 1,
+    fontScale: 1,
+    readingMode: "scrolled",
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+  };
+}
+
+export const defaultSettings: SettingsInput = createDefaultSettings();
 
 function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | null) {
   if (!record) {

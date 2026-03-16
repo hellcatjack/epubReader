@@ -55,3 +55,18 @@ def test_speak_rejects_unknown_voice():
     )
 
     assert response.status_code == 400
+
+
+def test_speak_supports_browser_cors_requests():
+    client = TestClient(create_app())
+
+    response = client.options(
+        "/speak",
+        headers={
+            "Origin": "http://192.168.1.31:5173",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"

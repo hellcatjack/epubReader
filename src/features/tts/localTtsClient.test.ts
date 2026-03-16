@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLocalTtsClient } from "./localTtsClient";
+import { createLocalTtsClient, resolveDefaultTtsHelperUrl } from "./localTtsClient";
 
 describe("localTtsClient", () => {
   it("requests helper health, voices, and speech from the local helper", async () => {
@@ -43,7 +43,12 @@ describe("localTtsClient", () => {
         }),
       );
 
-    const client = createLocalTtsClient({ fetch: fetchMock });
+    expect(resolveDefaultTtsHelperUrl("192.168.1.31")).toBe("http://192.168.1.31:43115");
+
+    const client = createLocalTtsClient({
+      baseUrl: resolveDefaultTtsHelperUrl("192.168.1.31"),
+      fetch: fetchMock,
+    });
 
     await expect(client.getHealth()).resolves.toMatchObject({ status: "ok", voiceCount: 1 });
     await expect(client.getVoices()).resolves.toEqual([
@@ -67,17 +72,17 @@ describe("localTtsClient", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "http://127.0.0.1:43115/health",
+      "http://192.168.1.31:43115/health",
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "http://127.0.0.1:43115/voices",
+      "http://192.168.1.31:43115/voices",
       expect.objectContaining({ method: "GET" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "http://127.0.0.1:43115/speak",
+      "http://192.168.1.31:43115/speak",
       expect.objectContaining({
         body: JSON.stringify({
           format: "wav",

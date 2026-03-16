@@ -18,7 +18,11 @@ bash scripts/setup-qwen3-tts-venv.sh
 bash scripts/run-qwen3-tts-service.sh
 ```
 
-The service listens on `127.0.0.1:43115`.
+The service listens on `0.0.0.0:43115` so the reader can reach it from the
+same host IP that serves the web app, for example `http://192.168.1.31:43115`.
+
+Browser requests from the reader UI are allowed through CORS on this local
+service.
 
 The process binds the port immediately and reports `warming_up` from `/health`
 until the first successful synthesis loads the model.

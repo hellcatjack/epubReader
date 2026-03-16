@@ -4,16 +4,16 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
-import { getResolvedSettings, getSettings } from "./settingsRepository";
+import { createDefaultSettings, getSettings } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
 
 afterEach(async () => {
   await resetDb();
 });
 
-it("defaults to qwen localhost tts settings", async () => {
-  await expect(getResolvedSettings()).resolves.toMatchObject({
-    ttsHelperUrl: "http://127.0.0.1:43115",
+it("defaults to the current host for qwen tts settings", async () => {
+  expect(createDefaultSettings("192.168.1.31")).toMatchObject({
+    ttsHelperUrl: "http://192.168.1.31:43115",
     ttsVoice: "Ryan",
     ttsRate: 1,
     ttsVolume: 1,

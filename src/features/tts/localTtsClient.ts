@@ -28,7 +28,15 @@ type LocalTtsClientDeps = {
   fetch?: FetchLike;
 };
 
-const DEFAULT_TTS_HELPER_URL = "http://127.0.0.1:43115";
+const DEFAULT_TTS_HELPER_HOST = "127.0.0.1";
+const DEFAULT_TTS_HELPER_PORT = 43115;
+
+export function resolveDefaultTtsHelperUrl(hostname?: string) {
+  const trimmedHostname = hostname?.trim();
+  const resolvedHostname = trimmedHostname || globalThis.location?.hostname || DEFAULT_TTS_HELPER_HOST;
+
+  return `http://${resolvedHostname}:${DEFAULT_TTS_HELPER_PORT}`;
+}
 
 async function assertOk(response: Response) {
   if (response.ok) {
@@ -39,7 +47,7 @@ async function assertOk(response: Response) {
 }
 
 export function createLocalTtsClient({
-  baseUrl = DEFAULT_TTS_HELPER_URL,
+  baseUrl = resolveDefaultTtsHelperUrl(),
   fetch: fetchFn = fetch,
 }: LocalTtsClientDeps = {}) {
   return {

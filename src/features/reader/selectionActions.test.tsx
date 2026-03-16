@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { db, resetDb } from "../../lib/db/appDb";
 import { saveSettings } from "../settings/settingsRepository";
+import { resolveDefaultTtsHelperUrl } from "../tts/localTtsClient";
 import { ReaderPage } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
 
@@ -78,7 +79,7 @@ it("reads aloud the selected text through the local helper-backed speech path", 
     expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
       "Hello world",
       expect.objectContaining({
-        helperUrl: "http://127.0.0.1:43115",
+        helperUrl: resolveDefaultTtsHelperUrl("localhost"),
         rate: 1,
         voice: "Ryan",
         volume: 1,
