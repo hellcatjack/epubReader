@@ -50,6 +50,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
   const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
+  const [ttsStartReady, setTtsStartReady] = useState(false);
   const [ttsState, setTtsState] = useState<ReaderTtsState>({
     currentText: "",
     error: "",
@@ -61,6 +62,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
   const lastAutoTranslatedSelectionKeyRef = useRef("");
   const activeSelectionSpeechRequestRef = useRef(0);
   const continuousSpineItemIdRef = useRef("");
+  const ttsReadinessRequestRef = useRef(0);
   const settingsRef = useRef(settings);
   const aiRef = useRef(ai);
   const ttsPlayerRef = useRef<AudioPlayer | null>(ttsPlayer ?? null);
@@ -158,6 +160,34 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
 
     void runtimeHandle.applyPreferences(toReaderPreferences(settings));
   }, [runtimeHandle, settings]);
+
+  useEffect(() => {
+    const requestId = ++ttsReadinessRequestRef.current;
+
+    if (!runtimeHandle) {
+      setTtsStartReady(false);
+      return;
+    }
+
+    setTtsStartReady(false);
+
+    void runtimeHandle
+      .getTextFromCurrentLocation()
+      .then((text) => {
+        if (ttsReadinessRequestRef.current !== requestId) {
+          return;
+        }
+
+        setTtsStartReady(chunkText(text).length > 0);
+      })
+      .catch(() => {
+        if (ttsReadinessRequestRef.current !== requestId) {
+          return;
+        }
+
+        setTtsStartReady(false);
+      });
+  }, [currentLocation.cfi, currentLocation.spineItemId, runtimeHandle]);
 
   useEffect(() => {
     const unsubscribe = selectionBridge.subscribe((selection) => {
@@ -477,13 +507,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
   }
 
   async function handleStartTts() {
-    if (!runtimeHandle) {
-      setTtsState({
-        currentText: "",
-        error: "No active reading surface is available for TTS.",
-        mode: "idle",
-        status: "error",
-      });
+    if (!runtimeHandle || !ttsStartReady) {
       return;
     }
 
@@ -648,6 +672,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
         selectedText={selectedText}
         ttsCurrentText={ttsState.currentText}
         ttsError={ttsState.error}
+        ttsStartDisabled={!ttsStartReady}
         ttsStatus={ttsState.status}
       />
     </main>

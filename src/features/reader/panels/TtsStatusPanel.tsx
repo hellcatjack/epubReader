@@ -5,6 +5,7 @@ type TtsStatusPanelProps = {
   onResume?: () => void;
   onStart?: () => void;
   onStop?: () => void;
+  startDisabled?: boolean;
   status?: "idle" | "loading" | "playing" | "paused" | "error";
 };
 
@@ -15,6 +16,7 @@ export function TtsStatusPanel({
   onResume,
   onStart,
   onStop,
+  startDisabled = false,
   status = "idle",
 }: TtsStatusPanelProps) {
   return (
@@ -24,7 +26,7 @@ export function TtsStatusPanel({
       {currentText ? <p>Current: {currentText}</p> : <p>Ready to read the current selection or chapter.</p>}
       {error ? <p>{error}</p> : null}
       <div className="reader-tts-actions" role="group" aria-label="TTS controls">
-        <button type="button" onClick={onStart}>
+        <button type="button" onClick={onStart} disabled={startDisabled}>
           Start TTS
         </button>
         <button type="button" onClick={onPause}>

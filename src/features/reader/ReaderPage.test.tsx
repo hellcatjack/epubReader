@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { vi } from "vitest";
+import type { RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
 
 it("shows toc, reading progress, bookmark toggle, and the reader tools surface", () => {
@@ -182,6 +183,10 @@ it("starts pauses resumes and stops continuous reading from the current location
     </MemoryRouter>,
   );
 
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
   await user.click(screen.getByRole("button", { name: /start tts/i }));
 
   await waitFor(() => {
@@ -216,4 +221,87 @@ it("starts pauses resumes and stops continuous reading from the current location
   await user.click(screen.getByRole("button", { name: /stop tts/i }));
   expect(stop).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/idle/i)).toBeInTheDocument();
+});
+
+it("keeps start tts disabled until the reading surface is ready", async () => {
+  let resolveRender: ((value: RuntimeRenderHandle) => void) | undefined;
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(
+                  () =>
+                    new Promise<RuntimeRenderHandle>((resolve) => {
+                      resolveRender = resolve;
+                    }),
+                ),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
+
+  if (!resolveRender) {
+    throw new Error("render was not captured");
+  }
+
+  resolveRender({
+    applyPreferences: async () => undefined,
+    destroy: () => undefined,
+    getTextFromCurrentLocation: async () => "Ready text",
+    goTo: async () => undefined,
+    next: async () => undefined,
+    prev: async () => undefined,
+    setFlow: async () => undefined,
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+});
+
+it("keeps start tts disabled when the current location has no readable text yet", async () => {
+  const renderRuntime = vi.fn(async (): Promise<RuntimeRenderHandle> => ({
+    applyPreferences: vi.fn(async () => undefined),
+    destroy: () => undefined,
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: renderRuntime,
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(renderRuntime).toHaveBeenCalled();
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
 });

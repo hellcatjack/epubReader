@@ -20,6 +20,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onTtsStart?: () => void;
   onTtsStop?: () => void;
   selectedText?: string;
+  ttsStartDisabled?: boolean;
   ttsCurrentText?: string;
   ttsError?: string;
   ttsStatus?: "idle" | "loading" | "playing" | "paused" | "error";
@@ -40,6 +41,7 @@ export function RightPanel({
   onTtsStart,
   onTtsStop,
   selectedText,
+  ttsStartDisabled,
   ttsCurrentText,
   ttsError,
   ttsStatus,
@@ -63,6 +65,7 @@ export function RightPanel({
         onResume={onTtsResume}
         onStart={onTtsStart}
         onStop={onTtsStop}
+        startDisabled={ttsStartDisabled}
         status={ttsStatus}
       />
       <p className="reader-tools-hint">Bookmarks, highlights, and notes are stored only in this browser.</p>
