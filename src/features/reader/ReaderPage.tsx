@@ -7,6 +7,11 @@ import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
 import { getProgress, saveProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
+import {
+  readRefreshSettingsSnapshot,
+  resolvePreferredSettingsSnapshot,
+  writeRefreshSettingsSnapshot,
+} from "../settings/refreshSettingsSnapshot";
 import { createBrowserTtsClient } from "../tts/browserTtsClient";
 import { chunkTextSegments, chunkTextSegmentsFromBlocks, type ChunkSegment } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
@@ -22,7 +27,7 @@ import { LeftRail } from "./LeftRail";
 import { RightPanel } from "./RightPanel";
 import { SelectionPopover } from "./SelectionPopover";
 import { TopBar } from "./TopBar";
-import { toReaderPreferences, type ReaderPreferences } from "./readerPreferences";
+import { getEffectiveReaderPreferences, toReaderPreferences, type ReaderPreferences } from "./readerPreferences";
 import { selectionBridge, type ReaderSelection } from "./selectionBridge";
 
 type ReaderPageProps = {
@@ -149,6 +154,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
+  const [isSettingsReady, setIsSettingsReady] = useState(false);
   const [ttsStartReady, setTtsStartReady] = useState(false);
   const [ttsState, setTtsState] = useState<ReaderTtsState>({
     chunkIndex: -1,
@@ -256,11 +262,33 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   }, [bookId]);
 
   useEffect(() => {
-    void getResolvedSettings().then((nextSettings) => {
-      if (!settingsDirtyRef.current) {
-        setSettings({ ...defaultSettings, ...nextSettings });
-      }
-    });
+    let cancelled = false;
+    const refreshSnapshot = readRefreshSettingsSnapshot();
+
+    if (refreshSnapshot && !settingsDirtyRef.current) {
+      setSettings(refreshSnapshot.settings);
+      setIsSettingsReady(true);
+    }
+
+    void getResolvedSettings()
+      .then((nextSettings) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (!settingsDirtyRef.current) {
+          setSettings(resolvePreferredSettingsSnapshot(refreshSnapshot, { ...defaultSettings, ...nextSettings }));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsSettingsReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -289,14 +317,6 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     window.addEventListener("keydown", handleKeydown);
     return () => window.removeEventListener("keydown", handleKeydown);
   }, [runtimeHandle, settings.readingMode]);
-
-  useEffect(() => {
-    if (!runtimeHandle || typeof runtimeHandle.applyPreferences !== "function") {
-      return;
-    }
-
-    void runtimeHandle.applyPreferences(toReaderPreferences(settings));
-  }, [runtimeHandle, settings]);
 
   useEffect(() => {
     const requestId = ++ttsReadinessRequestRef.current;
@@ -515,6 +535,19 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       window.removeEventListener("beforeunload", flushReadingProgress);
     };
   }, [bookId, currentLocation, runtimeHandle]);
+
+  useEffect(() => {
+    function flushReaderSettings() {
+      writeRefreshSettingsSnapshot(settings);
+    }
+
+    window.addEventListener("pagehide", flushReaderSettings);
+    window.addEventListener("beforeunload", flushReaderSettings);
+    return () => {
+      window.removeEventListener("pagehide", flushReaderSettings);
+      window.removeEventListener("beforeunload", flushReaderSettings);
+    };
+  }, [settings]);
 
   useEffect(() => {
     if (
@@ -789,6 +822,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     const nextSettings = { ...settings, ...patch };
     settingsDirtyRef.current = true;
     setSettings(nextSettings);
+    writeRefreshSettingsSnapshot(nextSettings);
     await saveSettings(patch);
   }
 
@@ -958,11 +992,20 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           text: ttsState.markerText,
         }
       : null;
+  const readerPreferences = getEffectiveReaderPreferences(toReaderPreferences(settings));
   const readerStyle: CSSProperties & Record<"--reader-font-scale", string> = {
     "--reader-font-scale": String(settings.fontScale),
   };
-  const shouldRenderViewport = Boolean(bookId) && isProgressReady;
+  const shouldRenderViewport = Boolean(bookId) && isProgressReady && isSettingsReady;
   const nextInitialCfi = locationTarget ?? initialCfi;
+
+  useEffect(() => {
+    if (!runtimeHandle || typeof runtimeHandle.applyPreferences !== "function") {
+      return;
+    }
+
+    void runtimeHandle.applyPreferences(readerPreferences);
+  }, [readerPreferences, runtimeHandle]);
 
   return (
     <main className={`reader-layout theme-${settings.theme}`} style={readerStyle}>
@@ -1034,7 +1077,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
             aiResult={aiResult}
             aiTitle={aiTitle}
             annotationCount={visibleAnnotations.length}
-            appearance={toReaderPreferences(settings)}
+            appearance={readerPreferences}
             aria-label="Reader tools"
             noteDraft={noteDraft}
             noteOpen={noteOpen}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReaderTheme, toEpubFlow } from "./readerPreferences";
+import { buildReaderTheme, getEffectiveReaderPreferences, toEpubFlow } from "./readerPreferences";
 
 describe("readerPreferences", () => {
   it("maps reader modes to epub rendition flow values", () => {
@@ -24,7 +24,7 @@ describe("readerPreferences", () => {
       }),
     ).toMatchObject({
       body: {
-        "column-count": "2",
+        "column-count": "1",
         "column-gap": "40px",
         "font-family": '"Iowan Old Style", Georgia, serif',
         "font-size": "115%",
@@ -50,5 +50,23 @@ describe("readerPreferences", () => {
         "transition": "none",
       },
     });
+  });
+
+  it("forces a single rendered column in paginated mode", () => {
+    expect(
+      getEffectiveReaderPreferences({
+        columnCount: 2,
+        contentPadding: 40,
+        fontFamily: "book",
+        fontScale: 1.15,
+        letterSpacing: 0.03,
+        lineHeight: 1.9,
+        maxLineWidth: 780,
+        paragraphIndent: 2,
+        paragraphSpacing: 1.1,
+        readingMode: "paginated",
+        theme: "sepia",
+      }).columnCount,
+    ).toBe(1);
   });
 });

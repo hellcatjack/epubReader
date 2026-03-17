@@ -92,3 +92,28 @@ test("paginated mode restores the same page slice after refresh", async ({ page 
   expect(after.scrollLeft).toBe(before.scrollLeft);
   expect(after.text).toBe(before.text);
 });
+
+test("paginated mode always renders as a single page column even after refresh", async ({ page }) => {
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  await page.getByLabel("Column count").selectOption("2");
+  await page.waitForTimeout(400);
+
+  const before = await page.locator(".epub-root iframe").evaluate((node) =>
+    node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).columnCount : "",
+  );
+
+  await page.reload({ waitUntil: "networkidle" });
+
+  const after = await page.locator(".epub-root iframe").evaluate((node) =>
+    node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).columnCount : "",
+  );
+
+  expect(before).toBe("1");
+  expect(after).toBe("1");
+});

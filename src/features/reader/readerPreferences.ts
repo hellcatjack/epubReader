@@ -29,6 +29,17 @@ export const defaultReaderPreferences: ReaderPreferences = {
   theme: "sepia",
 };
 
+export function getEffectiveReaderPreferences(preferences: ReaderPreferences): ReaderPreferences {
+  if (preferences.readingMode !== "paginated") {
+    return preferences;
+  }
+
+  return {
+    ...preferences,
+    columnCount: 1,
+  };
+}
+
 export function resolveReaderFontFamily(fontFamily: ReaderPreferences["fontFamily"]) {
   if (fontFamily === "sans") {
     return '"Atkinson Hyperlegible", "Segoe UI", sans-serif';
@@ -42,8 +53,9 @@ export function resolveReaderFontFamily(fontFamily: ReaderPreferences["fontFamil
 }
 
 export function buildReaderTheme(preferences: ReaderPreferences) {
-  const columnGap = Math.max(preferences.contentPadding, 32);
-  const fontSize = `${Math.round(preferences.fontScale * 100)}%`;
+  const effectivePreferences = getEffectiveReaderPreferences(preferences);
+  const columnGap = Math.max(effectivePreferences.contentPadding, 32);
+  const fontSize = `${Math.round(effectivePreferences.fontScale * 100)}%`;
 
   return {
     html: {
@@ -51,20 +63,20 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
     },
     body: {
       "box-sizing": "border-box",
-      "column-count": String(preferences.columnCount),
+      "column-count": String(effectivePreferences.columnCount),
       "column-gap": `${columnGap}px`,
-      "font-family": resolveReaderFontFamily(preferences.fontFamily),
+      "font-family": resolveReaderFontFamily(effectivePreferences.fontFamily),
       "font-size": fontSize,
-      "letter-spacing": `${preferences.letterSpacing}em`,
-      "line-height": String(preferences.lineHeight),
+      "letter-spacing": `${effectivePreferences.letterSpacing}em`,
+      "line-height": String(effectivePreferences.lineHeight),
       "margin": "0 auto",
-      "max-width": `${preferences.maxLineWidth}px`,
-      "padding": `${preferences.contentPadding}px`,
+      "max-width": `${effectivePreferences.maxLineWidth}px`,
+      "padding": `${effectivePreferences.contentPadding}px`,
     },
     p: {
-      "margin-bottom": `${preferences.paragraphSpacing}em`,
+      "margin-bottom": `${effectivePreferences.paragraphSpacing}em`,
       "margin-top": "0",
-      "text-indent": `${preferences.paragraphIndent}em`,
+      "text-indent": `${effectivePreferences.paragraphIndent}em`,
     },
     "p:first-child": {
       "text-indent": "0",

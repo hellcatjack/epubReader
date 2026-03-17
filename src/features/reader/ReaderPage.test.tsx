@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { db, resetDb } from "../../lib/db/appDb";
 import { getSettings } from "../settings/settingsRepository";
+import { writeRefreshSettingsSnapshot } from "../settings/refreshSettingsSnapshot";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
 
@@ -122,6 +123,88 @@ it("waits for persisted reader settings before mounting the viewport runtime", a
     columnCount: 1,
     fontFamily: "book",
     apiKey: "",
+  });
+  const renderSpy = vi.fn(async () => ({
+    applyPreferences: vi.fn(async () => undefined),
+    destroy() {
+      return undefined;
+    },
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route path="/books/:bookId" element={<ReaderPage runtime={{ render: renderSpy }} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookId: "book-1",
+        flow: "paginated",
+      }),
+    );
+  });
+});
+
+it("prefers same-tab refresh settings when restoring paginated mode after reload", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  await db.settings.put({
+    id: "settings",
+    readingMode: "scrolled",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    maxLineWidth: 760,
+    columnCount: 2,
+    fontFamily: "book",
+    apiKey: "",
+  });
+  writeRefreshSettingsSnapshot({
+    apiKey: "",
+    columnCount: 2,
+    contentPadding: 32,
+    fontFamily: "book",
+    fontScale: 1,
+    letterSpacing: 0,
+    lineHeight: 1.7,
+    maxLineWidth: 760,
+    paragraphIndent: 1.8,
+    paragraphSpacing: 0.85,
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
   });
   const renderSpy = vi.fn(async () => ({
     applyPreferences: vi.fn(async () => undefined),
