@@ -151,6 +151,16 @@ it("waits for persisted reader settings before mounting the viewport runtime", a
       expect.objectContaining({
         bookId: "book-1",
         flow: "paginated",
+        initialPreferences: expect.objectContaining({
+          columnCount: 1,
+          contentPadding: 32,
+          fontFamily: "book",
+          fontScale: 1,
+          lineHeight: 1.7,
+          maxLineWidth: 760,
+          readingMode: "paginated",
+          theme: "sepia",
+        }),
       }),
     );
   });
@@ -233,6 +243,11 @@ it("prefers same-tab refresh settings when restoring paginated mode after reload
       expect.objectContaining({
         bookId: "book-1",
         flow: "paginated",
+        initialPreferences: expect.objectContaining({
+          columnCount: 1,
+          readingMode: "paginated",
+          theme: "sepia",
+        }),
       }),
     );
   });
@@ -326,7 +341,7 @@ it("waits for saved progress before opening the reader and restores the saved cf
       expect(renderSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           bookId: "book-1",
-          initialCfi: "epubcfi(/6/2!/4/1:24)",
+          initialCfi: "chap-1",
           initialPageIndex: 2,
           initialPageOffset: 1412,
         }),
@@ -414,7 +429,7 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
       expect(renderSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           bookId: "book-1",
-          initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
+          initialCfi: "chapter-one.xhtml",
           initialPageIndex: 2,
           initialPageOffset: 1732,
         }),
@@ -502,7 +517,7 @@ it("always prefers the same-tab refresh snapshot over persisted progress during 
       expect(renderSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           bookId: "book-1",
-          initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
+          initialCfi: "chapter-one.xhtml",
           initialPageIndex: 2,
           initialPageOffset: 1732,
         }),
@@ -690,6 +705,117 @@ it("flushes the latest runtime location on pagehide even when reader state is st
       expect.objectContaining({
         cfi: "epubcfi(/6/14!/4/2/8:24)",
         pageOffset: 1412,
+        progress: 0.63,
+        spineItemId: "chapter-four.xhtml",
+        textQuote: "The thing was, she was so darn comfortable.",
+      }),
+    );
+  });
+});
+
+it("writes the synchronous paginated viewport snapshot to sessionStorage on pagehide before async runtime recovery completes", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  let resolveLocationChange:
+    | ((value: {
+        cfi: string;
+        pageIndex?: number;
+        pageOffset?: number;
+        progress: number;
+        spineItemId: string;
+        textQuote: string;
+      }) => void)
+    | undefined;
+  const getCurrentLocation = vi.fn(
+    () =>
+      new Promise<{
+        cfi: string;
+        pageIndex?: number;
+        pageOffset?: number;
+        progress: number;
+        spineItemId: string;
+        textQuote: string;
+      } | null>(() => undefined),
+  );
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  resolveLocationChange = onRelocated;
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation,
+                    getTextFromCurrentLocation: vi.fn(async () => "Reader text."),
+                    getViewportLocationSnapshot: vi.fn(() => ({
+                      pageIndex: 2,
+                      pageOffset: 1732,
+                    })),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(resolveLocationChange).toBeTypeOf("function");
+  });
+
+  await act(async () => {
+    resolveLocationChange?.({
+      cfi: "epubcfi(/6/14!/4/2/8:24)",
+      pageIndex: 1,
+      pageOffset: 913,
+      progress: 0.63,
+      spineItemId: "chapter-four.xhtml",
+      textQuote: "The thing was, she was so darn comfortable.",
+    });
+  });
+
+  await waitFor(() => {
+    expect(JSON.parse(sessionStorage.getItem("reader-refresh-progress:book-1") ?? "null")).toEqual(
+      expect.objectContaining({
+        pageIndex: 1,
+        pageOffset: 913,
+      }),
+    );
+  });
+
+  window.dispatchEvent(new Event("pagehide"));
+
+  await waitFor(() => {
+    expect(JSON.parse(sessionStorage.getItem("reader-refresh-progress:book-1") ?? "null")).toEqual(
+      expect.objectContaining({
+        cfi: "epubcfi(/6/14!/4/2/8:24)",
+        pageIndex: 2,
+        pageOffset: 1732,
         progress: 0.63,
         spineItemId: "chapter-four.xhtml",
         textQuote: "The thing was, she was so darn comfortable.",

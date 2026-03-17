@@ -11,6 +11,7 @@ export type RuntimeRenderArgs = {
   initialCfi?: string;
   initialPageIndex?: number;
   initialPageOffset?: number;
+  initialPreferences?: Partial<ReaderPreferences>;
   onRelocated?: (location: { cfi: string; pageIndex?: number; pageOffset?: number; progress: number; spineItemId: string; textQuote: string }) => void;
   onSelectionChange?: (selection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string }) => void;
   onTocChange?: (toc: TocItem[]) => void;
@@ -27,6 +28,7 @@ export type RuntimeRenderHandle = {
   destroy(): void;
   findCfiFromTextQuote(textQuote: string): Promise<string | null>;
   getCurrentLocation?(): Promise<{ cfi: string; pageIndex?: number; pageOffset?: number; progress: number; spineItemId: string; textQuote: string } | null>;
+  getViewportLocationSnapshot?(): { pageIndex?: number; pageOffset?: number };
   getTextFromCurrentLocation(): Promise<string>;
   getTtsBlocksFromCurrentLocation?(): Promise<Array<{ cfi?: string; spineItemId: string; text: string }>>;
   goTo(target: string): Promise<void>;
@@ -130,6 +132,30 @@ export function restorePaginatedPagePosition(
   }
 }
 
+async function waitForLayoutFrame() {
+  await new Promise<void>((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+
+    setTimeout(resolve, 0);
+  });
+}
+
+async function waitForPaginatedContainerReady(root: ParentNode, maxFrames = 8) {
+  for (let attempt = 0; attempt < maxFrames; attempt += 1) {
+    const container = getPaginatedContainer(root);
+    if (container && container.clientWidth > 0) {
+      return container;
+    }
+
+    await waitForLayoutFrame();
+  }
+
+  return getPaginatedContainer(root);
+}
+
 export function shouldAutoScrollTtsSegment(
   readingMode: ReadingMode,
   rect: Pick<DOMRect, "top" | "bottom">,
@@ -189,6 +215,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     initialCfi,
     initialPageIndex,
     initialPageOffset,
+    initialPreferences,
     onRelocated,
     onSelectionChange,
     onTocChange,
@@ -207,8 +234,22 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     let currentSpineItemId = "";
     let activePreferences: ReaderPreferences = {
       ...defaultReaderPreferences,
+      ...initialPreferences,
       readingMode: flow,
     };
+    let preferredPaginatedRestore:
+      | {
+          cfi: string;
+          pageIndex?: number;
+          pageOffset?: number;
+        }
+      | null = flow === "paginated" && initialCfi
+      ? {
+          cfi: initialCfi,
+          pageIndex: initialPageIndex,
+          pageOffset: initialPageOffset,
+        }
+      : null;
     let activeTtsSegment: ActiveTtsSegment | null = null;
     let activeTtsElement: HTMLElement | null = null;
     let pointerSelecting = false;
@@ -312,6 +353,21 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
     const toStoredLocation = async (location: Location) => {
       const cfi = location.start.cfi;
+      const progress = location.start.percentage ?? 0;
+      const spineItemId = location.start.href;
+      const textQuote = await getLocationTextQuote(cfi);
+
+      return {
+        cfi,
+        pageIndex: readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element)),
+        pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
+        progress,
+        spineItemId,
+        textQuote,
+      };
+    };
+
+    const toPreferredStoredLocation = async (location: Location, cfi: string) => {
       const progress = location.start.percentage ?? 0;
       const spineItemId = location.start.href;
       const textQuote = await getLocationTextQuote(cfi);
@@ -446,10 +502,24 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     };
 
     const handleRelocated = async (location: Location) => {
-      const storedLocation = await toStoredLocation(location);
+      const preferredRestore =
+        activePreferences.readingMode === "paginated" ? preferredPaginatedRestore : null;
+      if (preferredRestore) {
+        await settlePaginatedPosition(
+          activePreferences.readingMode,
+          preferredRestore.pageOffset,
+          preferredRestore.pageIndex,
+        );
+      }
+      const storedLocation = preferredRestore
+        ? await toPreferredStoredLocation(location, preferredRestore.cfi)
+        : await toStoredLocation(location);
       currentTarget = storedLocation.cfi;
       currentSpineItemId = storedLocation.spineItemId;
       onRelocated?.(storedLocation);
+      if (preferredRestore) {
+        preferredPaginatedRestore = null;
+      }
     };
 
     const getDisplayedLocation = async () => {
@@ -484,6 +554,29 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       await handleRelocated(displayedLocation);
     };
 
+    const settlePaginatedPosition = async (
+      readingMode: ReadingMode,
+      pageOffset?: number,
+      pageIndex?: number,
+    ) => {
+      const initialContainer = await waitForPaginatedContainerReady(element);
+      restorePaginatedPagePosition(readingMode, initialContainer, pageOffset, pageIndex);
+      await waitForLayoutFrame();
+      const settledContainer = await waitForPaginatedContainerReady(element);
+      restorePaginatedPagePosition(readingMode, settledContainer, pageOffset, pageIndex);
+    };
+
+    const settleDisplayedPaginatedLocation = async (readingMode: ReadingMode) => {
+      if (readingMode !== "paginated") {
+        return;
+      }
+
+      const container = await waitForPaginatedContainerReady(element);
+      const displayedPageIndex = readPaginatedPageIndex(readingMode, container);
+      const displayedPageOffset = readPaginatedPageOffset(readingMode, container);
+      restorePaginatedPagePosition(readingMode, container, displayedPageOffset, displayedPageIndex);
+    };
+
     const handleRendered = (_section: unknown, contents: Contents) => {
       currentContents = contents;
       attachSelectionLifecycle(contents);
@@ -499,16 +592,20 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     onTocChange?.(flattenTocItems(navigation.toc));
     await rendition.display(initialCfi);
     syncCurrentContents();
-    restorePaginatedPagePosition(flow, getPaginatedContainer(element), initialPageOffset, initialPageIndex);
+    await settlePaginatedPosition(flow, initialPageOffset, initialPageIndex);
     await syncDisplayedLocation();
 
     return {
       async applyPreferences(preferences) {
+        const preservedPageIndex = readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element));
+        const preservedPageOffset = readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element));
         activePreferences = {
           ...activePreferences,
           ...preferences,
         };
         rendition.themes.default(buildReaderTheme(activePreferences));
+        await settlePaginatedPosition(activePreferences.readingMode, preservedPageOffset, preservedPageIndex);
+        await syncDisplayedLocation();
       },
       destroy() {
         clearActiveTtsSegment();
@@ -550,6 +647,14 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       async getCurrentLocation() {
         const displayedLocation = await getDisplayedLocation();
         if (displayedLocation) {
+          if (activePreferences.readingMode === "paginated" && preferredPaginatedRestore) {
+            return toPreferredStoredLocation(displayedLocation, preferredPaginatedRestore.cfi);
+          }
+
+          if (activePreferences.readingMode === "paginated" && currentTarget) {
+            return toPreferredStoredLocation(displayedLocation, currentTarget);
+          }
+
           return toStoredLocation(displayedLocation);
         }
 
@@ -564,6 +669,12 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           progress: 0,
           spineItemId: currentSpineItemId,
           textQuote: await getLocationTextQuote(currentTarget),
+        };
+      },
+      getViewportLocationSnapshot() {
+        return {
+          pageIndex: readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element)),
+          pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
         };
       },
       async getTextFromCurrentLocation() {
@@ -591,32 +702,52 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       getTtsBlocksFromCurrentLocation,
       async goTo(target) {
         currentTarget = target;
+        preferredPaginatedRestore =
+          activePreferences.readingMode === "paginated"
+            ? {
+                cfi: target,
+              }
+            : null;
         await rendition.display(target);
         syncCurrentContents();
+        await settleDisplayedPaginatedLocation(activePreferences.readingMode);
         await syncDisplayedLocation();
       },
       async next() {
         await rendition.next();
         syncCurrentContents();
+        await settleDisplayedPaginatedLocation(activePreferences.readingMode);
         await syncDisplayedLocation();
       },
       async prev() {
         await rendition.prev();
         syncCurrentContents();
+        await settleDisplayedPaginatedLocation(activePreferences.readingMode);
         await syncDisplayedLocation();
       },
       async setActiveTtsSegment(segment) {
         await applyActiveTtsSegment(segment);
       },
       async setFlow(nextFlow) {
+        const preservedPageIndex = readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element));
+        const preservedPageOffset = readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element));
         activePreferences = {
           ...activePreferences,
           readingMode: nextFlow,
         };
+        preferredPaginatedRestore =
+          nextFlow === "paginated" && currentTarget
+            ? {
+                cfi: currentTarget,
+                pageIndex: preservedPageIndex,
+                pageOffset: preservedPageOffset,
+              }
+            : null;
         rendition.flow(toEpubFlow(nextFlow));
         rendition.spread(nextFlow === "paginated" ? "none" : "auto");
         await rendition.display(currentTarget || undefined);
         syncCurrentContents();
+        await settlePaginatedPosition(nextFlow, preservedPageOffset, preservedPageIndex);
         await syncDisplayedLocation();
       },
     };

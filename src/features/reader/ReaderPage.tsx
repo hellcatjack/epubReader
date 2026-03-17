@@ -508,13 +508,21 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         return;
       }
 
-      if (currentLocation.cfi) {
-        writeRefreshProgressSnapshot(bookId, currentLocation);
+      const viewportSnapshot = runtimeHandle?.getViewportLocationSnapshot?.();
+      const immediateLocation = currentLocation.cfi
+        ? {
+            ...currentLocation,
+            ...viewportSnapshot,
+          }
+        : null;
+
+      if (immediateLocation?.cfi) {
+        writeRefreshProgressSnapshot(bookId, immediateLocation);
       }
 
       void (async () => {
         const runtimeLocation = await runtimeHandle?.getCurrentLocation?.();
-        const nextLocation = runtimeLocation ?? (currentLocation.cfi ? currentLocation : null);
+        const nextLocation = runtimeLocation ?? immediateLocation;
         if (!nextLocation?.cfi) {
           return;
         }
@@ -1051,6 +1059,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
                 onReady={setRuntimeHandle}
                 onStatusChange={setReaderStatus}
                 onTocChange={setToc}
+                readerPreferences={readerPreferences}
                 readingMode={settings.readingMode}
                 runtime={runtime}
                 visibleAnnotations={visibleAnnotations}

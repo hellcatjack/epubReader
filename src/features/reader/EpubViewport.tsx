@@ -12,6 +12,7 @@ import {
   type RuntimeRenderHandle,
 } from "./epubRuntime";
 import type { ReaderController } from "./readerController";
+import type { ReaderPreferences } from "./readerPreferences";
 import { selectionBridge } from "./selectionBridge";
 
 type EpubViewportProps = {
@@ -31,6 +32,7 @@ type EpubViewportProps = {
   onReady?: (handle: RuntimeRenderHandle | null) => void;
   onStatusChange?: (status: string) => void;
   onTocChange?: (toc: TocItem[]) => void;
+  readerPreferences?: ReaderPreferences;
   readingMode?: ReadingMode;
   visibleAnnotations?: AnnotationRecord[];
   runtime?: EpubViewportRuntime;
@@ -46,6 +48,7 @@ export function EpubViewport({
   onReady,
   onStatusChange,
   onTocChange,
+  readerPreferences,
   readingMode = "scrolled",
   runtime = epubViewportRuntime,
   visibleAnnotations = [],
@@ -84,14 +87,30 @@ export function EpubViewport({
       let handle: RuntimeRenderHandle | null = null;
 
       async function openPersistedBook(nextCfi?: string) {
+        const shouldRestorePaginatedFromChapter = readingMode === "paginated" && Boolean(initialProgress?.spineItemId);
+        const openTarget =
+          shouldRestorePaginatedFromChapter && initialProgress?.spineItemId
+            ? initialProgress.spineItemId
+            : nextCfi;
         handle?.destroy();
         handle = await runtime.render({
           bookId: activeBookId,
           element: activeHost,
           flow: readingMode,
-          initialCfi: nextCfi,
-          initialPageIndex: initialProgress && nextCfi === initialProgress.cfi ? initialProgress.pageIndex : undefined,
-          initialPageOffset: initialProgress && nextCfi === initialProgress.cfi ? initialProgress.pageOffset : undefined,
+          initialCfi: openTarget,
+          initialPageIndex:
+            initialProgress &&
+            ((shouldRestorePaginatedFromChapter && openTarget === initialProgress.spineItemId) ||
+              nextCfi === initialProgress.cfi)
+              ? initialProgress.pageIndex
+              : undefined,
+          initialPageOffset:
+            initialProgress &&
+            ((shouldRestorePaginatedFromChapter && openTarget === initialProgress.spineItemId) ||
+              nextCfi === initialProgress.cfi)
+              ? initialProgress.pageOffset
+              : undefined,
+          initialPreferences: readerPreferences,
           onRelocated: ({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote }) => {
             void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
             onLocationChange?.({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
