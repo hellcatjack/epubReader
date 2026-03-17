@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findTtsBlockElementByText, getNearestTtsBlockElement } from "./epubRuntime";
+import { findTtsBlockElementByText, getNearestTtsBlockElement, shouldAutoScrollTtsSegment } from "./epubRuntime";
 
 describe("epubRuntime tts targeting helpers", () => {
   it("prefers paragraph blocks over chapter headings or wrapper containers", () => {
@@ -31,5 +31,23 @@ describe("epubRuntime tts targeting helpers", () => {
 
     expect(match?.tagName).toBe("P");
     expect(match?.textContent).toContain("The thing was");
+  });
+
+  it("never auto-scrolls active tts markers inside paginated renditions", () => {
+    expect(
+      shouldAutoScrollTtsSegment("paginated", {
+        bottom: 980,
+        top: 40,
+      } as DOMRect, 900),
+    ).toBe(false);
+  });
+
+  it("auto-scrolls active tts markers in scrolled mode when they leave the viewport band", () => {
+    expect(
+      shouldAutoScrollTtsSegment("scrolled", {
+        bottom: 980,
+        top: 40,
+      } as DOMRect, 900),
+    ).toBe(true);
   });
 });

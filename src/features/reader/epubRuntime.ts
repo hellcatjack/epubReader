@@ -70,6 +70,20 @@ function normalizeSegmentText(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
 
+export function shouldAutoScrollTtsSegment(
+  readingMode: ReadingMode,
+  rect: Pick<DOMRect, "top" | "bottom">,
+  viewportHeight: number,
+) {
+  if (readingMode === "paginated" || viewportHeight <= 0) {
+    return false;
+  }
+
+  const topThreshold = viewportHeight * 0.18;
+  const bottomThreshold = viewportHeight * 0.82;
+  return rect.top < topThreshold || rect.bottom > bottomThreshold;
+}
+
 export function getNearestTtsBlockElement(node: Node | null) {
   if (!node) {
     return null;
@@ -188,9 +202,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       const view = currentContents.window;
       const rect = nextElement.getBoundingClientRect();
       const viewportHeight = view.innerHeight || nextElement.ownerDocument.documentElement.clientHeight || 0;
-      const topThreshold = viewportHeight * 0.18;
-      const bottomThreshold = viewportHeight * 0.82;
-      const needsScroll = rect.top < topThreshold || rect.bottom > bottomThreshold;
+      const needsScroll = shouldAutoScrollTtsSegment(activePreferences.readingMode, rect, viewportHeight);
 
       if (needsScroll) {
         nextElement.scrollIntoView?.({

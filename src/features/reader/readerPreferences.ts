@@ -71,7 +71,7 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
     },
     ".reader-tts-active-segment": {
       "background":
-        "linear-gradient(90deg, transparent 0, transparent 0.65rem, rgba(186, 106, 47, 0.72) 0.65rem, rgba(186, 106, 47, 0.72) 0.87rem, transparent 0.87rem, transparent 100%)",
+        "linear-gradient(90deg, transparent 0, transparent 1.1rem, rgba(186, 106, 47, 0.16) 1.1rem, rgba(186, 106, 47, 0.16) calc(100% - 1.1rem), transparent calc(100% - 1.1rem), transparent 100%)",
       "background-repeat": "no-repeat",
       "border-radius": "0.45rem",
       "box-shadow": "none",
