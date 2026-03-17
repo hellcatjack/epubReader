@@ -10,8 +10,10 @@ describe("localTtsClient", () => {
           JSON.stringify({
             status: "ok",
             version: "0.1.0",
-            backend: "qwen3-tts",
+            backend: "kokoro",
             voiceCount: 1,
+            warmed: true,
+            device: "cuda:0",
           }),
           {
             status: 200,
@@ -50,7 +52,13 @@ describe("localTtsClient", () => {
       fetch: fetchMock,
     });
 
-    await expect(client.getHealth()).resolves.toMatchObject({ status: "ok", voiceCount: 1 });
+    await expect(client.getHealth()).resolves.toMatchObject({
+      status: "ok",
+      voiceCount: 1,
+      warmed: true,
+      device: "cuda:0",
+      backend: "kokoro",
+    });
     await expect(client.getVoices()).resolves.toEqual([
       expect.objectContaining({
         id: "Ryan",

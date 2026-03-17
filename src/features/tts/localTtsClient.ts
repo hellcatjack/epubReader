@@ -2,9 +2,11 @@ type FetchLike = typeof fetch;
 
 export type LocalTtsHealth = {
   backend: string;
+  device: string;
   status: string;
   version: string;
   voiceCount: number;
+  warmed: boolean;
 };
 
 export type LocalTtsVoice = {
