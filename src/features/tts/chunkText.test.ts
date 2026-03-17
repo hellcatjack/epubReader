@@ -2,9 +2,30 @@ import { describe, expect, it } from "vitest";
 import { chunkText } from "./chunkText";
 
 describe("chunkText", () => {
-  it("splits text by paragraph first and falls back to sentence chunks for oversized paragraphs", () => {
-    expect(chunkText("One paragraph.\n\nTwo paragraph.", 120)).toEqual(["One paragraph.", "Two paragraph."]);
-    expect(chunkText("First sentence. Second sentence. Third sentence.", 20)).toEqual([
+  it("keeps short paragraphs together in the first segment", () => {
+    expect(chunkText("One.\n\nTwo.\n\nThree.", { firstSegmentMax: 80, segmentMax: 120 })).toEqual([
+      "One. Two. Three.",
+    ]);
+  });
+
+  it("keeps a smaller first segment and larger later segments", () => {
+    const text = [
+      "First paragraph opens the reading queue with a tight chunk to reduce time to first audio.",
+      "Second paragraph adds enough text that later segments should be allowed to grow larger than the first.",
+      "Third paragraph continues the story so the queue can keep streaming without sentence sized requests.",
+    ].join("\n\n");
+    const chunks = chunkText(text, { firstSegmentMax: 90, segmentMax: 180 });
+
+    expect(chunks[0]?.length ?? 0).toBeLessThanOrEqual(90);
+    expect(chunks[1]?.length ?? 0).toBeLessThanOrEqual(180);
+    expect(chunks.length).toBeGreaterThan(1);
+  });
+
+  it("falls back to sentence chunks for oversized paragraphs", () => {
+    expect(chunkText("One paragraph.\n\nTwo paragraph.", { firstSegmentMax: 120, segmentMax: 120 })).toEqual([
+      "One paragraph. Two paragraph.",
+    ]);
+    expect(chunkText("First sentence. Second sentence. Third sentence.", { firstSegmentMax: 20, segmentMax: 20 })).toEqual([
       "First sentence.",
       "Second sentence.",
       "Third sentence.",
