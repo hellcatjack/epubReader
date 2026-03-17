@@ -243,12 +243,33 @@ it("waits for saved progress before opening the reader and restores the saved cf
   installSpeechSynthesis([
     { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
   ]);
+  await db.settings.put({
+    id: "settings",
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+    apiKey: "",
+  });
   let resolveProgress:
     | ((
         value:
           | {
               bookId: string;
               cfi: string;
+              pageIndex?: number;
               pageOffset?: number;
               progress: number;
               spineItemId: string;
@@ -292,6 +313,7 @@ it("waits for saved progress before opening the reader and restores the saved cf
     resolveProgress?.({
       bookId: "book-1",
       cfi: "epubcfi(/6/2!/4/1:24)",
+      pageIndex: 2,
       pageOffset: 1412,
       progress: 0.42,
       spineItemId: "chap-1",
@@ -301,13 +323,14 @@ it("waits for saved progress before opening the reader and restores the saved cf
   });
 
   await waitFor(() => {
-    expect(renderSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        bookId: "book-1",
-        initialCfi: "epubcfi(/6/2!/4/1:24)",
-        initialPageOffset: 1412,
-      }),
-    );
+      expect(renderSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookId: "book-1",
+          initialCfi: "epubcfi(/6/2!/4/1:24)",
+          initialPageIndex: 2,
+          initialPageOffset: 1412,
+        }),
+      );
   });
 });
 
@@ -322,11 +345,32 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
+  await db.settings.put({
+    id: "settings",
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+    apiKey: "",
+  });
   sessionStorage.setItem(
     "reader-refresh-progress:book-1",
     JSON.stringify({
       bookId: "book-1",
       cfi: "epubcfi(/6/14!/4/2/26/1:193)",
+      pageIndex: 2,
       pageOffset: 1732,
       progress: 0.63,
       spineItemId: "chapter-one.xhtml",
@@ -337,6 +381,7 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
   getProgressMock.mockResolvedValueOnce({
     bookId: "book-1",
     cfi: "epubcfi(/6/14!/4/2/14/1:37)",
+    pageIndex: 1,
     pageOffset: 984,
     progress: 0.51,
     spineItemId: "chapter-one.xhtml",
@@ -366,13 +411,14 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
   );
 
   await waitFor(() => {
-    expect(renderSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        bookId: "book-1",
-        initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
-        initialPageOffset: 1732,
-      }),
-    );
+      expect(renderSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookId: "book-1",
+          initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
+          initialPageIndex: 2,
+          initialPageOffset: 1732,
+        }),
+      );
   });
 });
 
@@ -387,11 +433,32 @@ it("always prefers the same-tab refresh snapshot over persisted progress during 
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
+  await db.settings.put({
+    id: "settings",
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+    apiKey: "",
+  });
   sessionStorage.setItem(
     "reader-refresh-progress:book-1",
     JSON.stringify({
       bookId: "book-1",
       cfi: "epubcfi(/6/14!/4/2/26/1:193)",
+      pageIndex: 2,
       pageOffset: 1732,
       progress: 0.63,
       spineItemId: "chapter-one.xhtml",
@@ -402,6 +469,7 @@ it("always prefers the same-tab refresh snapshot over persisted progress during 
   getProgressMock.mockResolvedValueOnce({
     bookId: "book-1",
     cfi: "epubcfi(/6/14!/4/2/14/1:37)",
+    pageIndex: 1,
     pageOffset: 984,
     progress: 0.51,
     spineItemId: "chapter-one.xhtml",
@@ -431,13 +499,14 @@ it("always prefers the same-tab refresh snapshot over persisted progress during 
   );
 
   await waitFor(() => {
-    expect(renderSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        bookId: "book-1",
-        initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
-        initialPageOffset: 1732,
-      }),
-    );
+      expect(renderSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookId: "book-1",
+          initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
+          initialPageIndex: 2,
+          initialPageOffset: 1732,
+        }),
+      );
   });
 });
 

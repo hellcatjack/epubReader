@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   findTtsBlockElementByText,
   getNearestTtsBlockElement,
+  readPaginatedPageIndex,
   restorePaginatedPageOffset,
+  restorePaginatedPagePosition,
   shouldAutoScrollTtsSegment,
 } from "./epubRuntime";
 
@@ -63,5 +65,29 @@ describe("epubRuntime tts targeting helpers", () => {
     restorePaginatedPageOffset("paginated", container, 1412);
 
     expect(container.scrollLeft).toBe(1412);
+  });
+
+  it("derives a stable paginated page index from the current container width", () => {
+    const container = document.createElement("div");
+    Object.defineProperty(container, "clientWidth", {
+      configurable: true,
+      value: 1826,
+    });
+    container.scrollLeft = 3652;
+
+    expect(readPaginatedPageIndex("paginated", container)).toBe(2);
+  });
+
+  it("restores paginated position from a saved page index instead of stale pixel offsets", () => {
+    const container = document.createElement("div");
+    Object.defineProperty(container, "clientWidth", {
+      configurable: true,
+      value: 1826,
+    });
+    container.scrollLeft = 0;
+
+    restorePaginatedPagePosition("paginated", container, 1412, 2);
+
+    expect(container.scrollLeft).toBe(3652);
   });
 });

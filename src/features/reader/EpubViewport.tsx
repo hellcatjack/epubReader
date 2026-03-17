@@ -20,7 +20,14 @@ type EpubViewportProps = {
   activeTtsSegment?: ActiveTtsSegment | null;
   initialCfi?: string;
   initialProgress?: ProgressRecord | null;
-  onLocationChange?: (location: { cfi: string; pageOffset?: number; progress: number; spineItemId: string; textQuote: string }) => void;
+  onLocationChange?: (location: {
+    cfi: string;
+    pageIndex?: number;
+    pageOffset?: number;
+    progress: number;
+    spineItemId: string;
+    textQuote: string;
+  }) => void;
   onReady?: (handle: RuntimeRenderHandle | null) => void;
   onStatusChange?: (status: string) => void;
   onTocChange?: (toc: TocItem[]) => void;
@@ -83,10 +90,11 @@ export function EpubViewport({
           element: activeHost,
           flow: readingMode,
           initialCfi: nextCfi,
+          initialPageIndex: initialProgress && nextCfi === initialProgress.cfi ? initialProgress.pageIndex : undefined,
           initialPageOffset: initialProgress && nextCfi === initialProgress.cfi ? initialProgress.pageOffset : undefined,
-          onRelocated: ({ cfi, pageOffset, progress, spineItemId, textQuote }) => {
-            void saveProgress(activeBookId, { cfi, pageOffset, progress, spineItemId, textQuote });
-            onLocationChange?.({ cfi, pageOffset, progress, spineItemId, textQuote });
+          onRelocated: ({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote }) => {
+            void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
+            onLocationChange?.({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
           },
           onSelectionChange: ({ cfiRange, isReleased, spineItemId, text }) => {
             selectionBridge.publish(text ? { cfiRange, isReleased, spineItemId, text } : null);

@@ -14,6 +14,7 @@ export type StoredBookFileRecord = {
 export type ProgressRecord = {
   bookId: string;
   cfi: string;
+  pageIndex?: number;
   pageOffset?: number;
   progress: number;
   spineItemId?: string;

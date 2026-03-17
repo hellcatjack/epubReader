@@ -48,6 +48,7 @@ type ReaderTtsState = {
 
 type ReaderLocationState = {
   cfi: string;
+  pageIndex?: number;
   pageOffset?: number;
   progress: number;
   spineItemId: string;
@@ -144,6 +145,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [currentLocation, setCurrentLocation] = useState<ReaderLocationState>({
     cfi: "",
+    pageIndex: undefined,
     pageOffset: undefined,
     progress: 0,
     spineItemId: "",
@@ -208,7 +210,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setInitialProgress(null);
       setIsProgressReady(true);
       setLocationTarget(undefined);
-      setCurrentLocation({ cfi: "", pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
+      setCurrentLocation({ cfi: "", pageIndex: undefined, pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
       setCurrentSpineItemId("");
       setReaderStatus("Open a book from the shelf to start reading.");
       return;
@@ -218,7 +220,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     setInitialCfi(undefined);
     setInitialProgress(null);
     setLocationTarget(undefined);
-    setCurrentLocation({ cfi: "", pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
+    setCurrentLocation({ cfi: "", pageIndex: undefined, pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
     setCurrentSpineItemId("");
     setReaderStatus("Restoring reading position...");
 
@@ -520,6 +522,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         writeRefreshProgressSnapshot(bookId, nextLocation);
         await saveProgress(bookId, {
           cfi: nextLocation.cfi,
+          pageIndex: nextLocation.pageIndex,
           pageOffset: nextLocation.pageOffset,
           progress: nextLocation.progress,
           spineItemId: nextLocation.spineItemId,
@@ -1038,11 +1041,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
                 bookId={bookId}
                 initialCfi={nextInitialCfi}
                 initialProgress={initialProgress}
-                onLocationChange={({ cfi, pageOffset, progress, spineItemId, textQuote }) => {
+                onLocationChange={({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote }) => {
                   if (bookId) {
-                    writeRefreshProgressSnapshot(bookId, { cfi, pageOffset, progress, spineItemId, textQuote });
+                    writeRefreshProgressSnapshot(bookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
                   }
-                  setCurrentLocation({ cfi, pageOffset, progress, spineItemId, textQuote });
+                  setCurrentLocation({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
                   setCurrentSpineItemId(spineItemId);
                 }}
                 onReady={setRuntimeHandle}

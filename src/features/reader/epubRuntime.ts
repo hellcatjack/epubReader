@@ -9,8 +9,9 @@ export type RuntimeRenderArgs = {
   element: HTMLElement;
   flow?: ReadingMode;
   initialCfi?: string;
+  initialPageIndex?: number;
   initialPageOffset?: number;
-  onRelocated?: (location: { cfi: string; pageOffset?: number; progress: number; spineItemId: string; textQuote: string }) => void;
+  onRelocated?: (location: { cfi: string; pageIndex?: number; pageOffset?: number; progress: number; spineItemId: string; textQuote: string }) => void;
   onSelectionChange?: (selection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string }) => void;
   onTocChange?: (toc: TocItem[]) => void;
 };
@@ -25,7 +26,7 @@ export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   destroy(): void;
   findCfiFromTextQuote(textQuote: string): Promise<string | null>;
-  getCurrentLocation?(): Promise<{ cfi: string; pageOffset?: number; progress: number; spineItemId: string; textQuote: string } | null>;
+  getCurrentLocation?(): Promise<{ cfi: string; pageIndex?: number; pageOffset?: number; progress: number; spineItemId: string; textQuote: string } | null>;
   getTextFromCurrentLocation(): Promise<string>;
   getTtsBlocksFromCurrentLocation?(): Promise<Array<{ cfi?: string; spineItemId: string; text: string }>>;
   goTo(target: string): Promise<void>;
@@ -84,6 +85,14 @@ function readPaginatedPageOffset(readingMode: ReadingMode, container: HTMLElemen
   return Math.max(0, container.scrollLeft);
 }
 
+export function readPaginatedPageIndex(readingMode: ReadingMode, container: HTMLElement | null) {
+  if (readingMode !== "paginated" || !container || container.clientWidth <= 0) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.round(container.scrollLeft / container.clientWidth));
+}
+
 export function restorePaginatedPageOffset(
   readingMode: ReadingMode,
   container: HTMLElement | null,
@@ -94,6 +103,31 @@ export function restorePaginatedPageOffset(
   }
 
   container.scrollLeft = Math.max(0, pageOffset);
+}
+
+export function restorePaginatedPagePosition(
+  readingMode: ReadingMode,
+  container: HTMLElement | null,
+  pageOffset?: number,
+  pageIndex?: number,
+) {
+  if (readingMode !== "paginated" || !container) {
+    return;
+  }
+
+  if (typeof pageIndex === "number" && Number.isFinite(pageIndex) && container.clientWidth > 0) {
+    container.scrollLeft = Math.max(0, Math.round(pageIndex) * container.clientWidth);
+    return;
+  }
+
+  if (typeof pageOffset === "number" && Number.isFinite(pageOffset)) {
+    if (container.clientWidth > 0) {
+      container.scrollLeft = Math.max(0, Math.round(pageOffset / container.clientWidth) * container.clientWidth);
+      return;
+    }
+
+    container.scrollLeft = Math.max(0, pageOffset);
+  }
 }
 
 export function shouldAutoScrollTtsSegment(
@@ -153,6 +187,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     element,
     flow = "scrolled",
     initialCfi,
+    initialPageIndex,
     initialPageOffset,
     onRelocated,
     onSelectionChange,
@@ -283,6 +318,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
       return {
         cfi,
+        pageIndex: readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element)),
         pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
         progress,
         spineItemId,
@@ -463,7 +499,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     onTocChange?.(flattenTocItems(navigation.toc));
     await rendition.display(initialCfi);
     syncCurrentContents();
-    restorePaginatedPageOffset(flow, getPaginatedContainer(element), initialPageOffset);
+    restorePaginatedPagePosition(flow, getPaginatedContainer(element), initialPageOffset, initialPageIndex);
     await syncDisplayedLocation();
 
     return {
@@ -523,6 +559,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
         return {
           cfi: currentTarget,
+          pageIndex: readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element)),
           pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
           progress: 0,
           spineItemId: currentSpineItemId,
