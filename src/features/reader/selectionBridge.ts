@@ -1,5 +1,6 @@
 export type ReaderSelection = {
   cfiRange?: string;
+  isReleased?: boolean;
   spineItemId?: string;
   text: string;
 };

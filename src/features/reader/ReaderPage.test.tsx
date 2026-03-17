@@ -204,6 +204,78 @@ it("shows reader status details in the tools rail instead of below the page surf
   expect(within(toolsRail).getByText(/0 local annotations in view/i)).toBeInTheDocument();
 });
 
+it("flushes the latest runtime location on pagehide even when reader state is stale", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  const getCurrentLocation = vi.fn(async () => ({
+    cfi: "epubcfi(/6/14!/4/2/8:24)",
+    progress: 0.63,
+    spineItemId: "chapter-four.xhtml",
+    textQuote: "The thing was, she was so darn comfortable.",
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  findCfiFromTextQuote: vi.fn(async () => null),
+                  getCurrentLocation,
+                  getTextFromCurrentLocation: vi.fn(async () => "Reader text."),
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText(/opened from chapter start/i)).toBeInTheDocument();
+  });
+
+  saveProgressMock.mockClear();
+  window.dispatchEvent(new Event("pagehide"));
+
+  await waitFor(() => {
+    expect(getCurrentLocation).toHaveBeenCalledTimes(1);
+  });
+  await waitFor(() => {
+    expect(saveProgressMock).toHaveBeenCalledWith(
+      "book-1",
+      expect.objectContaining({
+        cfi: "epubcfi(/6/14!/4/2/8:24)",
+        progress: 0.63,
+        spineItemId: "chapter-four.xhtml",
+        textQuote: "The thing was, she was so darn comfortable.",
+      }),
+    );
+  });
+});
+
 it("places the tts queue controls above appearance controls in the tools rail", async () => {
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   installSpeechSynthesis([

@@ -70,11 +70,10 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
       "text-indent": "0",
     },
     ".reader-tts-active-segment": {
-      "background":
-        "linear-gradient(90deg, transparent 0, transparent 1.1rem, rgba(186, 106, 47, 0.16) 1.1rem, rgba(186, 106, 47, 0.16) calc(100% - 1.1rem), transparent calc(100% - 1.1rem), transparent 100%)",
+      "background": "linear-gradient(90deg, rgba(186, 106, 47, 0.16) 0, rgba(186, 106, 47, 0.16) 100%)",
       "background-repeat": "no-repeat",
       "border-radius": "0.45rem",
-      "box-shadow": "none",
+      "box-shadow": "inset 0 0 0 1px rgba(186, 106, 47, 0.24)",
       "padding-left": "0",
       "scroll-margin-top": "18vh",
       "transition": "none",

@@ -384,7 +384,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
   useEffect(() => {
     const nextText = selectedSelection?.text.trim() ?? "";
-    if (!nextText) {
+    if (!nextText || selectedSelection?.isReleased === false) {
       return;
     }
 
@@ -456,21 +456,33 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
   useEffect(() => {
     function flushReadingProgress() {
-      if (!bookId || !currentLocation.cfi) {
+      if (!bookId) {
         return;
       }
 
-      void saveProgress(bookId, {
-        cfi: currentLocation.cfi,
-        progress: currentLocation.progress,
-        spineItemId: currentLocation.spineItemId,
-        textQuote: currentLocation.textQuote,
-      });
+      void (async () => {
+        const runtimeLocation = await runtimeHandle?.getCurrentLocation?.();
+        const nextLocation = runtimeLocation ?? (currentLocation.cfi ? currentLocation : null);
+        if (!nextLocation?.cfi) {
+          return;
+        }
+
+        await saveProgress(bookId, {
+          cfi: nextLocation.cfi,
+          progress: nextLocation.progress,
+          spineItemId: nextLocation.spineItemId,
+          textQuote: nextLocation.textQuote,
+        });
+      })();
     }
 
     window.addEventListener("pagehide", flushReadingProgress);
-    return () => window.removeEventListener("pagehide", flushReadingProgress);
-  }, [bookId, currentLocation]);
+    window.addEventListener("beforeunload", flushReadingProgress);
+    return () => {
+      window.removeEventListener("pagehide", flushReadingProgress);
+      window.removeEventListener("beforeunload", flushReadingProgress);
+    };
+  }, [bookId, currentLocation, runtimeHandle]);
 
   useEffect(() => {
     if (

@@ -119,6 +119,58 @@ it("automatically translates and auto-reads a new selection while keeping explai
   expect(screen.getByRole("button", { name: /read aloud/i })).toBeInTheDocument();
 });
 
+it("waits until the selection is released before auto-translating and auto-reading", async () => {
+  installEdgeDesktopUserAgent();
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    translateSelection: vi.fn(async () => "你好，世界"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: false,
+      spineItemId: "chap-1",
+      text: "Hello world",
+    });
+  });
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(ai.translateSelection).not.toHaveBeenCalled();
+  expect(browserTts.speechSynthesis.speak).not.toHaveBeenCalled();
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "Hello world",
+    });
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  });
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+  });
+});
+
 it("does not auto-read punctuation-only selections", async () => {
   installEdgeDesktopUserAgent();
   const browserTts = installSpeechSynthesis([

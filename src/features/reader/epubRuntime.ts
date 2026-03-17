@@ -10,7 +10,7 @@ export type RuntimeRenderArgs = {
   flow?: ReadingMode;
   initialCfi?: string;
   onRelocated?: (location: { cfi: string; progress: number; spineItemId: string; textQuote: string }) => void;
-  onSelectionChange?: (selection: { cfiRange: string; text: string }) => void;
+  onSelectionChange?: (selection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string }) => void;
   onTocChange?: (toc: TocItem[]) => void;
 };
 
@@ -24,6 +24,7 @@ export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   destroy(): void;
   findCfiFromTextQuote(textQuote: string): Promise<string | null>;
+  getCurrentLocation?(): Promise<{ cfi: string; progress: number; spineItemId: string; textQuote: string } | null>;
   getTextFromCurrentLocation(): Promise<string>;
   getTtsBlocksFromCurrentLocation?(): Promise<Array<{ cfi?: string; spineItemId: string; text: string }>>;
   goTo(target: string): Promise<void>;
@@ -129,6 +130,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       width: "100%",
       height: "100%",
       flow: toEpubFlow(flow),
+      spread: flow === "paginated" ? "none" : "auto",
       allowScriptedContent: false,
     });
     let currentTarget = initialCfi ?? "";
@@ -140,6 +142,9 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     };
     let activeTtsSegment: ActiveTtsSegment | null = null;
     let activeTtsElement: HTMLElement | null = null;
+    let pointerSelecting = false;
+    let pendingSelection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string } | null = null;
+    const selectionDocumentCleanups = new Map<Document, () => void>();
 
     const normalizeText = (text: string) => text.replace(/\s+/g, " ").trim();
     const syncCurrentContents = () => {
@@ -148,6 +153,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
       if (nextContents) {
         currentContents = nextContents;
+        attachSelectionLifecycle(nextContents);
         void applyActiveTtsSegment(activeTtsSegment);
       }
     };
@@ -235,6 +241,60 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }
     };
 
+    const toStoredLocation = async (location: Location) => {
+      const cfi = location.start.cfi;
+      const progress = location.start.percentage ?? 0;
+      const spineItemId = location.start.href;
+      const textQuote = await getLocationTextQuote(cfi);
+
+      return {
+        cfi,
+        progress,
+        spineItemId,
+        textQuote,
+      };
+    };
+
+    const flushPendingSelection = () => {
+      if (!pendingSelection) {
+        return;
+      }
+
+      onSelectionChange?.({
+        ...pendingSelection,
+        isReleased: true,
+      });
+      pendingSelection = null;
+    };
+
+    const attachSelectionLifecycle = (contents: Contents) => {
+      const doc = contents.document;
+      if (selectionDocumentCleanups.has(doc)) {
+        return;
+      }
+
+      const handlePointerDown = () => {
+        pointerSelecting = true;
+      };
+
+      const handlePointerUp = () => {
+        pointerSelecting = false;
+        flushPendingSelection();
+      };
+
+      doc.addEventListener("mousedown", handlePointerDown, true);
+      doc.addEventListener("mouseup", handlePointerUp, true);
+      doc.addEventListener("touchstart", handlePointerDown, true);
+      doc.addEventListener("touchend", handlePointerUp, true);
+
+      selectionDocumentCleanups.set(doc, () => {
+        doc.removeEventListener("mousedown", handlePointerDown, true);
+        doc.removeEventListener("mouseup", handlePointerUp, true);
+        doc.removeEventListener("touchstart", handlePointerDown, true);
+        doc.removeEventListener("touchend", handlePointerUp, true);
+      });
+    };
+
     const getTtsBlocksFromCurrentLocation = async () => {
       const contents = currentContents;
       if (!contents) {
@@ -300,23 +360,32 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     const handleSelection = async (cfiRange: string, contents: Contents) => {
       const range = await book.getRange(cfiRange);
       const text = range?.toString().trim() ?? "";
-      onSelectionChange?.({ cfiRange, text });
+      const selection = {
+        cfiRange,
+        isReleased: !pointerSelecting,
+        spineItemId: currentSpineItemId,
+        text,
+      };
+
+      if (pointerSelecting) {
+        pendingSelection = selection;
+      }
+
+      onSelectionChange?.(selection);
     };
 
     const handleRelocated = async (location: Location) => {
-      const cfi = location.start.cfi;
-      const progress = location.start.percentage ?? 0;
-      currentTarget = cfi;
-      currentSpineItemId = location.start.href;
-      const textQuote = await getLocationTextQuote(cfi);
-      onRelocated?.({ cfi, progress, spineItemId: location.start.href, textQuote });
+      const storedLocation = await toStoredLocation(location);
+      currentTarget = storedLocation.cfi;
+      currentSpineItemId = storedLocation.spineItemId;
+      onRelocated?.(storedLocation);
     };
 
-    const syncDisplayedLocation = async () => {
+    const getDisplayedLocation = async () => {
       try {
         const displayedLocation = await rendition.currentLocation();
         if (!displayedLocation) {
-          return;
+          return null;
         }
 
         const normalizedLocation = hasDisplayedLocationShape(displayedLocation)
@@ -328,14 +397,25 @@ export const epubViewportRuntime: EpubViewportRuntime = {
               start: displayedLocation,
             };
 
-        await handleRelocated(normalizedLocation);
+        return normalizedLocation;
       } catch {
         // Ignore synthetic location sync failures and fall back to epub.js events.
+        return null;
       }
+    };
+
+    const syncDisplayedLocation = async () => {
+      const displayedLocation = await getDisplayedLocation();
+      if (!displayedLocation) {
+        return;
+      }
+
+      await handleRelocated(displayedLocation);
     };
 
     const handleRendered = (_section: unknown, contents: Contents) => {
       currentContents = contents;
+      attachSelectionLifecycle(contents);
       void applyActiveTtsSegment(activeTtsSegment);
     };
 
@@ -360,6 +440,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       },
       destroy() {
         clearActiveTtsSegment();
+        selectionDocumentCleanups.forEach((cleanup) => cleanup());
+        selectionDocumentCleanups.clear();
         rendition.off("selected", handleSelection);
         rendition.off("relocated", handleRelocated);
         rendition.off("rendered", handleRendered);
@@ -393,6 +475,23 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
         return null;
       },
+      async getCurrentLocation() {
+        const displayedLocation = await getDisplayedLocation();
+        if (displayedLocation) {
+          return toStoredLocation(displayedLocation);
+        }
+
+        if (!currentTarget) {
+          return null;
+        }
+
+        return {
+          cfi: currentTarget,
+          progress: 0,
+          spineItemId: currentSpineItemId,
+          textQuote: await getLocationTextQuote(currentTarget),
+        };
+      },
       async getTextFromCurrentLocation() {
         const fallbackText = normalizeText(currentContents?.document.body?.innerText ?? "");
         if (!currentTarget) {
@@ -422,11 +521,15 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         syncCurrentContents();
         await syncDisplayedLocation();
       },
-      next() {
-        return rendition.next();
+      async next() {
+        await rendition.next();
+        syncCurrentContents();
+        await syncDisplayedLocation();
       },
-      prev() {
-        return rendition.prev();
+      async prev() {
+        await rendition.prev();
+        syncCurrentContents();
+        await syncDisplayedLocation();
       },
       async setActiveTtsSegment(segment) {
         await applyActiveTtsSegment(segment);
@@ -437,6 +540,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           readingMode: nextFlow,
         };
         rendition.flow(toEpubFlow(nextFlow));
+        rendition.spread(nextFlow === "paginated" ? "none" : "auto");
         await rendition.display(currentTarget || undefined);
         syncCurrentContents();
         await syncDisplayedLocation();

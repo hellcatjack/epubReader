@@ -87,8 +87,8 @@ export function EpubViewport({
             void saveProgress(activeBookId, { cfi, progress, spineItemId, textQuote });
             onLocationChange?.({ cfi, progress, spineItemId, textQuote });
           },
-          onSelectionChange: ({ cfiRange, text }) => {
-            selectionBridge.publish(text ? { cfiRange, text } : null);
+          onSelectionChange: ({ cfiRange, isReleased, spineItemId, text }) => {
+            selectionBridge.publish(text ? { cfiRange, isReleased, spineItemId, text } : null);
           },
           onTocChange,
         });
