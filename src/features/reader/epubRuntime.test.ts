@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { findTtsBlockElementByText, getNearestTtsBlockElement, shouldAutoScrollTtsSegment } from "./epubRuntime";
+import {
+  findTtsBlockElementByText,
+  getNearestTtsBlockElement,
+  restorePaginatedPageOffset,
+  shouldAutoScrollTtsSegment,
+} from "./epubRuntime";
 
 describe("epubRuntime tts targeting helpers", () => {
   it("prefers paragraph blocks over chapter headings or wrapper containers", () => {
@@ -49,5 +54,14 @@ describe("epubRuntime tts targeting helpers", () => {
         top: 40,
       } as DOMRect, 900),
     ).toBe(true);
+  });
+
+  it("restores the saved paginated page offset on the epub container", () => {
+    const container = document.createElement("div");
+    container.scrollLeft = 0;
+
+    restorePaginatedPageOffset("paginated", container, 1412);
+
+    expect(container.scrollLeft).toBe(1412);
   });
 });

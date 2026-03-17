@@ -53,3 +53,42 @@ test("reader switches modes, keeps text selected, and applies appearance changes
     )
     .toBeGreaterThan(0);
 });
+
+test("paginated mode restores the same page slice after refresh", async ({ page }) => {
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  await page.getByRole("button", { name: /next page/i }).click();
+  await page.waitForTimeout(800);
+  await page.getByRole("button", { name: /next page/i }).click();
+  await page.waitForTimeout(1200);
+
+  const before = await page.locator(".epub-root iframe").evaluate((node) => {
+    const iframe = node;
+    const root = iframe.closest(".epub-root");
+    const container = root?.querySelector<HTMLElement>(".epub-container");
+    return {
+      scrollLeft: container?.scrollLeft ?? 0,
+      text: iframe.contentDocument?.body?.innerText?.replace(/\s+/g, " ").trim().slice(0, 180) ?? "",
+    };
+  });
+
+  await page.reload({ waitUntil: "networkidle" });
+
+  const after = await page.locator(".epub-root iframe").evaluate((node) => {
+    const iframe = node;
+    const root = iframe.closest(".epub-root");
+    const container = root?.querySelector<HTMLElement>(".epub-container");
+    return {
+      scrollLeft: container?.scrollLeft ?? 0,
+      text: iframe.contentDocument?.body?.innerText?.replace(/\s+/g, " ").trim().slice(0, 180) ?? "",
+    };
+  });
+
+  expect(after.scrollLeft).toBe(before.scrollLeft);
+  expect(after.text).toBe(before.text);
+});

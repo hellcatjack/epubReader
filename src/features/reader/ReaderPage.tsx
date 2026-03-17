@@ -36,6 +36,14 @@ type ReaderTtsState = {
   status: "error" | "idle" | "loading" | "paused" | "playing";
 };
 
+type ReaderLocationState = {
+  cfi: string;
+  pageOffset?: number;
+  progress: number;
+  spineItemId: string;
+  textQuote: string;
+};
+
 function sliceChunksFromMarker(chunks: ChunkSegment[], chunkIndex: number, markerIndex: number) {
   const activeChunk = chunks[chunkIndex];
   if (!activeChunk) {
@@ -124,7 +132,13 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [aiResult, setAiResult] = useState("");
   const [aiTitle, setAiTitle] = useState("AI result");
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
-  const [currentLocation, setCurrentLocation] = useState({ cfi: "", progress: 0, spineItemId: "", textQuote: "" });
+  const [currentLocation, setCurrentLocation] = useState<ReaderLocationState>({
+    cfi: "",
+    pageOffset: undefined,
+    progress: 0,
+    spineItemId: "",
+    textQuote: "",
+  });
   const [noteDraft, setNoteDraft] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
@@ -183,7 +197,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setInitialProgress(null);
       setIsProgressReady(true);
       setLocationTarget(undefined);
-      setCurrentLocation({ cfi: "", progress: 0, spineItemId: "", textQuote: "" });
+      setCurrentLocation({ cfi: "", pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
       setCurrentSpineItemId("");
       setReaderStatus("Open a book from the shelf to start reading.");
       return;
@@ -193,7 +207,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     setInitialCfi(undefined);
     setInitialProgress(null);
     setLocationTarget(undefined);
-    setCurrentLocation({ cfi: "", progress: 0, spineItemId: "", textQuote: "" });
+    setCurrentLocation({ cfi: "", pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
     setCurrentSpineItemId("");
     setReaderStatus("Restoring reading position...");
 
@@ -469,6 +483,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
         await saveProgress(bookId, {
           cfi: nextLocation.cfi,
+          pageOffset: nextLocation.pageOffset,
           progress: nextLocation.progress,
           spineItemId: nextLocation.spineItemId,
           textQuote: nextLocation.textQuote,
@@ -963,8 +978,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
                 bookId={bookId}
                 initialCfi={nextInitialCfi}
                 initialProgress={initialProgress}
-                onLocationChange={({ cfi, progress, spineItemId, textQuote }) => {
-                  setCurrentLocation({ cfi, progress, spineItemId, textQuote });
+                onLocationChange={({ cfi, pageOffset, progress, spineItemId, textQuote }) => {
+                  setCurrentLocation({ cfi, pageOffset, progress, spineItemId, textQuote });
                   setCurrentSpineItemId(spineItemId);
                 }}
                 onReady={setRuntimeHandle}

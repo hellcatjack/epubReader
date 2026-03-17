@@ -102,7 +102,21 @@ it("waits for saved progress before opening the reader and restores the saved cf
   installSpeechSynthesis([
     { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
   ]);
-  let resolveProgress: ((value: { bookId: string; cfi: string; progress: number; spineItemId: string; textQuote: string; updatedAt: number } | null) => void) | undefined;
+  let resolveProgress:
+    | ((
+        value:
+          | {
+              bookId: string;
+              cfi: string;
+              pageOffset?: number;
+              progress: number;
+              spineItemId: string;
+              textQuote: string;
+              updatedAt: number;
+            }
+          | null,
+      ) => void)
+    | undefined;
   getProgressMock.mockReturnValueOnce(
     new Promise((resolve) => {
       resolveProgress = resolve;
@@ -137,6 +151,7 @@ it("waits for saved progress before opening the reader and restores the saved cf
     resolveProgress?.({
       bookId: "book-1",
       cfi: "epubcfi(/6/2!/4/1:24)",
+      pageOffset: 1412,
       progress: 0.42,
       spineItemId: "chap-1",
       textQuote: "Morgan’s head was pressed against her pillow.",
@@ -149,6 +164,7 @@ it("waits for saved progress before opening the reader and restores the saved cf
       expect.objectContaining({
         bookId: "book-1",
         initialCfi: "epubcfi(/6/2!/4/1:24)",
+        initialPageOffset: 1412,
       }),
     );
   });
@@ -218,6 +234,7 @@ it("flushes the latest runtime location on pagehide even when reader state is st
 
   const getCurrentLocation = vi.fn(async () => ({
     cfi: "epubcfi(/6/14!/4/2/8:24)",
+    pageOffset: 1412,
     progress: 0.63,
     spineItemId: "chapter-four.xhtml",
     textQuote: "The thing was, she was so darn comfortable.",
@@ -264,10 +281,11 @@ it("flushes the latest runtime location on pagehide even when reader state is st
     expect(getCurrentLocation).toHaveBeenCalledTimes(1);
   });
   await waitFor(() => {
-    expect(saveProgressMock).toHaveBeenCalledWith(
+      expect(saveProgressMock).toHaveBeenCalledWith(
       "book-1",
       expect.objectContaining({
         cfi: "epubcfi(/6/14!/4/2/8:24)",
+        pageOffset: 1412,
         progress: 0.63,
         spineItemId: "chapter-four.xhtml",
         textQuote: "The thing was, she was so darn comfortable.",

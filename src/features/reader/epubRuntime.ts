@@ -9,7 +9,8 @@ export type RuntimeRenderArgs = {
   element: HTMLElement;
   flow?: ReadingMode;
   initialCfi?: string;
-  onRelocated?: (location: { cfi: string; progress: number; spineItemId: string; textQuote: string }) => void;
+  initialPageOffset?: number;
+  onRelocated?: (location: { cfi: string; pageOffset?: number; progress: number; spineItemId: string; textQuote: string }) => void;
   onSelectionChange?: (selection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string }) => void;
   onTocChange?: (toc: TocItem[]) => void;
 };
@@ -24,7 +25,7 @@ export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   destroy(): void;
   findCfiFromTextQuote(textQuote: string): Promise<string | null>;
-  getCurrentLocation?(): Promise<{ cfi: string; progress: number; spineItemId: string; textQuote: string } | null>;
+  getCurrentLocation?(): Promise<{ cfi: string; pageOffset?: number; progress: number; spineItemId: string; textQuote: string } | null>;
   getTextFromCurrentLocation(): Promise<string>;
   getTtsBlocksFromCurrentLocation?(): Promise<Array<{ cfi?: string; spineItemId: string; text: string }>>;
   goTo(target: string): Promise<void>;
@@ -69,6 +70,30 @@ function flattenTocItems(items: NavItem[]): TocItem[] {
 
 function normalizeSegmentText(text: string) {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function getPaginatedContainer(root: ParentNode | null) {
+  return root?.querySelector<HTMLElement>(".epub-container") ?? null;
+}
+
+function readPaginatedPageOffset(readingMode: ReadingMode, container: HTMLElement | null) {
+  if (readingMode !== "paginated" || !container) {
+    return undefined;
+  }
+
+  return Math.max(0, container.scrollLeft);
+}
+
+export function restorePaginatedPageOffset(
+  readingMode: ReadingMode,
+  container: HTMLElement | null,
+  pageOffset?: number,
+) {
+  if (readingMode !== "paginated" || !container || typeof pageOffset !== "number" || !Number.isFinite(pageOffset)) {
+    return;
+  }
+
+  container.scrollLeft = Math.max(0, pageOffset);
 }
 
 export function shouldAutoScrollTtsSegment(
@@ -123,7 +148,16 @@ export function findTtsBlockElementByText(root: ParentNode, text: string) {
 }
 
 export const epubViewportRuntime: EpubViewportRuntime = {
-  async render({ bookId, element, flow = "scrolled", initialCfi, onRelocated, onSelectionChange, onTocChange }) {
+  async render({
+    bookId,
+    element,
+    flow = "scrolled",
+    initialCfi,
+    initialPageOffset,
+    onRelocated,
+    onSelectionChange,
+    onTocChange,
+  }) {
     const bookFile = await loadStoredBookFile(bookId);
     const book = ePub(await bookFile.arrayBuffer());
     const rendition = book.renderTo(element, {
@@ -249,6 +283,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
       return {
         cfi,
+        pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
         progress,
         spineItemId,
         textQuote,
@@ -428,6 +463,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     onTocChange?.(flattenTocItems(navigation.toc));
     await rendition.display(initialCfi);
     syncCurrentContents();
+    restorePaginatedPageOffset(flow, getPaginatedContainer(element), initialPageOffset);
     await syncDisplayedLocation();
 
     return {
@@ -487,6 +523,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
         return {
           cfi: currentTarget,
+          pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
           progress: 0,
           spineItemId: currentSpineItemId,
           textQuote: await getLocationTextQuote(currentTarget),
