@@ -48,6 +48,15 @@ function formatTtsError(error: unknown) {
   return "Browser speech synthesis error.";
 }
 
+function isAutoSpeakableSelection(text: string) {
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  return /[\p{L}\p{N}]/u.test(normalized);
+}
+
 export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const [initialCfi, setInitialCfi] = useState<string>();
@@ -266,6 +275,9 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     lastAutoTranslatedSelectionKeyRef.current = selectionKey;
     void requestTranslation(nextText);
+    if (isAutoSpeakableSelection(nextText)) {
+      void startSelectionSpeech(nextText);
+    }
   }, [selectedSelection]);
 
   useEffect(() => {
@@ -392,16 +404,9 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     }
   }
 
-  async function handleTranslate() {
-    await requestTranslation(selectedText);
-  }
-
-  async function handleExplain() {
-    await requestExplanation(selectedText);
-  }
-
-  async function handleReadAloud() {
-    if (!selectedText) {
+  async function startSelectionSpeech(text: string) {
+    const nextText = text.trim();
+    if (!nextText) {
       return;
     }
 
@@ -411,14 +416,14 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     ttsQueueRef.current?.stop();
     browserTtsClientRef.current.stop();
     setTtsState({
-      currentText: selectedText,
+      currentText: nextText,
       error: "",
       mode: "selection",
       status: "loading",
     });
 
     try {
-      await browserTtsClientRef.current.speakSelection(selectedText, {
+      await browserTtsClientRef.current.speakSelection(nextText, {
         onEnd: () => {
           if (activeSelectionSpeechRequestRef.current !== requestId) {
             return;
@@ -437,7 +442,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           }
 
           setTtsState({
-            currentText: selectedText,
+            currentText: nextText,
             error: `TTS failed: ${formatTtsError(error)}`,
             mode: "selection",
             status: "error",
@@ -452,7 +457,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         return;
       }
       setTtsState({
-        currentText: selectedText,
+        currentText: nextText,
         error: "",
         mode: "selection",
         status: "playing",
@@ -463,12 +468,28 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       }
 
       setTtsState({
-        currentText: selectedText,
+        currentText: nextText,
         error: `TTS failed: ${formatTtsError(error)}`,
         mode: "selection",
         status: "error",
       });
     }
+  }
+
+  async function handleTranslate() {
+    await requestTranslation(selectedText);
+  }
+
+  async function handleExplain() {
+    await requestExplanation(selectedText);
+  }
+
+  async function handleReadAloud() {
+    if (!selectedText) {
+      return;
+    }
+
+    await startSelectionSpeech(selectedText);
   }
 
   async function handleHighlight() {

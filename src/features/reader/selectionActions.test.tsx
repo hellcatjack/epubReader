@@ -9,8 +9,17 @@ import { saveSettings } from "../settings/settingsRepository";
 import { ReaderPage } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
 
+const originalUserAgent = window.navigator.userAgent;
+
 afterEach(async () => {
-  selectionBridge.publish(null);
+  act(() => {
+    selectionBridge.publish(null);
+  });
+  Object.defineProperty(window.navigator, "userAgent", {
+    configurable: true,
+    value: originalUserAgent,
+  });
+  vi.unstubAllGlobals();
   await resetDb();
 });
 
@@ -55,8 +64,25 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
   };
 }
 
-it("automatically translates a new selection while keeping explain and note actions available", async () => {
+function installEdgeDesktopUserAgent() {
+  Object.defineProperty(window.navigator, "userAgent", {
+    configurable: true,
+    value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+  });
+}
+
+it("automatically translates and auto-reads a new selection while keeping explain and note actions available", async () => {
   const user = userEvent.setup();
+  installEdgeDesktopUserAgent();
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
   const ai = {
     translateSelection: vi.fn(async () => "你好，世界"),
     explainSelection: vi.fn(async () => "A short contextual explanation"),
@@ -75,6 +101,9 @@ it("automatically translates a new selection while keeping explain and note acti
       expect.objectContaining({ targetLanguage: "zh-CN" }),
     );
   });
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+  });
   expect(await screen.findByText("你好，世界")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
@@ -90,8 +119,39 @@ it("automatically translates a new selection while keeping explain and note acti
   expect(screen.getByRole("button", { name: /read aloud/i })).toBeInTheDocument();
 });
 
+it("does not auto-read punctuation-only selections", async () => {
+  installEdgeDesktopUserAgent();
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    translateSelection: vi.fn(async () => "…"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "..." });
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  });
+
+  expect(browserTts.speechSynthesis.speak).not.toHaveBeenCalled();
+});
+
 it("reads aloud the selected text through browser speech synthesis", async () => {
   const user = userEvent.setup();
+  installEdgeDesktopUserAgent();
   const browserTts = installSpeechSynthesis([
     {
       default: true,
@@ -111,10 +171,12 @@ it("reads aloud the selected text through browser speech synthesis", async () =>
   await user.click(screen.getByRole("button", { name: /read aloud/i }));
 
   await waitFor(() => {
-    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(2);
   });
 
-  browserTts.finishCurrent();
+  act(() => {
+    browserTts.finishCurrent();
+  });
 
   await waitFor(() => {
     expect(screen.getByText(/tts status: idle/i)).toBeInTheDocument();
