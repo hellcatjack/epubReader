@@ -9,4 +9,9 @@ if [[ ! -x "$REPO_ROOT/.venv/bin/python" ]]; then
   exit 1
 fi
 
-exec "$REPO_ROOT/.venv/bin/python" -m tts.qwen3_tts_service
+if ! command -v espeak-ng >/dev/null 2>&1; then
+  echo "Missing espeak-ng. Install it before starting Kokoro." >&2
+  exit 1
+fi
+
+exec "$REPO_ROOT/.venv/bin/python" -m tts.kokoro_tts_service

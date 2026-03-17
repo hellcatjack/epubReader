@@ -7,7 +7,9 @@ VENV_PATH="$REPO_ROOT/.venv"
 python3 -m venv "$VENV_PATH"
 "$VENV_PATH/bin/python" -m pip install --upgrade pip setuptools wheel
 "$VENV_PATH/bin/pip" install -U \
-  qwen-tts \
+  "kokoro>=0.9.4" \
+  soundfile \
+  "misaki[en]" \
   fastapi \
   uvicorn \
   pytest \
