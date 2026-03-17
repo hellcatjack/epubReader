@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { EpubViewport } from "./EpubViewport";
+import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
 
 it("falls back to chapter start when a saved cfi is invalid", async () => {
   const controller = {
@@ -100,4 +101,40 @@ it("falls back to a saved chapter and quote when the saved cfi cannot be reopene
   );
   expect(findCfiFromTextQuote).toHaveBeenCalledWith("Morgan’s head was pressed against her pillow.");
   expect(goTo).toHaveBeenCalledWith("epubcfi(/6/8!/4/1:12)");
+});
+
+it("destroys stale runtime handles that resolve after the viewport unmounts", async () => {
+  let resolveRender: ((value: RuntimeRenderHandle) => void) | undefined;
+  const destroy = vi.fn();
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(
+      () =>
+        new Promise<RuntimeRenderHandle>((resolve) => {
+          resolveRender = resolve;
+        }),
+    ),
+  };
+
+  const { unmount } = render(<EpubViewport bookId="book-1" runtime={runtime} />);
+  unmount();
+
+  if (!resolveRender) {
+    throw new Error("render was not captured");
+  }
+
+  resolveRender({
+    applyPreferences: async () => undefined,
+    destroy,
+    findCfiFromTextQuote: async () => null,
+    getTextFromCurrentLocation: async () => "",
+    goTo: async () => undefined,
+    next: async () => undefined,
+    prev: async () => undefined,
+    setActiveTtsSegment: async () => undefined,
+    setFlow: async () => undefined,
+  });
+
+  await vi.waitFor(() => {
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
 });

@@ -100,6 +100,13 @@ export function EpubViewport({
           },
           onTocChange,
         });
+
+        if (cancelled) {
+          handle.destroy();
+          handle = null;
+          return;
+        }
+
         runtimeHandleRef.current = handle;
         onReady?.(handle);
       }
