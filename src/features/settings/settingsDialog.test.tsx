@@ -58,12 +58,14 @@ afterEach(async () => {
 });
 
 it("does not include a localhost helper url in default settings", () => {
+  const keys = Object.keys(createDefaultSettings("192.168.1.31"));
+
   expect(createDefaultSettings("192.168.1.31")).toMatchObject({
     ttsRate: 1,
     ttsVoice: "",
     ttsVolume: 1,
   });
-  expect(createDefaultSettings("192.168.1.31")).not.toHaveProperty("ttsHelperUrl");
+  expect(keys.some((key) => /helper/i.test(key))).toBe(false);
 });
 
 it("persists browser tts settings without rendering a helper url field", async () => {

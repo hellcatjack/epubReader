@@ -2,47 +2,88 @@ import { expect, test } from "@playwright/test";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
-const minimalWave = Buffer.from([
-  82, 73, 70, 70, 38, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0, 68, 172,
-  0, 0, 136, 88, 1, 0, 2, 0, 16, 0, 100, 97, 116, 97, 2, 0, 0, 0, 0, 0,
-]);
 
-test("local helper tts supports selection playback and continuous reader controls", async ({ page }) => {
-  const speakRequests: Array<{ text: string; voiceId: string }> = [];
-
+test("browser tts supports selection playback and continuous reader controls", async ({ page }) => {
   await page.addInitScript(() => {
-    const timers = new WeakMap<HTMLMediaElement, number>();
+    const calls: Array<{ text: string; voice: string | null }> = [];
+    let paused = false;
+    let activeTimer: number | undefined;
 
-    Object.defineProperty(HTMLMediaElement.prototype, "play", {
+    Object.defineProperty(navigator, "userAgent", {
       configurable: true,
-      value: function play() {
-        this.dataset.mockPaused = "false";
-        const timer = window.setTimeout(() => {
-          if (this.dataset.mockPaused !== "true") {
-            this.dispatchEvent(new Event("ended"));
-          }
-        }, 1000);
-        timers.set(this, timer);
-        return Promise.resolve();
-      },
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
     });
 
-    Object.defineProperty(HTMLMediaElement.prototype, "pause", {
-      configurable: true,
-      value: function pause() {
-        this.dataset.mockPaused = "true";
-        const timer = timers.get(this);
-        if (timer) {
-          window.clearTimeout(timer);
-        }
-      },
-    });
+    class MockSpeechSynthesisUtterance {
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
 
-    Object.defineProperty(HTMLMediaElement.prototype, "load", {
-      configurable: true,
-      value: function load() {
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
         return undefined;
       },
+      cancel() {
+        paused = false;
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        paused = true;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        paused = false;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({ text: utterance.text, voice: utterance.voice?.name ?? null });
+        activeTimer = window.setTimeout(() => {
+          if (!paused) {
+            utterance.onend?.(new Event("end"));
+          }
+        }, 100);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
     });
   });
 
@@ -56,55 +97,6 @@ test("local helper tts supports selection playback and continuous reader control
     });
   });
 
-  await page.route("http://127.0.0.1:43115/health", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        backend: "kokoro",
-        device: "cuda:0",
-        status: "ok",
-        version: "0.1.0",
-        voiceCount: 1,
-        warmed: true,
-      }),
-    });
-  });
-
-  await page.route("http://127.0.0.1:43115/voices", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
-        {
-          id: "af_heart",
-          displayName: "Heart",
-          gender: "female",
-          isDefault: true,
-          locale: "en-US",
-        },
-      ]),
-    });
-  });
-
-  await page.route("http://127.0.0.1:43115/prewarm", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ status: "ok" }),
-    });
-  });
-
-  await page.route("http://127.0.0.1:43115/speak", async (route) => {
-    const body = route.request().postDataJSON() as { text: string; voiceId: string };
-    speakRequests.push({ text: body.text, voiceId: body.voiceId });
-    await route.fulfill({
-      status: 200,
-      contentType: "audio/wav",
-      body: minimalWave,
-    });
-  });
-
   await page.goto("/");
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
@@ -113,14 +105,21 @@ test("local helper tts supports selection playback and continuous reader control
   expect(selectedText.length).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: /read aloud/i }).click();
-  await expect.poll(() => speakRequests.length).toBe(1);
-  expect(speakRequests[0]?.text).toContain(selectedText);
-  expect(speakRequests[0]?.voiceId).toBe("af_heart");
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBe(1);
+
+  const firstCall = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string; voice: string | null }> }).__ttsCalls[0],
+  );
+  expect(firstCall?.text).toContain(selectedText);
+  expect(firstCall?.voice).toBe("Microsoft Ava Online (Natural)");
 
   await page.getByRole("button", { name: /start tts/i }).click();
   await expect(page.getByText(/tts status: playing/i)).toBeVisible();
-  await expect.poll(() => speakRequests.length).toBeGreaterThan(1);
-  expect(speakRequests[1]?.voiceId).toBe("af_heart");
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(1);
 
   await page.getByRole("button", { name: /pause tts/i }).click();
   await expect(page.getByText(/tts status: paused/i)).toBeVisible();

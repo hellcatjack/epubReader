@@ -5,7 +5,7 @@ function createFakeBrowserTtsClient() {
   let current:
     | {
         onEnd?: () => void;
-        onError?: (error: Error) => void;
+        onError?: (error: Event | SpeechSynthesisErrorEvent) => void;
         text: string;
       }
     | undefined;
@@ -14,7 +14,7 @@ function createFakeBrowserTtsClient() {
     finishCurrent() {
       current?.onEnd?.();
     },
-    failCurrent(error = new Error("synthesis failed")) {
+    failCurrent(error: Event | SpeechSynthesisErrorEvent = new Event("error")) {
       current?.onError?.(error);
     },
     pause: vi.fn(),
@@ -24,7 +24,7 @@ function createFakeBrowserTtsClient() {
         text: string,
         options: {
           onEnd?: () => void;
-          onError?: (error: Error) => void;
+          onError?: (error: Event | SpeechSynthesisErrorEvent) => void;
           rate: number;
           voiceId: string;
           volume: number;
@@ -99,7 +99,7 @@ describe("ttsQueue", () => {
       },
     });
 
-    client.failCurrent(new Error("synthesis failed"));
+    client.failCurrent(new Event("error"));
 
     await vi.waitFor(() => {
       expect(queue.getState()).toMatchObject({

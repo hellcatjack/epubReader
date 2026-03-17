@@ -45,7 +45,7 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
   );
 }
 
-async function migrateSettings(record: Partial<SettingsInput & { ttsHelperUrl?: string }> | null) {
+async function migrateSettings(record: Partial<SettingsInput> | null) {
   if (!record) {
     return null;
   }
@@ -72,8 +72,7 @@ async function migrateSettings(record: Partial<SettingsInput & { ttsHelperUrl?: 
   if (
     isLegacySettingsRecord(record) ||
     record.targetLanguageCustomized !== migratedSettings.targetLanguageCustomized ||
-    migratedSettings.targetLanguage !== record.targetLanguage ||
-    record.ttsHelperUrl !== undefined
+    migratedSettings.targetLanguage !== record.targetLanguage
   ) {
     await db.settings.put({
       id: "settings",
@@ -97,7 +96,7 @@ export async function saveSettings(settings: SettingsPatch) {
 
 export async function getSettings() {
   const settings = await db.settings.get("settings");
-  return migrateSettings((settings ?? null) as Partial<SettingsInput & { ttsHelperUrl?: string }> | null);
+  return migrateSettings((settings ?? null) as Partial<SettingsInput> | null);
 }
 
 export async function getResolvedSettings() {

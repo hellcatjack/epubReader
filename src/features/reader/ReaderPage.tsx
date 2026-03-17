@@ -21,7 +21,7 @@ import { toReaderPreferences, type ReaderPreferences } from "./readerPreferences
 import { selectionBridge, type ReaderSelection } from "./selectionBridge";
 
 type ReaderPageProps = {
-  ai?: Pick<AiService, "explainSelection" | "synthesizeSpeech" | "translateSelection">;
+  ai?: Pick<AiService, "explainSelection" | "translateSelection">;
   runtime?: EpubViewportRuntime;
 };
 

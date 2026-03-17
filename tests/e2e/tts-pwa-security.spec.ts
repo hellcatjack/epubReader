@@ -2,63 +2,78 @@ import { expect, test } from "@playwright/test";
 
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
 
-function createSilentWav(durationMs = 750, sampleRate = 24000) {
-  const sampleCount = Math.floor((sampleRate * durationMs) / 1000);
-  const dataSize = sampleCount * 2;
-  const buffer = Buffer.alloc(44 + dataSize);
+test("pwa registration and browser tts states behave correctly", async ({ page }) => {
+  await page.addInitScript(() => {
+    let paused = false;
+    let activeTimer: number | undefined;
 
-  buffer.write("RIFF", 0);
-  buffer.writeUInt32LE(36 + dataSize, 4);
-  buffer.write("WAVE", 8);
-  buffer.write("fmt ", 12);
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(1, 22);
-  buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(sampleRate * 2, 28);
-  buffer.writeUInt16LE(2, 32);
-  buffer.writeUInt16LE(16, 34);
-  buffer.write("data", 36);
-  buffer.writeUInt32LE(dataSize, 40);
-
-  return buffer;
-}
-
-test("pwa registration and kokoro tts states behave correctly", async ({ page }) => {
-  let helperWarmed = false;
-  let speakRequests = 0;
-
-  await page.route(/http:\/\/127\.0\.0\.1:43115\/health$/, async (route) => {
-    await route.fulfill({
-      body: JSON.stringify({
-        backend: "kokoro",
-        device: "cuda:0",
-        status: helperWarmed ? "ok" : "warming_up",
-        version: "0.1.0",
-        voiceCount: 4,
-        warmed: helperWarmed,
-      }),
-      contentType: "application/json",
-      status: 200,
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
     });
-  });
 
-  await page.route(/http:\/\/127\.0\.0\.1:43115\/prewarm$/, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    helperWarmed = true;
-    await route.fulfill({
-      body: JSON.stringify({ status: "ok" }),
-      contentType: "application/json",
-      status: 200,
+    class MockSpeechSynthesisUtterance {
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        addEventListener() {
+          return undefined;
+        },
+        cancel() {
+          paused = false;
+          if (activeTimer) {
+            clearTimeout(activeTimer);
+            activeTimer = undefined;
+          }
+        },
+        getVoices() {
+          return voices;
+        },
+        pause() {
+          paused = true;
+        },
+        pending: false,
+        removeEventListener() {
+          return undefined;
+        },
+        resume() {
+          paused = false;
+        },
+        speak(utterance: MockSpeechSynthesisUtterance) {
+          activeTimer = window.setTimeout(() => {
+            if (!paused) {
+              utterance.onend?.(new Event("end"));
+            }
+          }, 100);
+        },
+        speaking: false,
+      },
     });
-  });
-
-  await page.route(/http:\/\/127\.0\.0\.1:43115\/speak$/, async (route) => {
-    speakRequests += 1;
-    await route.fulfill({
-      body: createSilentWav(),
-      contentType: "audio/wav",
-      status: 200,
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
     });
   });
 
@@ -84,16 +99,11 @@ test("pwa registration and kokoro tts states behave correctly", async ({ page })
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
-  await expect(page.getByText(/tts status: warming up model/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: /start tts/i })).toBeDisabled();
-
+  await expect(page.getByText(/tts status: idle/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /start tts/i })).toBeEnabled();
-  await page.getByRole("button", { name: /start tts/i }).click();
 
-  await expect
-    .poll(async () => (await page.getByLabel("TTS queue").locator("p").first().textContent()) ?? "")
-    .toContain("playing");
-  await expect.poll(() => speakRequests).toBeGreaterThan(0);
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect(page.getByText(/tts status: playing/i)).toBeVisible();
 
   await expect(page.getByRole("button", { name: /read aloud/i })).toBeDisabled();
   await expect(page.locator(".epub-root iframe").first()).toHaveAttribute("sandbox", "allow-same-origin");
