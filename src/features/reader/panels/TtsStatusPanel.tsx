@@ -19,10 +19,12 @@ export function TtsStatusPanel({
   startDisabled = false,
   status = "idle",
 }: TtsStatusPanelProps) {
+  const statusLabel = status === "loading" ? "Generating audio" : status;
+
   return (
     <section className="reader-panel" aria-label="TTS queue">
       <h2>TTS queue</h2>
-      <p>TTS status: {status}</p>
+      <p>TTS status: {statusLabel}</p>
       {currentText ? <p>Current: {currentText}</p> : <p>Ready to read the current selection or chapter.</p>}
       {error ? <p>{error}</p> : null}
       <div className="reader-tts-actions" role="group" aria-label="TTS controls">

@@ -24,6 +24,12 @@ type StartArgs = {
   request: Omit<LocalTtsSpeakRequest, "text">;
 };
 
+type AudioTask = {
+  chunk: string;
+  promise: Promise<Blob>;
+  settled: boolean;
+};
+
 export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
   let state: TtsQueueState = {
     currentText: "",
@@ -35,6 +41,30 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
     onStateChange?.(nextState);
   };
 
+  function createAudioTask(chunk: string, request: Omit<LocalTtsSpeakRequest, "text">): AudioTask {
+    const task: AudioTask = {
+      chunk,
+      promise: Promise.resolve(new Blob()),
+      settled: false,
+    };
+
+    task.promise = speak({
+      ...request,
+      text: chunk,
+    }).then(
+      (audio) => {
+        task.settled = true;
+        return audio;
+      },
+      (error) => {
+        task.settled = true;
+        throw error;
+      },
+    );
+
+    return task;
+  }
+
   async function start({ chunks, request }: StartArgs) {
     runId += 1;
     const activeRunId = runId;
@@ -44,22 +74,27 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
       return;
     }
 
-    for (const chunk of chunks) {
+    let currentTask: AudioTask | null = createAudioTask(chunks[0], request);
+
+    for (const [index, chunk] of chunks.entries()) {
       if (activeRunId !== runId) {
         break;
       }
 
-      emitState({
-        currentText: chunk,
-        status: "loading",
-      });
+      if (!currentTask) {
+        break;
+      }
+
+      if (index === 0 || !currentTask.settled) {
+        emitState({
+          currentText: chunk,
+          status: "loading",
+        });
+      }
 
       let audio: Blob;
       try {
-        audio = await speak({
-          ...request,
-          text: chunk,
-        });
+        audio = await currentTask.promise;
       } catch {
         if (activeRunId === runId) {
           emitState({
@@ -73,6 +108,9 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
       if (activeRunId !== runId) {
         break;
       }
+
+      const nextChunk = chunks[index + 1];
+      const nextTask = nextChunk ? createAudioTask(nextChunk, request) : null;
 
       await player.load(audio);
       emitState({
@@ -91,6 +129,8 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
         }
         return;
       }
+
+      currentTask = nextTask;
     }
 
     if (activeRunId === runId) {
