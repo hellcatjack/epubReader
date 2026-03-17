@@ -3,7 +3,7 @@ import "fake-indexeddb/auto";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-import { resetDb } from "../../lib/db/appDb";
+import { db, resetDb } from "../../lib/db/appDb";
 import { createDefaultSettings, getSettings } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
 
@@ -133,10 +133,45 @@ it("persists browser tts settings without rendering a helper url field", async (
     paragraphIndent: 2,
     contentPadding: 40,
     maxLineWidth: 780,
-    columnCount: 2,
+    columnCount: 1,
     fontFamily: "book",
     ttsRate: 1.15,
     ttsVoice: "Microsoft Andrew Online (Natural)",
     ttsVolume: 0.9,
+  });
+});
+
+it("shows single-column paginated mode in the settings UI without deleting the saved scrolled preference", async () => {
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+  await db.settings.put({
+    id: "settings",
+    apiKey: "",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    readingMode: "paginated",
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    maxLineWidth: 760,
+    columnCount: 2,
+    fontFamily: "book",
+  });
+
+  render(<SettingsDialog />);
+
+  const columnCount = await screen.findByLabelText(/column count/i);
+  expect(columnCount).toBeDisabled();
+  expect(columnCount).toHaveValue("1");
+
+  await expect(getSettings()).resolves.toMatchObject({
+    readingMode: "paginated",
+    columnCount: 2,
   });
 });

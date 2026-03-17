@@ -308,13 +308,14 @@ export function SettingsDialog() {
             Column count
             <select
               aria-label="Column count"
-              onChange={(event) =>
+              disabled={settings.readingMode === "paginated"}
+              onChange={(event) => {
                 setSettings((current) => ({
                   ...current,
                   columnCount: Number.parseInt(event.target.value, 10) === 2 ? 2 : 1,
-                }))
-              }
-              value={String(settings.columnCount)}
+                }));
+              }}
+              value={String(settings.readingMode === "paginated" ? 1 : settings.columnCount)}
             >
               <option value="1">1</option>
               <option value="2">2</option>
