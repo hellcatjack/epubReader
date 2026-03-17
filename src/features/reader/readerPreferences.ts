@@ -71,10 +71,9 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
     },
     ".reader-tts-active-segment": {
       "background": "rgba(214, 144, 58, 0.14)",
-      "border-left": "0.28rem solid rgba(186, 106, 47, 0.72)",
       "border-radius": "0.45rem",
-      "box-shadow": "inset 0 0 0 1px rgba(186, 106, 47, 0.08)",
-      "padding-left": "0.55rem",
+      "box-shadow": "inset 0.22rem 0 0 rgba(186, 106, 47, 0.72), inset 0 0 0 1px rgba(186, 106, 47, 0.08)",
+      "padding-left": "0",
       "scroll-margin-top": "18vh",
       "transition": "none",
     },

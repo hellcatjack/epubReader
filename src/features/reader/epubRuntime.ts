@@ -37,6 +37,8 @@ export type EpubViewportRuntime = {
   render(args: RuntimeRenderArgs): Promise<RuntimeRenderHandle>;
 };
 
+const ttsBlockSelector = "p, li, blockquote";
+
 function hasDisplayedLocationShape(
   value: unknown,
 ): value is {
@@ -62,6 +64,47 @@ function flattenTocItems(items: NavItem[]): TocItem[] {
     },
     ...(item.subitems ? flattenTocItems(item.subitems) : []),
   ]);
+}
+
+function normalizeSegmentText(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export function getNearestTtsBlockElement(node: Node | null) {
+  if (!node) {
+    return null;
+  }
+
+  const element = node instanceof Element ? node : node.parentElement;
+  return element?.closest<HTMLElement>(ttsBlockSelector) ?? null;
+}
+
+export function findTtsBlockElementByText(root: ParentNode, text: string) {
+  const normalizedSegment = normalizeSegmentText(text);
+  if (!normalizedSegment) {
+    return null;
+  }
+
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>(ttsBlockSelector));
+  let prefixMatch: HTMLElement | null = null;
+  const segmentPrefix = normalizedSegment.slice(0, Math.min(normalizedSegment.length, 120));
+
+  for (const candidate of candidates) {
+    const candidateText = normalizeSegmentText(candidate.innerText || candidate.textContent || "");
+    if (!candidateText) {
+      continue;
+    }
+
+    if (normalizedSegment === candidateText || normalizedSegment.includes(candidateText)) {
+      return candidate;
+    }
+
+    if (!prefixMatch && segmentPrefix && candidateText.includes(segmentPrefix)) {
+      prefixMatch = candidate;
+    }
+  }
+
+  return prefixMatch;
 }
 
 export const epubViewportRuntime: EpubViewportRuntime = {
@@ -91,7 +134,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
       if (nextContents) {
         currentContents = nextContents;
-        applyActiveTtsSegment(activeTtsSegment);
+        void applyActiveTtsSegment(activeTtsSegment);
       }
     };
 
@@ -100,39 +143,25 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       activeTtsElement = null;
     };
 
-    const findSegmentElement = (contents: Contents, text: string) => {
-      const normalizedSegment = normalizeText(text);
-      if (!normalizedSegment) {
-        return null;
-      }
-
-      const doc = contents.document;
-      const candidates = Array.from(
-        doc.body.querySelectorAll<HTMLElement>("p, li, blockquote, h1, h2, h3, h4, h5, h6, div"),
-      );
-
-      let prefixMatch: HTMLElement | null = null;
-      const segmentPrefix = normalizedSegment.slice(0, Math.min(normalizedSegment.length, 120));
-
-      for (const candidate of candidates) {
-        const candidateText = normalizeText(candidate.innerText || candidate.textContent || "");
-        if (!candidateText) {
-          continue;
-        }
-
-        if (normalizedSegment.includes(candidateText)) {
-          return candidate;
-        }
-
-        if (!prefixMatch && segmentPrefix && candidateText.includes(segmentPrefix)) {
-          prefixMatch = candidate;
+    const findSegmentElement = async (contents: Contents, segment: ActiveTtsSegment) => {
+      if (segment.cfi) {
+        try {
+          const range = await book.getRange(segment.cfi);
+          const block = getNearestTtsBlockElement(range?.startContainer ?? null);
+          if (block && contents.document.body.contains(block)) {
+            return block;
+          }
+        } catch {
+          // Fall back to text targeting when the stored CFI cannot be resolved in the current rendition.
         }
       }
 
-      return prefixMatch;
+      return findTtsBlockElementByText(contents.document.body, segment.text);
     };
 
-    const applyActiveTtsSegment = (segment: ActiveTtsSegment | null) => {
+    let activeTtsLookupToken = 0;
+
+    const applyActiveTtsSegment = async (segment: ActiveTtsSegment | null) => {
       activeTtsSegment = segment;
       clearActiveTtsSegment();
 
@@ -144,7 +173,12 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         return;
       }
 
-      const nextElement = findSegmentElement(currentContents, segment.text);
+      const lookupToken = ++activeTtsLookupToken;
+      const nextElement = await findSegmentElement(currentContents, segment);
+      if (lookupToken !== activeTtsLookupToken) {
+        return;
+      }
+
       if (!nextElement) {
         return;
       }
@@ -290,7 +324,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
     const handleRendered = (_section: unknown, contents: Contents) => {
       currentContents = contents;
-      applyActiveTtsSegment(activeTtsSegment);
+      void applyActiveTtsSegment(activeTtsSegment);
     };
 
     rendition.on("selected", handleSelection);
@@ -319,7 +353,6 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         rendition.off("rendered", handleRendered);
         rendition.destroy();
         book.destroy();
-        element.innerHTML = "";
       },
       async findCfiFromTextQuote(textQuote) {
         if (!currentContents) {
@@ -384,7 +417,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         return rendition.prev();
       },
       async setActiveTtsSegment(segment) {
-        applyActiveTtsSegment(segment);
+        await applyActiveTtsSegment(segment);
       },
       async setFlow(nextFlow) {
         activePreferences = {

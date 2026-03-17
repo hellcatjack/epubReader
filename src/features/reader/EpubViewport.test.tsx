@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { vi } from "vitest";
 import { EpubViewport } from "./EpubViewport";
 import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
@@ -148,6 +148,80 @@ it("destroys stale runtime handles that resolve after the viewport unmounts", as
 
   await vi.waitFor(() => {
     expect(destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+it("does not let a stale rerender wipe the latest viewport content", async () => {
+  let resolveFirstRender: ((value: RuntimeRenderHandle) => void) | undefined;
+  const destroyFirst = vi.fn();
+  const runtime: EpubViewportRuntime = {
+    render: vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<RuntimeRenderHandle>((resolve) => {
+            resolveFirstRender = (handle) => {
+              resolve(handle);
+            };
+          }),
+      )
+      .mockImplementationOnce(async () => ({
+          applyPreferences: async () => undefined,
+          destroy() {
+            return undefined;
+          },
+          findCfiFromTextQuote: async () => null,
+          getTextFromCurrentLocation: async () => "",
+          goTo: async () => undefined,
+          next: async () => undefined,
+          prev: async () => undefined,
+          setActiveTtsSegment: async () => undefined,
+          setFlow: async () => undefined,
+        })),
+  };
+
+  const { rerender } = render(<EpubViewport bookId="book-1" runtime={runtime} />);
+
+  await vi.waitFor(() => {
+    expect(runtime.render).toHaveBeenCalledTimes(1);
+    expect(resolveFirstRender).toBeTypeOf("function");
+  });
+
+  rerender(
+    <EpubViewport
+      bookId="book-1"
+      initialProgress={{
+        bookId: "book-1",
+        cfi: "epubcfi(/6/2!/4/2/1:0)",
+        progress: 0.4,
+        spineItemId: "chapter-1.xhtml",
+        textQuote: "The thing was, she was so darn comfortable.",
+        updatedAt: Date.now(),
+      }}
+      runtime={runtime}
+    />,
+  );
+
+  await vi.waitFor(() => {
+    expect(runtime.render).toHaveBeenCalledTimes(2);
+  });
+
+  await act(async () => {
+    resolveFirstRender?.({
+      applyPreferences: async () => undefined,
+      destroy: destroyFirst,
+      findCfiFromTextQuote: async () => null,
+      getTextFromCurrentLocation: async () => "",
+      goTo: async () => undefined,
+      next: async () => undefined,
+      prev: async () => undefined,
+      setActiveTtsSegment: async () => undefined,
+      setFlow: async () => undefined,
+    });
+  });
+
+  await vi.waitFor(() => {
+    expect(destroyFirst).toHaveBeenCalledTimes(1);
   });
 });
 
