@@ -13,6 +13,11 @@ import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
 import type { ActiveTtsSegment, EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
+import {
+  readRefreshProgressSnapshot,
+  resolvePreferredProgress,
+  writeRefreshProgressSnapshot,
+} from "./refreshProgressSnapshot";
 import { LeftRail } from "./LeftRail";
 import { RightPanel } from "./RightPanel";
 import { SelectionPopover } from "./SelectionPopover";
@@ -211,24 +216,31 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     setCurrentSpineItemId("");
     setReaderStatus("Restoring reading position...");
 
+    const refreshSnapshot = readRefreshProgressSnapshot(bookId);
+    const applyResolvedProgress = (progress: ProgressRecord | null) => {
+      setInitialProgress(progress ?? null);
+      setInitialCfi(progress?.cfi);
+      setLocationTarget(progress?.cfi);
+    };
+
+    if (refreshSnapshot) {
+      applyResolvedProgress(refreshSnapshot);
+    }
+
     void getProgress(bookId)
       .then((progress) => {
         if (cancelled) {
           return;
         }
 
-        setInitialProgress(progress ?? null);
-        setInitialCfi(progress?.cfi);
-        setLocationTarget(progress?.cfi);
+        applyResolvedProgress(resolvePreferredProgress(refreshSnapshot, progress ?? null));
       })
       .catch(() => {
         if (cancelled) {
           return;
         }
 
-        setInitialProgress(null);
-        setInitialCfi(undefined);
-        setLocationTarget(undefined);
+        applyResolvedProgress(refreshSnapshot ?? null);
       })
       .finally(() => {
         if (cancelled) {
@@ -474,6 +486,10 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         return;
       }
 
+      if (currentLocation.cfi) {
+        writeRefreshProgressSnapshot(bookId, currentLocation);
+      }
+
       void (async () => {
         const runtimeLocation = await runtimeHandle?.getCurrentLocation?.();
         const nextLocation = runtimeLocation ?? (currentLocation.cfi ? currentLocation : null);
@@ -481,6 +497,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           return;
         }
 
+        writeRefreshProgressSnapshot(bookId, nextLocation);
         await saveProgress(bookId, {
           cfi: nextLocation.cfi,
           pageOffset: nextLocation.pageOffset,
@@ -979,6 +996,9 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
                 initialCfi={nextInitialCfi}
                 initialProgress={initialProgress}
                 onLocationChange={({ cfi, pageOffset, progress, spineItemId, textQuote }) => {
+                  if (bookId) {
+                    writeRefreshProgressSnapshot(bookId, { cfi, pageOffset, progress, spineItemId, textQuote });
+                  }
                   setCurrentLocation({ cfi, pageOffset, progress, spineItemId, textQuote });
                   setCurrentSpineItemId(spineItemId);
                 }}

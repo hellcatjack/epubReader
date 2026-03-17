@@ -31,6 +31,7 @@ afterEach(async () => {
   getProgressMock.mockResolvedValue(null);
   saveProgressMock.mockReset();
   saveProgressMock.mockResolvedValue(undefined);
+  sessionStorage.clear();
   await resetDb();
 });
 
@@ -170,6 +171,71 @@ it("waits for saved progress before opening the reader and restores the saved cf
   });
 });
 
+it("prefers a newer same-tab refresh snapshot over older persisted progress when restoring", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  sessionStorage.setItem(
+    "reader-refresh-progress:book-1",
+    JSON.stringify({
+      bookId: "book-1",
+      cfi: "epubcfi(/6/14!/4/2/26/1:193)",
+      pageOffset: 1732,
+      progress: 0.63,
+      spineItemId: "chapter-one.xhtml",
+      textQuote: "without Eli, the new foster kid",
+      updatedAt: 200,
+    }),
+  );
+  getProgressMock.mockResolvedValueOnce({
+    bookId: "book-1",
+    cfi: "epubcfi(/6/14!/4/2/14/1:37)",
+    pageOffset: 984,
+    progress: 0.51,
+    spineItemId: "chapter-one.xhtml",
+    textQuote: "sound had been in time with her heartbeat",
+    updatedAt: 100,
+  });
+  const renderSpy = vi.fn(async () => ({
+    applyPreferences: vi.fn(async () => undefined),
+    destroy() {
+      return undefined;
+    },
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route path="/books/:bookId" element={<ReaderPage runtime={{ render: renderSpy }} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookId: "book-1",
+        initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
+        initialPageOffset: 1732,
+      }),
+    );
+  });
+});
+
 it("shows reader status details in the tools rail instead of below the page surface", async () => {
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   installSpeechSynthesis([
@@ -218,6 +284,70 @@ it("shows reader status details in the tools rail instead of below the page surf
   });
 
   expect(within(toolsRail).getByText(/0 local annotations in view/i)).toBeInTheDocument();
+});
+
+it("writes a same-tab refresh snapshot when the reader location changes", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/14!/4/2/26/1:193)",
+                    pageOffset: 1732,
+                    progress: 0.63,
+                    spineItemId: "chapter-one.xhtml",
+                    textQuote: "without Eli, the new foster kid",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => ""),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(JSON.parse(sessionStorage.getItem("reader-refresh-progress:book-1") ?? "null")).toEqual(
+      expect.objectContaining({
+        cfi: "epubcfi(/6/14!/4/2/26/1:193)",
+        pageOffset: 1732,
+        progress: 0.63,
+        spineItemId: "chapter-one.xhtml",
+        textQuote: "without Eli, the new foster kid",
+      }),
+    );
+  });
 });
 
 it("flushes the latest runtime location on pagehide even when reader state is stale", async () => {
