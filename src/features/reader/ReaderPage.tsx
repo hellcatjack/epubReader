@@ -5,10 +5,10 @@ import type { ProgressRecord, TocItem } from "../../lib/types/books";
 import type { ReadingMode, SettingsInput } from "../../lib/types/settings";
 import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
-import { getProgress } from "../bookshelf/progressRepository";
+import { getProgress, saveProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
 import { createBrowserTtsClient } from "../tts/browserTtsClient";
-import { chunkTextSegments, chunkTextSegmentsFromBlocks } from "../tts/chunkText";
+import { chunkTextSegments, chunkTextSegmentsFromBlocks, type ChunkSegment } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
@@ -26,12 +26,44 @@ type ReaderPageProps = {
 };
 
 type ReaderTtsState = {
+  chunkIndex: number;
   currentText: string;
   error: string;
+  markerCfi: string;
+  markerIndex: number;
   markerText: string;
   mode: "continuous" | "idle" | "selection";
   status: "error" | "idle" | "loading" | "paused" | "playing";
 };
+
+function sliceChunksFromMarker(chunks: ChunkSegment[], chunkIndex: number, markerIndex: number) {
+  const activeChunk = chunks[chunkIndex];
+  if (!activeChunk) {
+    return chunks;
+  }
+
+  const remainingMarkers = activeChunk.markers.slice(Math.max(0, markerIndex));
+  if (!remainingMarkers.length) {
+    return chunks.slice(chunkIndex + 1);
+  }
+
+  let cursor = 0;
+  const trimmedChunk: ChunkSegment = {
+    markers: remainingMarkers.map((marker) => {
+      const start = cursor;
+      const end = cursor + marker.text.length;
+      cursor = end + 1;
+      return {
+        ...marker,
+        end,
+        start,
+      };
+    }),
+    text: remainingMarkers.map((marker) => marker.text).join(" "),
+  };
+
+  return [trimmedChunk, ...chunks.slice(chunkIndex + 1)];
+}
 
 function isEdgeDesktopBrowser(userAgent: string) {
   return /Edg\//.test(userAgent) && !/(Android|iPhone|iPad|Mobile)/i.test(userAgent);
@@ -59,16 +91,21 @@ function isAutoSpeakableSelection(text: string) {
 }
 
 async function getContinuousTtsChunks(runtimeHandle: RuntimeRenderHandle) {
-  const ttsBlocks = await runtimeHandle.getTtsBlocksFromCurrentLocation?.();
-  if (ttsBlocks?.length) {
-    return chunkTextSegmentsFromBlocks(
-      ttsBlocks.map((block) => block.text),
-      { firstSegmentMax: 280, segmentMax: 500 },
-    );
+  try {
+    const ttsBlocks = await runtimeHandle.getTtsBlocksFromCurrentLocation?.();
+    if (ttsBlocks?.length) {
+      return chunkTextSegmentsFromBlocks(ttsBlocks, { firstSegmentMax: 280, segmentMax: 500 });
+    }
+  } catch {
+    // Fall back to flattened text extraction when paragraph-aware markers are unavailable.
   }
 
-  const text = await runtimeHandle.getTextFromCurrentLocation();
-  return chunkTextSegments(text, { firstSegmentMax: 280, segmentMax: 500 });
+  try {
+    const text = await runtimeHandle.getTextFromCurrentLocation();
+    return chunkTextSegments(text, { firstSegmentMax: 280, segmentMax: 500 });
+  } catch {
+    return [];
+  }
 }
 
 export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
@@ -87,7 +124,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [aiResult, setAiResult] = useState("");
   const [aiTitle, setAiTitle] = useState("AI result");
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
-  const [currentLocation, setCurrentLocation] = useState({ cfi: "", progress: 0, spineItemId: "" });
+  const [currentLocation, setCurrentLocation] = useState({ cfi: "", progress: 0, spineItemId: "", textQuote: "" });
   const [noteDraft, setNoteDraft] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
   const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
@@ -95,8 +132,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
   const [ttsStartReady, setTtsStartReady] = useState(false);
   const [ttsState, setTtsState] = useState<ReaderTtsState>({
+    chunkIndex: -1,
     currentText: "",
     error: "",
+    markerCfi: "",
+    markerIndex: -1,
     markerText: "",
     mode: "idle",
     status: "idle",
@@ -106,6 +146,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const lastAutoTranslatedSelectionKeyRef = useRef("");
   const activeSelectionSpeechRequestRef = useRef(0);
   const continuousSpineItemIdRef = useRef("");
+  const continuousChunksRef = useRef<ChunkSegment[]>([]);
+  const lastAutoPagedCfiRef = useRef("");
   const ttsReadinessRequestRef = useRef(0);
   const browserTtsClientRef = useRef(createBrowserTtsClient());
   const ttsQueueRef = useRef<ReturnType<typeof createTtsQueue> | null>(null);
@@ -117,7 +159,10 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         onStateChange(nextState) {
           setTtsState((currentState) => ({
             ...currentState,
+            chunkIndex: nextState.chunkIndex,
             currentText: nextState.currentText,
+            markerCfi: nextState.markerCfi,
+            markerIndex: nextState.markerIndex,
             markerText: nextState.markerText,
             mode:
               nextState.status === "idle" ? "idle" : currentState.mode === "idle" ? "continuous" : currentState.mode,
@@ -138,7 +183,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setInitialProgress(null);
       setIsProgressReady(true);
       setLocationTarget(undefined);
-      setCurrentLocation({ cfi: "", progress: 0, spineItemId: "" });
+      setCurrentLocation({ cfi: "", progress: 0, spineItemId: "", textQuote: "" });
       setCurrentSpineItemId("");
       setReaderStatus("Open a book from the shelf to start reading.");
       return;
@@ -148,7 +193,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     setInitialCfi(undefined);
     setInitialProgress(null);
     setLocationTarget(undefined);
-    setCurrentLocation({ cfi: "", progress: 0, spineItemId: "" });
+    setCurrentLocation({ cfi: "", progress: 0, spineItemId: "", textQuote: "" });
     setCurrentSpineItemId("");
     setReaderStatus("Restoring reading position...");
 
@@ -239,8 +284,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     if (!isEdgeDesktopBrowser(globalThis.navigator?.userAgent ?? "")) {
       setTtsState({
+        chunkIndex: -1,
         currentText: "",
         error: "TTS is optimized for Microsoft Edge on desktop.",
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         mode: "idle",
         status: "error",
@@ -257,8 +305,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         if (!voices.length) {
           setTtsStartReady(false);
           setTtsState({
+            chunkIndex: -1,
             currentText: "",
             error: "No compatible Edge English voices detected.",
+            markerCfi: "",
+            markerIndex: -1,
             markerText: "",
             mode: "idle",
             status: "error",
@@ -283,8 +334,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         setTtsState((currentState) =>
           currentState.mode === "idle"
             ? {
+                chunkIndex: -1,
                 currentText: "",
                 error: "",
+                markerCfi: "",
+                markerIndex: -1,
                 markerText: "",
                 mode: "idle",
                 status: "idle",
@@ -301,8 +355,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         setTtsState((currentState) =>
           currentState.mode === "idle"
             ? {
+                chunkIndex: -1,
                 currentText: "",
                 error: "Browser speech synthesis unavailable.",
+                markerCfi: "",
+                markerIndex: -1,
                 markerText: "",
                 mode: "idle",
                 status: "error",
@@ -378,8 +435,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       ttsQueueRef.current?.stop();
       continuousSpineItemIdRef.current = "";
       setTtsState({
+        chunkIndex: -1,
         currentText: "",
         error: "Reading position changed.",
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         mode: "idle",
         status: "idle",
@@ -393,6 +453,43 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       browserTtsClientRef.current.stop();
     };
   }, []);
+
+  useEffect(() => {
+    function flushReadingProgress() {
+      if (!bookId || !currentLocation.cfi) {
+        return;
+      }
+
+      void saveProgress(bookId, {
+        cfi: currentLocation.cfi,
+        progress: currentLocation.progress,
+        spineItemId: currentLocation.spineItemId,
+        textQuote: currentLocation.textQuote,
+      });
+    }
+
+    window.addEventListener("pagehide", flushReadingProgress);
+    return () => window.removeEventListener("pagehide", flushReadingProgress);
+  }, [bookId, currentLocation]);
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== "paginated" ||
+      ttsState.mode !== "continuous" ||
+      ttsState.status === "idle" ||
+      !runtimeHandle ||
+      !ttsState.markerCfi
+    ) {
+      return;
+    }
+
+    if (ttsState.markerCfi === currentLocation.cfi || lastAutoPagedCfiRef.current === ttsState.markerCfi) {
+      return;
+    }
+
+    lastAutoPagedCfiRef.current = ttsState.markerCfi;
+    void runtimeHandle.goTo(ttsState.markerCfi);
+  }, [currentLocation.cfi, runtimeHandle, settings.readingMode, ttsState.markerCfi, ttsState.mode, ttsState.status]);
 
   const selectedText = selectedSelection?.text ?? "";
   const selectedCfiRange = selectedSelection?.cfiRange ?? "";
@@ -483,8 +580,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     ttsQueueRef.current?.stop();
     browserTtsClientRef.current.stop();
     setTtsState({
+      chunkIndex: -1,
       currentText: nextText,
       error: "",
+      markerCfi: "",
+      markerIndex: -1,
       markerText: "",
       mode: "selection",
       status: "loading",
@@ -498,8 +598,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           }
 
           setTtsState({
+            chunkIndex: -1,
             currentText: "",
             error: "",
+            markerCfi: "",
+            markerIndex: -1,
             markerText: "",
             mode: "idle",
             status: "idle",
@@ -511,8 +614,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           }
 
           setTtsState({
+            chunkIndex: -1,
             currentText: nextText,
             error: `TTS failed: ${formatTtsError(error)}`,
+            markerCfi: "",
+            markerIndex: -1,
             markerText: "",
             mode: "selection",
             status: "error",
@@ -527,8 +633,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         return;
       }
       setTtsState({
+        chunkIndex: -1,
         currentText: nextText,
         error: "",
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         mode: "selection",
         status: "playing",
@@ -539,8 +648,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       }
 
       setTtsState({
+        chunkIndex: -1,
         currentText: nextText,
         error: `TTS failed: ${formatTtsError(error)}`,
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         mode: "selection",
         status: "error",
@@ -646,6 +758,38 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
   async function handleQuickTtsRateChange(rate: number) {
     await updateSettings({ ttsRate: rate });
+
+    if (ttsState.mode === "selection" && ttsState.status !== "idle" && ttsState.currentText) {
+      await startSelectionSpeech(ttsState.currentText);
+      return;
+    }
+
+    if (ttsState.mode !== "continuous" || ttsState.status === "idle" || !continuousChunksRef.current.length) {
+      return;
+    }
+
+    const queue = ensureTtsQueue();
+    const remainingChunks = sliceChunksFromMarker(
+      continuousChunksRef.current,
+      Math.max(0, ttsState.chunkIndex),
+      Math.max(0, ttsState.markerIndex),
+    );
+
+    if (!remainingChunks.length) {
+      return;
+    }
+
+    lastAutoPagedCfiRef.current = "";
+    continuousChunksRef.current = remainingChunks;
+    browserTtsClientRef.current.stop();
+    await queue.start({
+      chunks: remainingChunks,
+      request: {
+        rate,
+        voiceId: settings.ttsVoice,
+        volume: settings.ttsVolume,
+      },
+    });
   }
 
   async function handleStartTts() {
@@ -658,8 +802,11 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     if (!chunks.length) {
       setTtsState({
+        chunkIndex: -1,
         currentText: "",
         error: "No readable text is available from the current location.",
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         mode: "idle",
         status: "error",
@@ -669,10 +816,15 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     activeSelectionSpeechRequestRef.current += 1;
     continuousSpineItemIdRef.current = currentSpineItemId;
+    continuousChunksRef.current = chunks;
+    lastAutoPagedCfiRef.current = "";
     browserTtsClientRef.current.stop();
     setTtsState({
+      chunkIndex: 0,
       currentText: chunks[0]?.text ?? "",
       error: "",
+      markerCfi: chunks[0]?.markers[0]?.cfi ?? "",
+      markerIndex: 0,
       markerText: chunks[0]?.markers[0]?.text ?? chunks[0]?.text ?? "",
       mode: "continuous",
       status: "loading",
@@ -717,13 +869,18 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   function handleStopTts() {
     activeSelectionSpeechRequestRef.current += 1;
     continuousSpineItemIdRef.current = "";
+    continuousChunksRef.current = [];
+    lastAutoPagedCfiRef.current = "";
     if (ttsState.mode === "continuous") {
       ttsQueueRef.current?.stop();
     } else {
       browserTtsClientRef.current.stop();
       setTtsState({
+        chunkIndex: -1,
         currentText: "",
         error: "",
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         mode: "idle",
         status: "idle",
@@ -752,6 +909,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const activeContinuousTtsSegment: ActiveTtsSegment | null =
     ttsState.mode === "continuous" && ttsState.status !== "idle" && ttsState.markerText && continuousSpineItemIdRef.current
       ? {
+          cfi: ttsState.markerCfi || undefined,
           spineItemId: continuousSpineItemIdRef.current,
           text: ttsState.markerText,
         }
@@ -793,8 +951,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
                 bookId={bookId}
                 initialCfi={nextInitialCfi}
                 initialProgress={initialProgress}
-                onLocationChange={({ cfi, progress, spineItemId }) => {
-                  setCurrentLocation({ cfi, progress, spineItemId });
+                onLocationChange={({ cfi, progress, spineItemId, textQuote }) => {
+                  setCurrentLocation({ cfi, progress, spineItemId, textQuote });
                   setCurrentSpineItemId(spineItemId);
                 }}
                 onReady={setRuntimeHandle}

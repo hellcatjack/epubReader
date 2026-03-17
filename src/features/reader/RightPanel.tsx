@@ -60,14 +60,6 @@ export function RightPanel({
     <aside className="reader-tools" {...props}>
       <AiResultPanel error={aiError} result={aiResult} selectedText={selectedText} title={aiTitle} />
       <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
-      {appearance ? <AppearancePanel onChange={onAppearanceChange} preferences={appearance} /> : null}
-      <NoteEditorPanel
-        isOpen={noteOpen}
-        onChange={onNoteDraftChange}
-        onSave={onNoteSave}
-        selectedText={selectedText}
-        value={noteDraft}
-      />
       <TtsStatusPanel
         currentText={ttsCurrentText}
         error={ttsError}
@@ -79,6 +71,14 @@ export function RightPanel({
         rate={ttsRate}
         startDisabled={ttsStartDisabled}
         status={ttsStatus}
+      />
+      {appearance ? <AppearancePanel onChange={onAppearanceChange} preferences={appearance} /> : null}
+      <NoteEditorPanel
+        isOpen={noteOpen}
+        onChange={onNoteDraftChange}
+        onSave={onNoteSave}
+        selectedText={selectedText}
+        value={noteDraft}
       />
       <p className="reader-tools-hint">Bookmarks, highlights, and notes are stored only in this browser.</p>
     </aside>

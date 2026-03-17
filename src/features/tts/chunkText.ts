@@ -33,8 +33,16 @@ type ChunkOptions = {
   segmentMax?: number;
 };
 
+export type ChunkBlock = {
+  cfi?: string;
+  spineItemId?: string;
+  text: string;
+};
+
 export type ChunkMarker = {
+  cfi?: string;
   end: number;
+  spineItemId?: string;
   start: number;
   text: string;
 };
@@ -51,33 +59,52 @@ function normalizeParagraphs(text: string) {
     .filter(Boolean);
 }
 
-function normalizeBlocks(blocks: string[]) {
-  return blocks.map((block) => block.replace(/\s+/g, " ").trim()).filter(Boolean);
+function normalizeBlocks(blocks: Array<string | ChunkBlock>) {
+  return blocks
+    .map((block) =>
+      typeof block === "string"
+        ? {
+            text: block.replace(/\s+/g, " ").trim(),
+          }
+        : {
+            ...block,
+            text: block.text.replace(/\s+/g, " ").trim(),
+          },
+    )
+    .filter((block) => block.text);
 }
 
-function blocksToUnits(blocks: string[], maxCharacters: number) {
+function blocksToUnits(blocks: Array<string | ChunkBlock>, maxCharacters: number) {
   return normalizeBlocks(blocks).flatMap((block) => {
-    if (block.length <= maxCharacters) {
+    if (block.text.length <= maxCharacters) {
       return [block];
     }
 
-    return splitIntoSentences(block).flatMap((sentence) => {
+    return splitIntoSentences(block.text).flatMap((sentence) => {
       if (sentence.length <= maxCharacters) {
-        return [sentence];
+        return [
+          {
+            ...block,
+            text: sentence,
+          },
+        ];
       }
 
-      return splitOversizedSentence(sentence, maxCharacters);
+      return splitOversizedSentence(sentence, maxCharacters).map((text) => ({
+        ...block,
+        text,
+      }));
     });
   });
 }
 
-function joinUnits(units: string[], maxCharacters: number) {
+function joinUnits(units: ChunkBlock[], maxCharacters: number) {
   let current = "";
   let consumed = 0;
-  const segmentUnits: string[] = [];
+  const segmentUnits: ChunkBlock[] = [];
 
   for (const unit of units) {
-    const candidate = current ? `${current} ${unit}` : unit;
+    const candidate = current ? `${current} ${unit.text}` : unit.text;
     if (candidate.length <= maxCharacters || !current) {
       current = candidate;
       consumed += 1;
@@ -94,7 +121,10 @@ function joinUnits(units: string[], maxCharacters: number) {
   };
 }
 
-export function chunkTextSegmentsFromBlocks(blocks: string[], options: number | ChunkOptions = {}): ChunkSegment[] {
+export function chunkTextSegmentsFromBlocks(
+  blocks: Array<string | ChunkBlock>,
+  options: number | ChunkOptions = {},
+): ChunkSegment[] {
   const normalizedOptions =
     typeof options === "number"
       ? { firstSegmentMax: options, segmentMax: options }
@@ -116,12 +146,14 @@ export function chunkTextSegmentsFromBlocks(blocks: string[], options: number | 
     let cursor = 0;
     const markers = units.map((unit) => {
       const start = cursor;
-      const end = cursor + unit.length;
+      const end = cursor + unit.text.length;
       cursor = end + 1;
       return {
+        cfi: unit.cfi,
         end,
+        spineItemId: unit.spineItemId,
         start,
-        text: unit,
+        text: unit.text,
       };
     });
 

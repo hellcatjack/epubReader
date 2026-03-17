@@ -15,6 +15,7 @@ export type RuntimeRenderArgs = {
 };
 
 export type ActiveTtsSegment = {
+  cfi?: string;
   spineItemId: string;
   text: string;
 };
@@ -24,7 +25,7 @@ export type RuntimeRenderHandle = {
   destroy(): void;
   findCfiFromTextQuote(textQuote: string): Promise<string | null>;
   getTextFromCurrentLocation(): Promise<string>;
-  getTtsBlocksFromCurrentLocation?(): Promise<Array<{ spineItemId: string; text: string }>>;
+  getTtsBlocksFromCurrentLocation?(): Promise<Array<{ cfi?: string; spineItemId: string; text: string }>>;
   goTo(target: string): Promise<void>;
   next(): Promise<void>;
   prev(): Promise<void>;
@@ -35,6 +36,23 @@ export type RuntimeRenderHandle = {
 export type EpubViewportRuntime = {
   render(args: RuntimeRenderArgs): Promise<RuntimeRenderHandle>;
 };
+
+function hasDisplayedLocationShape(
+  value: unknown,
+): value is {
+  atEnd: boolean;
+  atStart: boolean;
+  end: Location["end"];
+  start: Location["start"];
+} {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "start" in value &&
+      typeof (value as { start?: unknown }).start === "object" &&
+      (value as { start?: { cfi?: unknown } }).start?.cfi,
+  );
+}
 
 function flattenTocItems(items: NavItem[]): TocItem[] {
   return items.flatMap((item) => [
@@ -67,6 +85,15 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     let activeTtsElement: HTMLElement | null = null;
 
     const normalizeText = (text: string) => text.replace(/\s+/g, " ").trim();
+    const syncCurrentContents = () => {
+      const contents = rendition.getContents();
+      const nextContents = Array.isArray(contents) ? contents[0] : contents;
+
+      if (nextContents) {
+        currentContents = nextContents;
+        applyActiveTtsSegment(activeTtsSegment);
+      }
+    };
 
     const clearActiveTtsSegment = () => {
       activeTtsElement?.classList.remove("reader-tts-active-segment");
@@ -203,20 +230,25 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       return candidates
         .slice(startIndex)
         .map((candidate, index) => {
+          const cfi = contents.cfiFromNode(candidate);
           if (!startNode || index > 0 || !candidate.contains(startNode)) {
-            return normalizeText(candidate.innerText || candidate.textContent || "");
+            return {
+              cfi,
+              spineItemId: currentSpineItemId,
+              text: normalizeText(candidate.innerText || candidate.textContent || ""),
+            };
           }
 
           const candidateRange = doc.createRange();
           candidateRange.selectNodeContents(candidate);
           candidateRange.setStart(startNode, startOffset);
-          return normalizeText(candidateRange.toString());
+          return {
+            cfi,
+            spineItemId: currentSpineItemId,
+            text: normalizeText(candidateRange.toString()),
+          };
         })
-        .filter(Boolean)
-        .map((text) => ({
-          spineItemId: currentSpineItemId,
-          text,
-        }));
+        .filter((block) => Boolean(block.text));
     };
 
     const handleSelection = async (cfiRange: string, contents: Contents) => {
@@ -241,12 +273,16 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           return;
         }
 
-        await handleRelocated({
-          atEnd: false,
-          atStart: false,
-          end: displayedLocation,
-          start: displayedLocation,
-        });
+        const normalizedLocation = hasDisplayedLocationShape(displayedLocation)
+          ? displayedLocation
+          : {
+              atEnd: false,
+              atStart: false,
+              end: displayedLocation,
+              start: displayedLocation,
+            };
+
+        await handleRelocated(normalizedLocation);
       } catch {
         // Ignore synthetic location sync failures and fall back to epub.js events.
       }
@@ -265,6 +301,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     const navigation = await book.loaded.navigation;
     onTocChange?.(flattenTocItems(navigation.toc));
     await rendition.display(initialCfi);
+    syncCurrentContents();
     await syncDisplayedLocation();
 
     return {
@@ -337,6 +374,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       async goTo(target) {
         currentTarget = target;
         await rendition.display(target);
+        syncCurrentContents();
         await syncDisplayedLocation();
       },
       next() {
@@ -355,6 +393,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         };
         rendition.flow(toEpubFlow(nextFlow));
         await rendition.display(currentTarget || undefined);
+        syncCurrentContents();
         await syncDisplayedLocation();
       },
     };

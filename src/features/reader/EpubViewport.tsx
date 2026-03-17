@@ -20,7 +20,7 @@ type EpubViewportProps = {
   activeTtsSegment?: ActiveTtsSegment | null;
   initialCfi?: string;
   initialProgress?: ProgressRecord | null;
-  onLocationChange?: (location: { cfi: string; progress: number; spineItemId: string }) => void;
+  onLocationChange?: (location: { cfi: string; progress: number; spineItemId: string; textQuote: string }) => void;
   onReady?: (handle: RuntimeRenderHandle | null) => void;
   onStatusChange?: (status: string) => void;
   onTocChange?: (toc: TocItem[]) => void;
@@ -85,7 +85,7 @@ export function EpubViewport({
           initialCfi: nextCfi,
           onRelocated: ({ cfi, progress, spineItemId, textQuote }) => {
             void saveProgress(activeBookId, { cfi, progress, spineItemId, textQuote });
-            onLocationChange?.({ cfi, progress, spineItemId });
+            onLocationChange?.({ cfi, progress, spineItemId, textQuote });
           },
           onSelectionChange: ({ cfiRange, text }) => {
             selectionBridge.publish(text ? { cfiRange, text } : null);

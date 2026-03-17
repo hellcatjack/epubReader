@@ -14,7 +14,10 @@ type TtsQueueDeps = {
 };
 
 export type TtsQueueState = {
+  chunkIndex: number;
   currentText: string;
+  markerCfi: string;
+  markerIndex: number;
   markerText: string;
   status: "idle" | "loading" | "playing" | "paused" | "error";
 };
@@ -28,7 +31,10 @@ export type TtsQueueChunk = ChunkSegment;
 
 export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
   let state: TtsQueueState = {
+    chunkIndex: -1,
     currentText: "",
+    markerCfi: "",
+    markerIndex: -1,
     markerText: "",
     status: "idle",
   };
@@ -42,13 +48,19 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
         }
       : chunk;
 
-  const buildMarkerText = (chunk: TtsQueueChunk, charIndex = 0) => {
+  const resolveMarker = (chunk: TtsQueueChunk, charIndex = 0) => {
     const normalizedIndex = Math.max(0, Math.min(charIndex, chunk.text.length));
-    const marker =
-      chunk.markers.find((candidate) => normalizedIndex >= candidate.start && normalizedIndex <= candidate.end) ??
-      chunk.markers.at(-1);
+    const markerIndex = chunk.markers.findIndex(
+      (candidate) => normalizedIndex >= candidate.start && normalizedIndex <= candidate.end,
+    );
+    const resolvedMarkerIndex = markerIndex >= 0 ? markerIndex : Math.max(0, chunk.markers.length - 1);
+    const marker = chunk.markers[resolvedMarkerIndex];
 
-    return marker?.text || chunk.text;
+    return {
+      marker,
+      markerIndex: resolvedMarkerIndex,
+      markerText: marker?.text || chunk.text,
+    };
   };
 
   const emitState = (nextState: TtsQueueState) => {
@@ -64,16 +76,24 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
     const chunk = chunks[index];
     if (!chunk) {
       emitState({
+        chunkIndex: -1,
         currentText: "",
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         status: "idle",
       });
       return;
     }
 
+    const initialMarker = resolveMarker(chunk);
+
     emitState({
+      chunkIndex: index,
       currentText: chunk.text,
-      markerText: buildMarkerText(chunk),
+      markerCfi: initialMarker.marker?.cfi ?? "",
+      markerIndex: initialMarker.markerIndex,
+      markerText: initialMarker.markerText,
       status: index === 0 ? "loading" : "playing",
     });
 
@@ -85,10 +105,15 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
             return;
           }
 
+          const nextMarker = resolveMarker(chunk, event.charIndex);
+
           emitState({
             ...state,
+            chunkIndex: index,
             currentText: chunk.text,
-            markerText: buildMarkerText(chunk, event.charIndex),
+            markerCfi: nextMarker.marker?.cfi ?? "",
+            markerIndex: nextMarker.markerIndex,
+            markerText: nextMarker.markerText,
           });
         },
         onEnd: () => {
@@ -97,8 +122,11 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
         onError: () => {
           if (activeRunId === runId) {
             emitState({
+              chunkIndex: index,
               currentText: chunk.text,
-              markerText: state.markerText || buildMarkerText(chunk),
+              markerCfi: state.markerCfi || initialMarker.marker?.cfi || "",
+              markerIndex: state.markerIndex >= 0 ? state.markerIndex : initialMarker.markerIndex,
+              markerText: state.markerText || initialMarker.markerText,
               status: "error",
             });
           }
@@ -107,8 +135,11 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
     } catch {
       if (activeRunId === runId) {
         emitState({
+          chunkIndex: index,
           currentText: chunk.text,
-          markerText: state.markerText || buildMarkerText(chunk),
+          markerCfi: state.markerCfi || initialMarker.marker?.cfi || "",
+          markerIndex: state.markerIndex >= 0 ? state.markerIndex : initialMarker.markerIndex,
+          markerText: state.markerText || initialMarker.markerText,
           status: "error",
         });
       }
@@ -117,8 +148,11 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
 
     if (activeRunId === runId) {
       emitState({
+        chunkIndex: index,
         currentText: chunk.text,
-        markerText: state.markerText || buildMarkerText(chunk),
+        markerCfi: state.markerCfi || initialMarker.marker?.cfi || "",
+        markerIndex: state.markerIndex >= 0 ? state.markerIndex : initialMarker.markerIndex,
+        markerText: state.markerText || initialMarker.markerText,
         status: "playing",
       });
     }
@@ -156,7 +190,10 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
 
       if (!chunks.length) {
         emitState({
+          chunkIndex: -1,
           currentText: "",
+          markerCfi: "",
+          markerIndex: -1,
           markerText: "",
           status: "idle",
         });
@@ -169,7 +206,10 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
       runId += 1;
       client.stop();
       emitState({
+        chunkIndex: -1,
         currentText: "",
+        markerCfi: "",
+        markerIndex: -1,
         markerText: "",
         status: "idle",
       });

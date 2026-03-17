@@ -22,6 +22,12 @@ test("bookshelf flow imports, reopens, and deletes a book", async ({ page }) => 
   );
   expect(visibleText).toBeGreaterThan(20);
 
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page).toHaveURL(/\/books\//);
+  await expect(page.getByRole("complementary", { name: /reader tools/i })).toContainText(
+    /Opened from saved reading position\.|Recovered from saved reading position\./,
+  );
+
   await page.goto("/", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: /continue reading/i })).toBeVisible();
   await page.getByRole("button", { name: /continue minimal valid epub/i }).click();
