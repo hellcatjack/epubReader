@@ -19,6 +19,9 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
   const [importError, setImportError] = useState("");
   const usesExternalBooks = onImportFile != null || books.length > 0;
   const visibleBooks = usesExternalBooks ? books : storedBooks;
+  const continueReadingBook = visibleBooks
+    .filter((book) => typeof book.lastReadAt === "number")
+    .sort((left, right) => (right.lastReadAt ?? 0) - (left.lastReadAt ?? 0))[0];
 
   async function refreshBookshelf() {
     setStoredBooks(await listBookshelfItems());
@@ -92,6 +95,17 @@ export function BookshelfPage({ books = [], onImportFile }: BookshelfPageProps) 
         {importError ? <p role="alert">{importError}</p> : null}
         <SettingsDialog />
       </section>
+      {continueReadingBook ? (
+        <section aria-label="Continue reading">
+          <h2>Continue reading</h2>
+          <p>{continueReadingBook.title}</p>
+          <p>{continueReadingBook.author}</p>
+          <p>{continueReadingBook.progressLabel}</p>
+          <button type="button" onClick={() => handleOpenBook(continueReadingBook.id)}>
+            Continue {continueReadingBook.title}
+          </button>
+        </section>
+      ) : null}
       <section aria-label="Local books">
         {visibleBooks.map((book) => (
           <BookCard key={book.id} book={book} onDelete={handleDeleteBook} onOpen={handleOpenBook} />

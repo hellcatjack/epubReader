@@ -15,6 +15,9 @@ export type ProgressRecord = {
   bookId: string;
   cfi: string;
   progress: number;
+  spineItemId?: string;
+  textQuote?: string;
+  updatedAt?: number;
 };
 
 export type TocItem = {
@@ -30,5 +33,6 @@ export type BookshelfListItem = {
   id: string;
   title: string;
   author: string;
+  lastReadAt?: number;
   progressLabel: string;
 };

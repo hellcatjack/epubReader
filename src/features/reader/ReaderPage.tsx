@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import type { AnnotationRecord, BookmarkRecord } from "../../lib/types/annotations";
-import type { TocItem } from "../../lib/types/books";
+import type { ProgressRecord, TocItem } from "../../lib/types/books";
 import type { ReadingMode, SettingsInput } from "../../lib/types/settings";
 import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
@@ -60,6 +60,7 @@ function isAutoSpeakableSelection(text: string) {
 export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const [initialCfi, setInitialCfi] = useState<string>();
+  const [initialProgress, setInitialProgress] = useState<ProgressRecord | null>(null);
   const [locationTarget, setLocationTarget] = useState<string>();
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentSpineItemId, setCurrentSpineItemId] = useState("");
@@ -112,10 +113,12 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   useEffect(() => {
     if (!bookId) {
       setInitialCfi(undefined);
+      setInitialProgress(null);
       return;
     }
 
     void getProgress(bookId).then((progress) => {
+      setInitialProgress(progress ?? null);
       setInitialCfi(progress?.cfi);
       setLocationTarget(progress?.cfi);
     });
@@ -713,6 +716,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           activeTtsSegment={activeContinuousTtsSegment}
           bookId={bookId}
           initialCfi={locationTarget ?? initialCfi}
+          initialProgress={initialProgress}
           onLocationChange={({ cfi, progress, spineItemId }) => {
             setCurrentLocation({ cfi, progress, spineItemId });
             setCurrentSpineItemId(spineItemId);

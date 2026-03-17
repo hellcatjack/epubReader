@@ -101,6 +101,7 @@ it("switches reading modes and pages through the active rendition", async () => 
                     destroy() {
                       return undefined;
                     },
+                    findCfiFromTextQuote: vi.fn(async () => null),
                     getTextFromCurrentLocation: vi.fn(async () => ""),
                     goTo: vi.fn(async () => undefined),
                     next,
@@ -153,6 +154,7 @@ it("applies live appearance changes through the active rendition handle", async 
                   destroy() {
                     return undefined;
                   },
+                  findCfiFromTextQuote: vi.fn(async () => null),
                   getTextFromCurrentLocation: vi.fn(async () => ""),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
@@ -213,6 +215,7 @@ it("starts pauses resumes and stops continuous reading from the current location
                   destroy() {
                     return undefined;
                   },
+                  findCfiFromTextQuote: vi.fn(async () => null),
                   getTextFromCurrentLocation: vi.fn(
                     async () =>
                       "First short paragraph for the opening segment keeps the first response tight and responsive for the listener.\n\nSecond short paragraph stays with the first so Kokoro can begin faster without turning every sentence into its own request.\n\nThird paragraph becomes the next queued segment for continuous reading once the opening audio is already playing in the reader.",
@@ -303,6 +306,7 @@ it("tracks the active continuous tts segment for viewport highlighting", async (
                     destroy() {
                       return undefined;
                     },
+                    findCfiFromTextQuote: vi.fn(async () => null),
                     getTextFromCurrentLocation: vi.fn(async () => "First paragraph.\n\nSecond paragraph."),
                     goTo: vi.fn(async () => undefined),
                     next: vi.fn(async () => undefined),
@@ -372,6 +376,7 @@ it("persistently updates tts rate from the quick control", async () => {
                     destroy() {
                       return undefined;
                     },
+                    findCfiFromTextQuote: vi.fn(async () => null),
                     getTextFromCurrentLocation: vi.fn(async () => "First paragraph only."),
                     goTo: vi.fn(async () => undefined),
                     next: vi.fn(async () => undefined),
@@ -447,6 +452,7 @@ it("keeps start tts disabled until the reading surface is ready", async () => {
   resolveRender({
     applyPreferences: async () => undefined,
     destroy: () => undefined,
+    findCfiFromTextQuote: async () => null,
     getTextFromCurrentLocation: async () => "Ready text",
     goTo: async () => undefined,
     next: async () => undefined,
@@ -468,6 +474,7 @@ it("keeps start tts disabled when the current location has no readable text yet"
   const renderRuntime = vi.fn(async (): Promise<RuntimeRenderHandle> => ({
     applyPreferences: vi.fn(async () => undefined),
     destroy: () => undefined,
+    findCfiFromTextQuote: vi.fn(async () => null),
     getTextFromCurrentLocation: vi.fn(async () => ""),
     goTo: vi.fn(async () => undefined),
     next: vi.fn(async () => undefined),
@@ -518,6 +525,7 @@ it("shows an explicit edge support warning when browser tts is unsupported", asy
                   destroy() {
                     return undefined;
                   },
+                  findCfiFromTextQuote: vi.fn(async () => null),
                   getTextFromCurrentLocation: vi.fn(async () => "Ready text for Kokoro."),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),

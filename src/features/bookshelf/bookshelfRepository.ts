@@ -52,7 +52,7 @@ function formatProgressLabel(progress: number | undefined) {
 
 export async function listBookshelfItems(): Promise<BookshelfListItem[]> {
   const [books, progressRecords] = await Promise.all([db.books.toArray(), db.progress.toArray()]);
-  const progressByBookId = new Map(progressRecords.map((record) => [record.bookId, record.progress]));
+  const progressByBookId = new Map(progressRecords.map((record) => [record.bookId, record]));
 
   return books
     .slice()
@@ -61,7 +61,8 @@ export async function listBookshelfItems(): Promise<BookshelfListItem[]> {
       id: book.id,
       title: book.title,
       author: book.author,
-      progressLabel: formatProgressLabel(progressByBookId.get(book.id)),
+      lastReadAt: progressByBookId.get(book.id)?.updatedAt,
+      progressLabel: formatProgressLabel(progressByBookId.get(book.id)?.progress),
     }));
 }
 

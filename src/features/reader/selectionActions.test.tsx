@@ -236,6 +236,7 @@ it("stores local highlight and note entries for the active selection", async () 
                   destroy() {
                     return undefined;
                   },
+                  findCfiFromTextQuote: vi.fn(async () => null),
                   getTextFromCurrentLocation: vi.fn(async () => ""),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
@@ -289,6 +290,7 @@ it("removes a saved highlight from the current chapter", async () => {
                   destroy() {
                     return undefined;
                   },
+                  findCfiFromTextQuote: vi.fn(async () => null),
                   getTextFromCurrentLocation: vi.fn(async () => ""),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
@@ -418,6 +420,7 @@ it("updates reading progress and toggles a bookmark for the current location", a
                     destroy() {
                       return undefined;
                     },
+                    findCfiFromTextQuote: vi.fn(async () => null),
                     getTextFromCurrentLocation: vi.fn(async () => ""),
                     goTo: vi.fn(async () => undefined),
                     next: vi.fn(async () => undefined),

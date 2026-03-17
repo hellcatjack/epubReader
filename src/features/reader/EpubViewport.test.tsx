@@ -32,6 +32,7 @@ it("uses the runtime renderer for persisted books when no test controller is pro
       destroy() {
         return undefined;
       },
+      findCfiFromTextQuote: vi.fn(async () => null),
       getTextFromCurrentLocation: vi.fn(async () => ""),
       goTo: vi.fn(async () => undefined),
       next: vi.fn(async () => undefined),
@@ -50,4 +51,53 @@ it("uses the runtime renderer for persisted books when no test controller is pro
       initialCfi: undefined,
     }),
   );
+});
+
+it("falls back to a saved chapter and quote when the saved cfi cannot be reopened", async () => {
+  const findCfiFromTextQuote = vi.fn(async () => "epubcfi(/6/8!/4/1:12)");
+  const goTo = vi.fn(async () => undefined);
+  const runtime = {
+    render: vi
+      .fn()
+      .mockRejectedValueOnce(new Error("invalid cfi"))
+      .mockResolvedValueOnce({
+        applyPreferences: vi.fn(async () => undefined),
+        destroy() {
+          return undefined;
+        },
+        findCfiFromTextQuote,
+        getTextFromCurrentLocation: vi.fn(async () => ""),
+        goTo,
+        next: vi.fn(async () => undefined),
+        prev: vi.fn(async () => undefined),
+        setActiveTtsSegment: vi.fn(async () => undefined),
+        setFlow: vi.fn(async () => undefined),
+      }),
+  };
+
+  render(
+    <EpubViewport
+      bookId="book-1"
+      initialCfi="epubcfi(invalid)"
+      initialProgress={{
+        bookId: "book-1",
+        cfi: "epubcfi(invalid)",
+        progress: 0.42,
+        spineItemId: "chapter-3",
+        textQuote: "Morgan’s head was pressed against her pillow.",
+        updatedAt: Date.now(),
+      }}
+      runtime={runtime}
+    />,
+  );
+
+  expect(await screen.findByText(/recovered from saved reading position/i)).toBeInTheDocument();
+  expect(runtime.render).toHaveBeenNthCalledWith(
+    2,
+    expect.objectContaining({
+      initialCfi: "chapter-3",
+    }),
+  );
+  expect(findCfiFromTextQuote).toHaveBeenCalledWith("Morgan’s head was pressed against her pillow.");
+  expect(goTo).toHaveBeenCalledWith("epubcfi(/6/8!/4/1:12)");
 });

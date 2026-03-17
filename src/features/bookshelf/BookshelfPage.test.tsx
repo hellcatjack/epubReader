@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
@@ -180,4 +180,42 @@ it("deletes a persisted book from the local bookshelf", async () => {
     expect(screen.queryByText("Delete Me")).not.toBeInTheDocument();
     expect(await getBook("book-delete")).toBeNull();
   });
+});
+
+it("shows a continue reading surface for the most recently read book", async () => {
+  render(
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <BookshelfPage
+              books={[
+                {
+                  id: "book-1",
+                  title: "Minimal Valid EPUB",
+                  author: "Author",
+                  progressLabel: "42% read",
+                  lastReadAt: 200,
+                },
+                {
+                  id: "book-2",
+                  title: "Second Book",
+                  author: "Author",
+                  progressLabel: "10% read",
+                  lastReadAt: 100,
+                },
+              ]}
+            />
+          }
+        />
+        <Route path="/books/:bookId" element={<p>Reader route opened</p>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const continueSection = await screen.findByRole("region", { name: /continue reading/i });
+  expect(within(continueSection).getByRole("heading", { name: /continue reading/i })).toBeInTheDocument();
+  expect(within(continueSection).getByText("Minimal Valid EPUB")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /continue minimal valid epub/i })).toBeInTheDocument();
 });

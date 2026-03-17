@@ -58,6 +58,26 @@ it("persists imported book blobs, settings, and reading progress", async () => {
   });
 });
 
+it("persists fallback progress metadata including spine item, text quote, and updatedAt", async () => {
+  await saveProgress(
+    "book-1",
+    {
+      cfi: "epubcfi(/6/2!/4/1:0)",
+      progress: 0.42,
+      spineItemId: "chapter-3",
+      textQuote: "Morgan’s head was pressed against her pillow.",
+    } as never,
+  );
+
+  await expect(getProgress("book-1")).resolves.toMatchObject({
+    cfi: "epubcfi(/6/2!/4/1:0)",
+    progress: 0.42,
+    spineItemId: "chapter-3",
+    textQuote: expect.stringContaining("Morgan"),
+    updatedAt: expect.any(Number),
+  });
+});
+
 it("merges partial settings updates with existing persisted reader preferences", async () => {
   await saveSettings({
     apiKey: "",

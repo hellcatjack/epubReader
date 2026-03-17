@@ -9,7 +9,7 @@ export type RuntimeRenderArgs = {
   element: HTMLElement;
   flow?: ReadingMode;
   initialCfi?: string;
-  onRelocated?: (location: { cfi: string; progress: number; spineItemId: string }) => void;
+  onRelocated?: (location: { cfi: string; progress: number; spineItemId: string; textQuote: string }) => void;
   onSelectionChange?: (selection: { cfiRange: string; text: string }) => void;
   onTocChange?: (toc: TocItem[]) => void;
 };
@@ -22,6 +22,7 @@ export type ActiveTtsSegment = {
 export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   destroy(): void;
+  findCfiFromTextQuote(textQuote: string): Promise<string | null>;
   getTextFromCurrentLocation(): Promise<string>;
   goTo(target: string): Promise<void>;
   next(): Promise<void>;
@@ -128,18 +129,41 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       });
     };
 
+    const getLocationTextQuote = async (cfi: string) => {
+      const fallbackText = normalizeText(currentContents?.document.body?.innerText ?? "");
+      if (!cfi) {
+        return fallbackText.slice(0, 180);
+      }
+
+      try {
+        const range = await book.getRange(cfi);
+        const body = range?.startContainer?.ownerDocument?.body;
+        if (!range || !body) {
+          return fallbackText.slice(0, 180);
+        }
+
+        const readingRange = body.ownerDocument.createRange();
+        readingRange.setStart(range.startContainer, range.startOffset);
+        readingRange.setEnd(body, body.childNodes.length);
+        return normalizeText(readingRange.toString()).slice(0, 180) || fallbackText.slice(0, 180);
+      } catch {
+        return fallbackText.slice(0, 180);
+      }
+    };
+
     const handleSelection = async (cfiRange: string, contents: Contents) => {
       const range = await book.getRange(cfiRange);
       const text = range?.toString().trim() ?? "";
       onSelectionChange?.({ cfiRange, text });
     };
 
-    const handleRelocated = (location: Location) => {
+    const handleRelocated = async (location: Location) => {
       const cfi = location.start.cfi;
       const progress = location.start.percentage ?? 0;
       currentTarget = cfi;
-       currentSpineItemId = location.start.href;
-      onRelocated?.({ cfi, progress, spineItemId: location.start.href });
+      currentSpineItemId = location.start.href;
+      const textQuote = await getLocationTextQuote(cfi);
+      onRelocated?.({ cfi, progress, spineItemId: location.start.href, textQuote });
     };
 
     const handleRendered = (_section: unknown, contents: Contents) => {
@@ -173,8 +197,35 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         book.destroy();
         element.innerHTML = "";
       },
+      async findCfiFromTextQuote(textQuote) {
+        if (!currentContents) {
+          return null;
+        }
+
+        const normalizedQuote = normalizeText(textQuote);
+        if (!normalizedQuote) {
+          return null;
+        }
+
+        const candidates = Array.from(
+          currentContents.document.body.querySelectorAll<HTMLElement>("p, li, blockquote, h1, h2, h3, h4, h5, h6, div"),
+        );
+
+        for (const candidate of candidates) {
+          const candidateText = normalizeText(candidate.innerText || candidate.textContent || "");
+          if (!candidateText) {
+            continue;
+          }
+
+          if (candidateText.includes(normalizedQuote) || normalizedQuote.includes(candidateText.slice(0, 80))) {
+            return currentContents.cfiFromNode(candidate);
+          }
+        }
+
+        return null;
+      },
       async getTextFromCurrentLocation() {
-        const fallbackText = currentContents?.document.body?.innerText?.replace(/\s+/g, " ").trim() ?? "";
+        const fallbackText = normalizeText(currentContents?.document.body?.innerText ?? "");
         if (!currentTarget) {
           return fallbackText;
         }
@@ -189,7 +240,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           const readingRange = body.ownerDocument.createRange();
           readingRange.setStart(range.startContainer, range.startOffset);
           readingRange.setEnd(body, body.childNodes.length);
-          const text = readingRange.toString().replace(/\s+/g, " ").trim();
+          const text = normalizeText(readingRange.toString());
           return text || fallbackText;
         } catch {
           return fallbackText;

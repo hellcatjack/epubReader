@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnnotationRecord } from "../../lib/types/annotations";
+import type { ProgressRecord } from "../../lib/types/books";
 import type { ReadingMode } from "../../lib/types/settings";
 import { saveProgress } from "../bookshelf/progressRepository";
 import type { TocItem } from "../../lib/types/books";
@@ -18,6 +19,7 @@ type EpubViewportProps = {
   controller?: ReaderController;
   activeTtsSegment?: ActiveTtsSegment | null;
   initialCfi?: string;
+  initialProgress?: ProgressRecord | null;
   onLocationChange?: (location: { cfi: string; progress: number; spineItemId: string }) => void;
   onReady?: (handle: RuntimeRenderHandle | null) => void;
   onTocChange?: (toc: TocItem[]) => void;
@@ -31,6 +33,7 @@ export function EpubViewport({
   bookId,
   controller,
   initialCfi,
+  initialProgress = null,
   onLocationChange,
   onReady,
   onTocChange,
@@ -87,8 +90,8 @@ export function EpubViewport({
           element: activeHost,
           flow: readingMode,
           initialCfi: nextCfi,
-          onRelocated: ({ cfi, progress, spineItemId }) => {
-            void saveProgress(activeBookId, { cfi, progress });
+          onRelocated: ({ cfi, progress, spineItemId, textQuote }) => {
+            void saveProgress(activeBookId, { cfi, progress, spineItemId, textQuote });
             onLocationChange?.({ cfi, progress, spineItemId });
           },
           onSelectionChange: ({ cfiRange, text }) => {
@@ -114,6 +117,27 @@ export function EpubViewport({
           if (cancelled || !initialCfi) {
             setStatusMessage("Unable to open the selected book.");
             return;
+          }
+
+          if (initialProgress?.spineItemId) {
+            try {
+              await openPersistedBook(initialProgress.spineItemId);
+              const recoveredCfi = initialProgress.textQuote
+                ? await handle?.findCfiFromTextQuote(initialProgress.textQuote)
+                : null;
+
+              if (recoveredCfi) {
+                await handle?.goTo(recoveredCfi);
+                if (!cancelled) {
+                  setStatusMessage("Recovered from saved reading position.");
+                }
+              } else if (!cancelled) {
+                setStatusMessage("Recovered from saved chapter.");
+              }
+              return;
+            } catch {
+              // Fall through to the chapter-start fallback below.
+            }
           }
 
           try {
@@ -181,7 +205,7 @@ export function EpubViewport({
       onReady?.(null);
       selectionBridge.publish(null);
     };
-  }, [bookId, controller, initialCfi]);
+  }, [bookId, controller, initialCfi, initialProgress]);
 
   useEffect(() => {
     if (!controller && runtimeHandleRef.current) {

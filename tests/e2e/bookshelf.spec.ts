@@ -17,7 +17,12 @@ test("bookshelf flow imports, reopens, and deletes a book", async ({ page }) => 
   expect(visibleText).toBeGreaterThan(20);
 
   await page.goto("/", { waitUntil: "networkidle" });
-  await expect(page.getByText("Minimal Valid EPUB")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /continue reading/i })).toBeVisible();
+  await page.getByRole("button", { name: /continue minimal valid epub/i }).click();
+  await expect(page).toHaveURL(/\/books\//);
+  await page.goto("/", { waitUntil: "networkidle" });
+  const localBooks = page.getByRole("region", { name: /local books/i });
+  await expect(localBooks.getByRole("link", { name: "Minimal Valid EPUB" })).toBeVisible();
   await page.getByRole("button", { name: /delete book minimal valid epub/i }).click();
-  await expect(page.getByText("Minimal Valid EPUB")).not.toBeVisible();
+  await expect(localBooks.getByRole("link", { name: "Minimal Valid EPUB" })).not.toBeVisible();
 });
