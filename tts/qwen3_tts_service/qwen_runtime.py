@@ -37,12 +37,25 @@ class QwenRuntime(BaseTtsRuntime):
 
     @classmethod
     def from_pretrained(cls):
+        return cls(
+            model=None,
+            model_loader=cls.build_model_loader(),
+            voice_catalog=VOICE_CATALOG.copy(),
+        )
+
+    @staticmethod
+    def build_model_loader():
+        device_map = "cuda:0" if _gpu_available() else "cpu"
+
         def load_model():
             from qwen_tts import Qwen3TTSModel
 
-            return Qwen3TTSModel.from_pretrained(DEFAULT_CONFIG.model_id)
+            return Qwen3TTSModel.from_pretrained(
+                DEFAULT_CONFIG.model_id,
+                device_map=device_map,
+            )
 
-        return cls(model=None, model_loader=load_model, voice_catalog=VOICE_CATALOG.copy())
+        return load_model
 
     def get_status(self) -> str:
         return "ok" if self.model is not None else "warming_up"
@@ -89,3 +102,12 @@ def _normalize_samples(wavs: Any) -> Sequence[float]:
         return [float(sample) for sample in wavs.tolist()]
     except AttributeError:
         return [float(sample) for sample in wavs]
+
+
+def _gpu_available() -> bool:
+    try:
+        import torch
+    except ModuleNotFoundError:
+        return False
+
+    return bool(torch.cuda.is_available())

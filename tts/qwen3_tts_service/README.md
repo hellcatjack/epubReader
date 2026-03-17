@@ -12,6 +12,14 @@ Local FastAPI service for the EPUB reader TTS path. It exposes:
 bash scripts/setup-qwen3-tts-venv.sh
 ```
 
+The setup script pins the ROCm `gfx1151` wheel set that works on the local
+`AMD AI Max+ 395 / Radeon 8060S` machine:
+
+- `torch 2.9.1+rocm7.13.0a20260315`
+- `torchaudio 2.9.0+rocm7.13.0a20260315`
+- `torchvision 0.24.0+rocm7.13.0a20260315`
+- `triton 3.5.1+rocm7.13.0a20260315`
+
 ## Run
 
 ```bash

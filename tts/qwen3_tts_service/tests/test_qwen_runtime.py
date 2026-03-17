@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from tts.qwen3_tts_service.qwen_runtime import QwenRuntime
 from tts.qwen3_tts_service.voices import VOICE_CATALOG
@@ -29,4 +30,18 @@ def test_qwen_runtime_maps_speaker_and_language():
         language="English",
         speaker="Ryan",
         instruct="",
+    )
+
+
+def test_qwen_runtime_prefers_gpu_when_rocm_is_available():
+    with patch("tts.qwen3_tts_service.qwen_runtime._gpu_available", return_value=True):
+        loader = QwenRuntime.build_model_loader()
+
+    qwen_module = MagicMock()
+    with patch.dict("sys.modules", {"qwen_tts": qwen_module}):
+        loader()
+
+    qwen_module.Qwen3TTSModel.from_pretrained.assert_called_once_with(
+        "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        device_map="cuda:0",
     )
