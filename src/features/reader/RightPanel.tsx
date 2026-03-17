@@ -23,7 +23,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   ttsStartDisabled?: boolean;
   ttsCurrentText?: string;
   ttsError?: string;
-  ttsStatus?: "idle" | "loading" | "playing" | "paused" | "error";
+  ttsStatus?: "idle" | "warming_up" | "loading" | "playing" | "paused" | "error";
 };
 
 export function RightPanel({

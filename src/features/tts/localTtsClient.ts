@@ -67,6 +67,13 @@ export function createLocalTtsClient({
       await assertOk(response);
       return (await response.json()) as LocalTtsVoice[];
     },
+    async prewarm() {
+      const response = await fetchFn(`${baseUrl}/prewarm`, {
+        method: "POST",
+      });
+      await assertOk(response);
+      return response.json() as Promise<{ status: string }>;
+    },
     async speak(request: LocalTtsSpeakRequest) {
       const response = await fetchFn(`${baseUrl}/speak`, {
         body: JSON.stringify(request),

@@ -3,9 +3,60 @@ import "fake-indexeddb/auto";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
 import type { RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function stubTtsHealth({
+  prewarmDelayMs = 0,
+  warmed = true,
+}: {
+  prewarmDelayMs?: number;
+  warmed?: boolean;
+} = {}) {
+  let healthChecks = 0;
+  const fetchMock = vi.fn<typeof fetch>(async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+    if (url.endsWith("/health")) {
+      healthChecks += 1;
+      const isWarmed = warmed || healthChecks > 1;
+      return new Response(
+        JSON.stringify({
+          backend: "kokoro",
+          device: "cuda:0",
+          status: isWarmed ? "ok" : "warming_up",
+          version: "0.1.0",
+          voiceCount: 4,
+          warmed: isWarmed,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/prewarm")) {
+      if (prewarmDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, prewarmDelayMs));
+      }
+      return new Response(JSON.stringify({ status: "ok" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response("not found", { status: 404 });
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
 
 it("shows toc, reading progress, bookmark toggle, and the reader tools surface", () => {
   render(<ReaderPage />);
@@ -18,6 +69,7 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
 
 it("switches reading modes and pages through the active rendition", async () => {
   const user = userEvent.setup();
+  stubTtsHealth();
   const setFlow = vi.fn(async () => undefined);
   const next = vi.fn(async () => undefined);
   const prev = vi.fn(async () => undefined);
@@ -74,6 +126,7 @@ it("switches reading modes and pages through the active rendition", async () => 
 });
 
 it("applies live appearance changes through the active rendition handle", async () => {
+  stubTtsHealth();
   const applyPreferences = vi.fn(async () => undefined);
 
   render(
@@ -130,6 +183,7 @@ it("applies live appearance changes through the active rendition handle", async 
 
 it("starts pauses resumes and stops continuous reading from the current location", async () => {
   const user = userEvent.setup();
+  stubTtsHealth();
   const pause = vi.fn();
   const resume = vi.fn(async () => undefined);
   const stop = vi.fn();
@@ -168,7 +222,10 @@ it("starts pauses resumes and stops continuous reading from the current location
                   destroy() {
                     return undefined;
                   },
-                  getTextFromCurrentLocation: vi.fn(async () => "First chunk.\n\nSecond chunk."),
+                  getTextFromCurrentLocation: vi.fn(
+                    async () =>
+                      "First short paragraph for the opening segment keeps the first response tight and responsive for the listener.\n\nSecond short paragraph stays with the first so Kokoro can begin faster without turning every sentence into its own request.\n\nThird paragraph becomes the next queued segment for continuous reading once the opening audio is already playing in the reader.",
+                  ),
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
                   prev: vi.fn(async () => undefined),
@@ -191,9 +248,9 @@ it("starts pauses resumes and stops continuous reading from the current location
 
   await waitFor(() => {
     expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
-      "First chunk.",
+      "First short paragraph for the opening segment keeps the first response tight and responsive for the listener. Second short paragraph stays with the first so Kokoro can begin faster without turning every sentence into its own request.",
       expect.objectContaining({
-        voice: "Ryan",
+        voice: "af_heart",
       }),
     );
   });
@@ -211,9 +268,9 @@ it("starts pauses resumes and stops continuous reading from the current location
 
   await waitFor(() => {
     expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
-      "Second chunk.",
+      "Third paragraph becomes the next queued segment for continuous reading once the opening audio is already playing in the reader.",
       expect.objectContaining({
-        voice: "Ryan",
+        voice: "af_heart",
       }),
     );
   });
@@ -224,6 +281,7 @@ it("starts pauses resumes and stops continuous reading from the current location
 });
 
 it("keeps start tts disabled until the reading surface is ready", async () => {
+  stubTtsHealth();
   let resolveRender: ((value: RuntimeRenderHandle) => void) | undefined;
 
   render(
@@ -270,6 +328,7 @@ it("keeps start tts disabled until the reading surface is ready", async () => {
 });
 
 it("keeps start tts disabled when the current location has no readable text yet", async () => {
+  stubTtsHealth();
   const renderRuntime = vi.fn(async (): Promise<RuntimeRenderHandle> => ({
     applyPreferences: vi.fn(async () => undefined),
     destroy: () => undefined,
@@ -304,4 +363,45 @@ it("keeps start tts disabled when the current location has no readable text yet"
   await new Promise((resolve) => setTimeout(resolve, 100));
 
   expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
+});
+
+it("shows warming up before kokoro health reports warmed", async () => {
+  const fetchMock = stubTtsHealth({ prewarmDelayMs: 50, warmed: false });
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  getTextFromCurrentLocation: vi.fn(async () => "Ready text for Kokoro."),
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByText(/tts status: warming up model/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
+
+  await waitFor(() => {
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/prewarm$/),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
 });

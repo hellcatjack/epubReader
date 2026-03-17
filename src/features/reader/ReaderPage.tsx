@@ -9,6 +9,7 @@ import { getProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
 import { createAudioPlayer, type AudioPlayer } from "../tts/audioPlayer";
 import { chunkText } from "../tts/chunkText";
+import { createLocalTtsClient } from "../tts/localTtsClient";
 import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
@@ -30,7 +31,7 @@ type ReaderTtsState = {
   currentText: string;
   error: string;
   mode: "continuous" | "idle" | "selection";
-  status: "error" | "idle" | "loading" | "paused" | "playing";
+  status: "error" | "idle" | "warming_up" | "loading" | "paused" | "playing";
 };
 
 export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPageProps) {
@@ -171,14 +172,48 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
 
     setTtsStartReady(false);
 
-    void runtimeHandle
-      .getTextFromCurrentLocation()
-      .then((text) => {
+    const ttsClient = createLocalTtsClient({ baseUrl: settings.ttsHelperUrl });
+
+    void Promise.all([runtimeHandle.getTextFromCurrentLocation(), ttsClient.getHealth()])
+      .then(async ([text, health]) => {
         if (ttsReadinessRequestRef.current !== requestId) {
           return;
         }
 
-        setTtsStartReady(chunkText(text).length > 0);
+        const hasReadableText = chunkText(text, { firstSegmentMax: 280, segmentMax: 500 }).length > 0;
+        if (!hasReadableText) {
+          setTtsStartReady(false);
+          return;
+        }
+
+        if (!health.warmed) {
+          setTtsState((currentState) =>
+            currentState.mode === "idle"
+              ? {
+                  currentText: "",
+                  error: "",
+                  mode: "idle",
+                  status: "warming_up",
+                }
+              : currentState,
+          );
+          await ttsClient.prewarm();
+          if (ttsReadinessRequestRef.current !== requestId) {
+            return;
+          }
+        }
+
+        setTtsStartReady(true);
+        setTtsState((currentState) =>
+          currentState.mode === "idle"
+            ? {
+                currentText: "",
+                error: "",
+                mode: "idle",
+                status: "idle",
+              }
+            : currentState,
+        );
       })
       .catch(() => {
         if (ttsReadinessRequestRef.current !== requestId) {
@@ -186,8 +221,18 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
         }
 
         setTtsStartReady(false);
+        setTtsState((currentState) =>
+          currentState.mode === "idle"
+            ? {
+                currentText: "",
+                error: "Local TTS helper unavailable.",
+                mode: "idle",
+                status: "error",
+              }
+            : currentState,
+        );
       });
-  }, [currentLocation.cfi, currentLocation.spineItemId, runtimeHandle]);
+  }, [currentLocation.cfi, currentLocation.spineItemId, runtimeHandle, settings.ttsHelperUrl]);
 
   useEffect(() => {
     const unsubscribe = selectionBridge.subscribe((selection) => {
@@ -513,7 +558,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
 
     const queue = ensureTtsQueue();
     const text = await runtimeHandle.getTextFromCurrentLocation();
-    const chunks = chunkText(text);
+    const chunks = chunkText(text, { firstSegmentMax: 280, segmentMax: 500 });
 
     if (!chunks.length) {
       setTtsState({
@@ -531,7 +576,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
       currentText: chunks[0] ?? "",
       error: "",
       mode: "continuous",
-      status: "loading",
+      status: "warming_up",
     });
 
     void queue.start({
@@ -672,7 +717,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
         selectedText={selectedText}
         ttsCurrentText={ttsState.currentText}
         ttsError={ttsState.error}
-        ttsStartDisabled={!ttsStartReady}
+        ttsStartDisabled={!ttsStartReady || ttsState.status === "warming_up"}
         ttsStatus={ttsState.status}
       />
     </main>

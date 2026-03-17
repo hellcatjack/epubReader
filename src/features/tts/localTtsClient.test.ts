@@ -43,6 +43,12 @@ describe("localTtsClient", () => {
           status: 200,
           headers: { "Content-Type": "audio/wav" },
         }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: "ok" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
       );
 
     expect(resolveDefaultTtsHelperUrl("192.168.1.31")).toBe("http://192.168.1.31:43115");
@@ -77,6 +83,9 @@ describe("localTtsClient", () => {
       size: 3,
       type: "audio/wav",
     });
+    await expect(client.prewarm()).resolves.toEqual({
+      status: "ok",
+    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -101,6 +110,11 @@ describe("localTtsClient", () => {
         }),
         method: "POST",
       }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "http://192.168.1.31:43115/prewarm",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 });
