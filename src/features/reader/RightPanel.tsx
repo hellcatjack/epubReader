@@ -16,9 +16,11 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
   onTtsPause?: () => void;
+  onTtsRateChange?: (rate: number) => void;
   onTtsResume?: () => void;
   onTtsStart?: () => void;
   onTtsStop?: () => void;
+  ttsRate?: number;
   selectedText?: string;
   ttsStartDisabled?: boolean;
   ttsCurrentText?: string;
@@ -37,6 +39,7 @@ export function RightPanel({
   onNoteDraftChange,
   onNoteSave,
   onTtsPause,
+  onTtsRateChange,
   onTtsResume,
   onTtsStart,
   onTtsStop,
@@ -44,6 +47,7 @@ export function RightPanel({
   ttsStartDisabled,
   ttsCurrentText,
   ttsError,
+  ttsRate,
   ttsStatus,
   ...props
 }: RightPanelProps) {
@@ -62,9 +66,11 @@ export function RightPanel({
         currentText={ttsCurrentText}
         error={ttsError}
         onPause={onTtsPause}
+        onRateChange={onTtsRateChange}
         onResume={onTtsResume}
         onStart={onTtsStart}
         onStop={onTtsStop}
+        rate={ttsRate}
         startDisabled={ttsStartDisabled}
         status={ttsStatus}
       />

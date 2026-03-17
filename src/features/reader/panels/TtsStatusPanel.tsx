@@ -2,20 +2,26 @@ type TtsStatusPanelProps = {
   currentText?: string;
   error?: string;
   onPause?: () => void;
+  onRateChange?: (rate: number) => void;
   onResume?: () => void;
   onStart?: () => void;
   onStop?: () => void;
+  rate?: number;
   startDisabled?: boolean;
   status?: "idle" | "loading" | "playing" | "paused" | "error";
 };
+
+const quickRates = [0.8, 1, 1.2, 1.4];
 
 export function TtsStatusPanel({
   currentText,
   error,
   onPause,
+  onRateChange,
   onResume,
   onStart,
   onStop,
+  rate = 1,
   startDisabled = false,
   status = "idle",
 }: TtsStatusPanelProps) {
@@ -38,6 +44,21 @@ export function TtsStatusPanel({
         <button type="button" onClick={onStop}>
           Stop TTS
         </button>
+      </div>
+      <div className="reader-tts-actions" role="group" aria-label="TTS rate presets">
+        {quickRates.map((presetRate) => {
+          const label = `${presetRate.toFixed(1)}x`;
+          return (
+            <button
+              key={presetRate}
+              type="button"
+              aria-pressed={Math.abs(rate - presetRate) < 0.001}
+              onClick={() => onRateChange?.(presetRate)}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
     </section>
   );

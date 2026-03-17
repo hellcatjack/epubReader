@@ -15,4 +15,13 @@ describe("TtsStatusPanel", () => {
 
     expect(screen.getByText(/tts status: loading/i)).toBeInTheDocument();
   });
+
+  it("renders quick rate controls in the tts panel", () => {
+    render(<TtsStatusPanel {...({ status: "idle", rate: 1 } as never)} />);
+
+    expect(screen.getByRole("button", { name: /0.8x/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /1.0x/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /1.2x/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /1.4x/i })).toBeInTheDocument();
+  });
 });

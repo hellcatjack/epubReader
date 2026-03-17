@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
+import { getSettings } from "../settings/settingsRepository";
 import type { RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
 
@@ -336,6 +337,76 @@ it("tracks the active continuous tts segment for viewport highlighting", async (
       text: expect.stringContaining("First paragraph"),
     }),
   );
+});
+
+it("persistently updates tts rate from the quick control", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph only."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /1.2x/i }));
+
+  await expect(getSettings()).resolves.toMatchObject({
+    ttsRate: 1.2,
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rate: 1.2,
+      }),
+    );
+  });
 });
 
 it("keeps start tts disabled until the reading surface is ready", async () => {

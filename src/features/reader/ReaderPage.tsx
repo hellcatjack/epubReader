@@ -572,6 +572,10 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     await updateSettings(patch);
   }
 
+  async function handleQuickTtsRateChange(rate: number) {
+    await updateSettings({ ttsRate: rate });
+  }
+
   async function handleStartTts() {
     if (!runtimeHandle || !ttsStartReady) {
       return;
@@ -740,12 +744,14 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         onNoteDraftChange={setNoteDraft}
         onNoteSave={handleSaveNote}
         onTtsPause={handlePauseTts}
+        onTtsRateChange={handleQuickTtsRateChange}
         onTtsResume={handleResumeTts}
         onTtsStart={handleStartTts}
         onTtsStop={handleStopTts}
         selectedText={selectedText}
         ttsCurrentText={ttsState.currentText}
         ttsError={ttsState.error}
+        ttsRate={settings.ttsRate}
         ttsStartDisabled={!ttsStartReady}
         ttsStatus={ttsState.status}
       />
