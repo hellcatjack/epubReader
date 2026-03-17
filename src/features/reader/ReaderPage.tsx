@@ -12,7 +12,7 @@ import { chunkText } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
-import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
+import type { ActiveTtsSegment, EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
 import { LeftRail } from "./LeftRail";
 import { RightPanel } from "./RightPanel";
 import { SelectionPopover } from "./SelectionPopover";
@@ -671,6 +671,13 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     label: toc.find((item) => item.id === bookmark.spineItemId)?.label ?? `Saved location ${index + 1}`,
   }));
   const isCurrentLocationBookmarked = bookmarks.some((bookmark) => bookmark.cfi === currentLocation.cfi);
+  const activeContinuousTtsSegment: ActiveTtsSegment | null =
+    ttsState.mode === "continuous" && ttsState.status !== "idle" && ttsState.currentText && continuousSpineItemIdRef.current
+      ? {
+          spineItemId: continuousSpineItemIdRef.current,
+          text: ttsState.currentText,
+        }
+      : null;
   const readerStyle: CSSProperties & Record<"--reader-font-scale", string> = {
     "--reader-font-scale": String(settings.fontScale),
   };
@@ -699,6 +706,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           readingMode={settings.readingMode}
         />
         <EpubViewport
+          activeTtsSegment={activeContinuousTtsSegment}
           bookId={bookId}
           initialCfi={locationTarget ?? initialCfi}
           onLocationChange={({ cfi, progress, spineItemId }) => {

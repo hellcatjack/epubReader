@@ -4,13 +4,19 @@ import type { ReadingMode } from "../../lib/types/settings";
 import { saveProgress } from "../bookshelf/progressRepository";
 import type { TocItem } from "../../lib/types/books";
 import { annotationRenderer } from "./annotationRenderer";
-import { epubViewportRuntime, type EpubViewportRuntime, type RuntimeRenderHandle } from "./epubRuntime";
+import {
+  epubViewportRuntime,
+  type ActiveTtsSegment,
+  type EpubViewportRuntime,
+  type RuntimeRenderHandle,
+} from "./epubRuntime";
 import type { ReaderController } from "./readerController";
 import { selectionBridge } from "./selectionBridge";
 
 type EpubViewportProps = {
   bookId?: string;
   controller?: ReaderController;
+  activeTtsSegment?: ActiveTtsSegment | null;
   initialCfi?: string;
   onLocationChange?: (location: { cfi: string; progress: number; spineItemId: string }) => void;
   onReady?: (handle: RuntimeRenderHandle | null) => void;
@@ -21,6 +27,7 @@ type EpubViewportProps = {
 };
 
 export function EpubViewport({
+  activeTtsSegment = null,
   bookId,
   controller,
   initialCfi,
@@ -182,9 +189,20 @@ export function EpubViewport({
     }
   }, [controller, readingMode]);
 
+  useEffect(() => {
+    if (!controller && runtimeHandleRef.current) {
+      void runtimeHandleRef.current.setActiveTtsSegment(activeTtsSegment);
+    }
+  }, [activeTtsSegment, controller]);
+
   return (
     <section className="epub-viewport" aria-label="Book content">
-      <div className="epub-root" data-reader-mode={controller?.mode ?? readingMode} ref={hostRef}>
+      <div
+        className="epub-root"
+        data-reader-mode={controller?.mode ?? readingMode}
+        data-tts-active={activeTtsSegment ? "true" : "false"}
+        ref={hostRef}
+      >
         {!bookId ? (
           <>
             <p className="reader-eyebrow">Current chapter</p>

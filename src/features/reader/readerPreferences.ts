@@ -69,6 +69,13 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
     "p:first-child": {
       "text-indent": "0",
     },
+    ".reader-tts-active-segment": {
+      "background": "rgba(235, 188, 111, 0.3)",
+      "border-radius": "0.5rem",
+      "box-shadow": "0 0 0 0.18rem rgba(214, 144, 58, 0.18)",
+      "scroll-margin-top": "22vh",
+      "transition": "background-color 140ms ease, box-shadow 140ms ease",
+    },
   };
 }
 

@@ -104,6 +104,7 @@ it("switches reading modes and pages through the active rendition", async () => 
                     goTo: vi.fn(async () => undefined),
                     next,
                     prev,
+                    setActiveTtsSegment: vi.fn(async () => undefined),
                     setFlow,
                   };
                 }),
@@ -155,6 +156,7 @@ it("applies live appearance changes through the active rendition handle", async 
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
                   prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
                   setFlow: vi.fn(async () => undefined),
                 })),
               }}
@@ -217,6 +219,7 @@ it("starts pauses resumes and stops continuous reading from the current location
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
                   prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
                   setFlow: vi.fn(async () => undefined),
                 })),
               }}
@@ -265,6 +268,76 @@ it("starts pauses resumes and stops continuous reading from the current location
   expect(screen.getByText(/idle/i)).toBeInTheDocument();
 });
 
+it("tracks the active continuous tts segment for viewport highlighting", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const setActiveTtsSegment = vi.fn(async () => undefined);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph.\n\nSecond paragraph."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment,
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & {
+                    setActiveTtsSegment: typeof setActiveTtsSegment;
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(screen.getByText(/current: first paragraph/i)).toBeInTheDocument();
+  });
+
+  expect(setActiveTtsSegment).toHaveBeenCalledWith(
+    expect.objectContaining({
+      spineItemId: "chap-1",
+      text: expect.stringContaining("First paragraph"),
+    }),
+  );
+});
+
 it("keeps start tts disabled until the reading surface is ready", async () => {
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   installSpeechSynthesis([
@@ -307,6 +380,7 @@ it("keeps start tts disabled until the reading surface is ready", async () => {
     goTo: async () => undefined,
     next: async () => undefined,
     prev: async () => undefined,
+    setActiveTtsSegment: async () => undefined,
     setFlow: async () => undefined,
   });
 
@@ -327,6 +401,7 @@ it("keeps start tts disabled when the current location has no readable text yet"
     goTo: vi.fn(async () => undefined),
     next: vi.fn(async () => undefined),
     prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
     setFlow: vi.fn(async () => undefined),
   }));
 
@@ -376,6 +451,7 @@ it("shows an explicit edge support warning when browser tts is unsupported", asy
                   goTo: vi.fn(async () => undefined),
                   next: vi.fn(async () => undefined),
                   prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
                   setFlow: vi.fn(async () => undefined),
                 })),
               }}

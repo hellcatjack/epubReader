@@ -36,6 +36,7 @@ it("uses the runtime renderer for persisted books when no test controller is pro
       goTo: vi.fn(async () => undefined),
       next: vi.fn(async () => undefined),
       prev: vi.fn(async () => undefined),
+      setActiveTtsSegment: vi.fn(async () => undefined),
       setFlow: vi.fn(async () => undefined),
     })),
   };

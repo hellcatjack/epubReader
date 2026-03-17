@@ -14,6 +14,11 @@ export type RuntimeRenderArgs = {
   onTocChange?: (toc: TocItem[]) => void;
 };
 
+export type ActiveTtsSegment = {
+  spineItemId: string;
+  text: string;
+};
+
 export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   destroy(): void;
@@ -21,6 +26,7 @@ export type RuntimeRenderHandle = {
   goTo(target: string): Promise<void>;
   next(): Promise<void>;
   prev(): Promise<void>;
+  setActiveTtsSegment(segment: ActiveTtsSegment | null): Promise<void>;
   setFlow(flow: ReadingMode): Promise<void>;
 };
 
@@ -50,9 +56,76 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     });
     let currentTarget = initialCfi ?? "";
     let currentContents: Contents | null = null;
+    let currentSpineItemId = "";
     let activePreferences: ReaderPreferences = {
       ...defaultReaderPreferences,
       readingMode: flow,
+    };
+    let activeTtsSegment: ActiveTtsSegment | null = null;
+    let activeTtsElement: HTMLElement | null = null;
+
+    const normalizeText = (text: string) => text.replace(/\s+/g, " ").trim();
+
+    const clearActiveTtsSegment = () => {
+      activeTtsElement?.classList.remove("reader-tts-active-segment");
+      activeTtsElement = null;
+    };
+
+    const findSegmentElement = (contents: Contents, text: string) => {
+      const normalizedSegment = normalizeText(text);
+      if (!normalizedSegment) {
+        return null;
+      }
+
+      const doc = contents.document;
+      const candidates = Array.from(
+        doc.body.querySelectorAll<HTMLElement>("p, li, blockquote, h1, h2, h3, h4, h5, h6, div"),
+      );
+
+      let prefixMatch: HTMLElement | null = null;
+      const segmentPrefix = normalizedSegment.slice(0, Math.min(normalizedSegment.length, 120));
+
+      for (const candidate of candidates) {
+        const candidateText = normalizeText(candidate.innerText || candidate.textContent || "");
+        if (!candidateText) {
+          continue;
+        }
+
+        if (normalizedSegment.includes(candidateText)) {
+          return candidate;
+        }
+
+        if (!prefixMatch && segmentPrefix && candidateText.includes(segmentPrefix)) {
+          prefixMatch = candidate;
+        }
+      }
+
+      return prefixMatch;
+    };
+
+    const applyActiveTtsSegment = (segment: ActiveTtsSegment | null) => {
+      activeTtsSegment = segment;
+      clearActiveTtsSegment();
+
+      if (!segment || !currentContents) {
+        return;
+      }
+
+      if (segment.spineItemId && currentSpineItemId && segment.spineItemId !== currentSpineItemId) {
+        return;
+      }
+
+      const nextElement = findSegmentElement(currentContents, segment.text);
+      if (!nextElement) {
+        return;
+      }
+
+      nextElement.classList.add("reader-tts-active-segment");
+      activeTtsElement = nextElement;
+      nextElement.scrollIntoView?.({
+        block: "center",
+        inline: "nearest",
+      });
     };
 
     const handleSelection = async (cfiRange: string, contents: Contents) => {
@@ -65,11 +138,13 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       const cfi = location.start.cfi;
       const progress = location.start.percentage ?? 0;
       currentTarget = cfi;
+       currentSpineItemId = location.start.href;
       onRelocated?.({ cfi, progress, spineItemId: location.start.href });
     };
 
     const handleRendered = (_section: unknown, contents: Contents) => {
       currentContents = contents;
+      applyActiveTtsSegment(activeTtsSegment);
     };
 
     rendition.on("selected", handleSelection);
@@ -90,6 +165,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         rendition.themes.default(buildReaderTheme(activePreferences));
       },
       destroy() {
+        clearActiveTtsSegment();
         rendition.off("selected", handleSelection);
         rendition.off("relocated", handleRelocated);
         rendition.off("rendered", handleRendered);
@@ -128,6 +204,9 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       },
       prev() {
         return rendition.prev();
+      },
+      async setActiveTtsSegment(segment) {
+        applyActiveTtsSegment(segment);
       },
       async setFlow(nextFlow) {
         activePreferences = {

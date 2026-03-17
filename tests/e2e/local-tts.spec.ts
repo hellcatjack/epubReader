@@ -104,19 +104,25 @@ test("browser tts supports selection playback and continuous reader controls", a
   const selectedText = await selectTextInIframe(page);
   expect(selectedText.length).toBeGreaterThan(0);
 
-  await page.getByRole("button", { name: /read aloud/i }).click();
   await expect
     .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
     .toBe(1);
 
+  await page.getByRole("button", { name: /read aloud/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBe(2);
+
   const firstCall = await page.evaluate(
-    () => (window as typeof window & { __ttsCalls: Array<{ text: string; voice: string | null }> }).__ttsCalls[0],
+    () =>
+      (window as typeof window & { __ttsCalls: Array<{ text: string; voice: string | null }> }).__ttsCalls.at(-1),
   );
   expect(firstCall?.text).toContain(selectedText);
   expect(firstCall?.voice).toBe("Microsoft Ava Online (Natural)");
 
   await page.getByRole("button", { name: /start tts/i }).click();
   await expect(page.getByText(/tts status: playing/i)).toBeVisible();
+  await expect(page.frameLocator(".epub-root iframe").locator(".reader-tts-active-segment")).toHaveCount(1);
   await expect
     .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
     .toBeGreaterThan(1);
