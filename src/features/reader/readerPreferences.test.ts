@@ -43,9 +43,9 @@ describe("readerPreferences", () => {
         "text-indent": "0",
       },
       ".reader-tts-active-segment": {
-        "background": "linear-gradient(90deg, rgba(214, 144, 58, 0.14) 0%, rgba(214, 144, 58, 0.14) calc(100% - 0.65rem), transparent calc(100% - 0.65rem), transparent 100%)",
+        "background": "linear-gradient(90deg, transparent 0, transparent 0.65rem, rgba(186, 106, 47, 0.72) 0.65rem, rgba(186, 106, 47, 0.72) 0.87rem, rgba(214, 144, 58, 0.14) 0.87rem, rgba(214, 144, 58, 0.14) calc(100% - 0.65rem), transparent calc(100% - 0.65rem), transparent 100%)",
         "background-repeat": "no-repeat",
-        "box-shadow": "inset 0.22rem 0 0 rgba(186, 106, 47, 0.72)",
+        "box-shadow": "none",
         "padding-left": "0",
         "transition": "none",
       },
