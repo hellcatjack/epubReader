@@ -4,11 +4,13 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
+import { resetDb } from "../../lib/db/appDb";
 import type { RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllGlobals();
+  await resetDb();
 });
 
 function stubTtsHealth({

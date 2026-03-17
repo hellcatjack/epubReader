@@ -81,7 +81,7 @@ it("reads aloud the selected text through the local helper-backed speech path", 
       expect.objectContaining({
         helperUrl: resolveDefaultTtsHelperUrl("localhost"),
         rate: 1,
-        voice: "Ryan",
+        voice: "af_heart",
         volume: 1,
       }),
     );

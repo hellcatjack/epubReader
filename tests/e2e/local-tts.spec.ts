@@ -61,10 +61,12 @@ test("local helper tts supports selection playback and continuous reader control
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        backend: "qwen3-tts",
+        backend: "kokoro",
+        device: "cuda:0",
         status: "ok",
         version: "0.1.0",
         voiceCount: 1,
+        warmed: true,
       }),
     });
   });
@@ -75,13 +77,21 @@ test("local helper tts supports selection playback and continuous reader control
       contentType: "application/json",
       body: JSON.stringify([
         {
-          id: "Ryan",
-          displayName: "Ryan",
-          gender: "male",
+          id: "af_heart",
+          displayName: "Heart",
+          gender: "female",
           isDefault: true,
           locale: "en-US",
         },
       ]),
+    });
+  });
+
+  await page.route("http://127.0.0.1:43115/prewarm", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "ok" }),
     });
   });
 
@@ -105,12 +115,12 @@ test("local helper tts supports selection playback and continuous reader control
   await page.getByRole("button", { name: /read aloud/i }).click();
   await expect.poll(() => speakRequests.length).toBe(1);
   expect(speakRequests[0]?.text).toContain(selectedText);
-  expect(speakRequests[0]?.voiceId).toBe("Ryan");
+  expect(speakRequests[0]?.voiceId).toBe("af_heart");
 
   await page.getByRole("button", { name: /start tts/i }).click();
   await expect(page.getByText(/tts status: playing/i)).toBeVisible();
   await expect.poll(() => speakRequests.length).toBeGreaterThan(1);
-  expect(speakRequests[1]?.voiceId).toBe("Ryan");
+  expect(speakRequests[1]?.voiceId).toBe("af_heart");
 
   await page.getByRole("button", { name: /pause tts/i }).click();
   await expect(page.getByText(/tts status: paused/i)).toBeVisible();
