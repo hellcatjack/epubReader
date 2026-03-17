@@ -432,6 +432,95 @@ it("moves the active viewport marker when boundary events advance into the next 
   });
 });
 
+it("prefers paragraph tts blocks over flattened chapter text when choosing the initial marker", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const setActiveTtsSegment = vi.fn<(segment: ActiveTtsSegment | null) => Promise<void>>(async () => undefined);
+  const flattenedText =
+    "ONE Morgan’s head was pressed against her pillow. The alarm on her phone had just been snoozed again. The thing was, she was so darn comfortable.";
+  const paragraphBlocks = [
+    "Morgan’s head was pressed against her pillow. The alarm on her phone had just been snoozed again.",
+    "The thing was, she was so darn comfortable.",
+  ];
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => flattenedText),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () =>
+                      paragraphBlocks.map((text) => ({
+                        spineItemId: "chap-1",
+                        text,
+                      })),
+                    ),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment,
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & {
+                    getTtsBlocksFromCurrentLocation: () => Promise<Array<{ spineItemId: string; text: string }>>;
+                    setActiveTtsSegment: typeof setActiveTtsSegment;
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(setActiveTtsSegment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: paragraphBlocks[0],
+      }),
+    );
+  });
+
+  const firstMarker = setActiveTtsSegment.mock.calls.find((call) => call[0])?.[0];
+  expect(firstMarker).toEqual(
+    expect.objectContaining({
+      text: paragraphBlocks[0],
+    }),
+  );
+  expect(firstMarker?.text.startsWith("ONE")).toBe(false);
+});
+
 it("persistently updates tts rate from the quick control", async () => {
   const user = userEvent.setup();
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");

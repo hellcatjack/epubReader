@@ -8,7 +8,7 @@ import { annotationService } from "../annotations/annotationService";
 import { getProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
 import { createBrowserTtsClient } from "../tts/browserTtsClient";
-import { chunkText, chunkTextSegments } from "../tts/chunkText";
+import { chunkTextSegments, chunkTextSegmentsFromBlocks } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
@@ -56,6 +56,19 @@ function isAutoSpeakableSelection(text: string) {
   }
 
   return /[\p{L}\p{N}]/u.test(normalized);
+}
+
+async function getContinuousTtsChunks(runtimeHandle: RuntimeRenderHandle) {
+  const ttsBlocks = await runtimeHandle.getTtsBlocksFromCurrentLocation?.();
+  if (ttsBlocks?.length) {
+    return chunkTextSegmentsFromBlocks(
+      ttsBlocks.map((block) => block.text),
+      { firstSegmentMax: 280, segmentMax: 500 },
+    );
+  }
+
+  const text = await runtimeHandle.getTextFromCurrentLocation();
+  return chunkTextSegments(text, { firstSegmentMax: 280, segmentMax: 500 });
 }
 
 export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
@@ -191,8 +204,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       return;
     }
 
-    void Promise.all([runtimeHandle.getTextFromCurrentLocation(), browserTtsClientRef.current.getVoices()])
-      .then(([text, voices]) => {
+    void Promise.all([getContinuousTtsChunks(runtimeHandle), browserTtsClientRef.current.getVoices()])
+      .then(([chunks, voices]) => {
         if (ttsReadinessRequestRef.current !== requestId) {
           return;
         }
@@ -217,8 +230,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           }));
         }
 
-        const hasReadableText = chunkText(text, { firstSegmentMax: 280, segmentMax: 500 }).length > 0;
-        if (!hasReadableText) {
+        if (!chunks.length) {
           setTtsStartReady(false);
           return;
         }
@@ -598,8 +610,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     }
 
     const queue = ensureTtsQueue();
-    const text = await runtimeHandle.getTextFromCurrentLocation();
-    const chunks = chunkTextSegments(text, { firstSegmentMax: 280, segmentMax: 500 });
+    const chunks = await getContinuousTtsChunks(runtimeHandle);
 
     if (!chunks.length) {
       setTtsState({

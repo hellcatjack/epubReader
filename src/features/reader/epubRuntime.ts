@@ -24,6 +24,7 @@ export type RuntimeRenderHandle = {
   destroy(): void;
   findCfiFromTextQuote(textQuote: string): Promise<string | null>;
   getTextFromCurrentLocation(): Promise<string>;
+  getTtsBlocksFromCurrentLocation?(): Promise<Array<{ spineItemId: string; text: string }>>;
   goTo(target: string): Promise<void>;
   next(): Promise<void>;
   prev(): Promise<void>;
@@ -151,6 +152,63 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }
     };
 
+    const getTtsBlocksFromCurrentLocation = async () => {
+      const contents = currentContents;
+      if (!contents) {
+        return [];
+      }
+
+      const doc = contents.document;
+      const candidates = Array.from(doc.body.querySelectorAll<HTMLElement>("p, li, blockquote"));
+      if (!candidates.length) {
+        return [];
+      }
+
+      let startNode: Node | null = null;
+      let startOffset = 0;
+
+      if (currentTarget) {
+        try {
+          const range = await book.getRange(currentTarget);
+          startNode = range?.startContainer ?? null;
+          startOffset = range?.startOffset ?? 0;
+        } catch {
+          startNode = null;
+        }
+      }
+
+      const startIndex = startNode
+        ? Math.max(
+            0,
+            candidates.findIndex((candidate) => {
+              if (candidate.contains(startNode)) {
+                return true;
+              }
+
+              return Boolean(startNode.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING);
+            }),
+          )
+        : 0;
+
+      return candidates
+        .slice(startIndex)
+        .map((candidate, index) => {
+          if (!startNode || index > 0 || !candidate.contains(startNode)) {
+            return normalizeText(candidate.innerText || candidate.textContent || "");
+          }
+
+          const candidateRange = doc.createRange();
+          candidateRange.selectNodeContents(candidate);
+          candidateRange.setStart(startNode, startOffset);
+          return normalizeText(candidateRange.toString());
+        })
+        .filter(Boolean)
+        .map((text) => ({
+          spineItemId: currentSpineItemId,
+          text,
+        }));
+    };
+
     const handleSelection = async (cfiRange: string, contents: Contents) => {
       const range = await book.getRange(cfiRange);
       const text = range?.toString().trim() ?? "";
@@ -246,6 +304,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           return fallbackText;
         }
       },
+      getTtsBlocksFromCurrentLocation,
       async goTo(target) {
         currentTarget = target;
         await rendition.display(target);

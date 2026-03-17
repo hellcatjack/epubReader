@@ -51,17 +51,17 @@ function normalizeParagraphs(text: string) {
     .filter(Boolean);
 }
 
-function toUnits(text: string, maxCharacters: number) {
-  const paragraphs = text
-    ? normalizeParagraphs(text)
-    : [];
+function normalizeBlocks(blocks: string[]) {
+  return blocks.map((block) => block.replace(/\s+/g, " ").trim()).filter(Boolean);
+}
 
-  return paragraphs.flatMap((paragraph) => {
-    if (paragraph.length <= maxCharacters) {
-      return [paragraph];
+function blocksToUnits(blocks: string[], maxCharacters: number) {
+  return normalizeBlocks(blocks).flatMap((block) => {
+    if (block.length <= maxCharacters) {
+      return [block];
     }
 
-    return splitIntoSentences(paragraph).flatMap((sentence) => {
+    return splitIntoSentences(block).flatMap((sentence) => {
       if (sentence.length <= maxCharacters) {
         return [sentence];
       }
@@ -94,14 +94,14 @@ function joinUnits(units: string[], maxCharacters: number) {
   };
 }
 
-export function chunkTextSegments(text: string, options: number | ChunkOptions = {}): ChunkSegment[] {
+export function chunkTextSegmentsFromBlocks(blocks: string[], options: number | ChunkOptions = {}): ChunkSegment[] {
   const normalizedOptions =
     typeof options === "number"
       ? { firstSegmentMax: options, segmentMax: options }
       : options;
   const firstSegmentMax = normalizedOptions.firstSegmentMax ?? 280;
   const segmentMax = normalizedOptions.segmentMax ?? Math.max(firstSegmentMax, 500);
-  const paragraphUnits = toUnits(text, segmentMax);
+  const paragraphUnits = blocksToUnits(blocks, segmentMax);
   const segments: ChunkSegment[] = [];
   let index = 0;
 
@@ -133,6 +133,10 @@ export function chunkTextSegments(text: string, options: number | ChunkOptions =
   }
 
   return segments;
+}
+
+export function chunkTextSegments(text: string, options: number | ChunkOptions = {}): ChunkSegment[] {
+  return chunkTextSegmentsFromBlocks(text ? normalizeParagraphs(text) : [], options);
 }
 
 export function chunkText(text: string, options: number | ChunkOptions = {}) {
