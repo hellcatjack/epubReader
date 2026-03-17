@@ -75,9 +75,13 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const [initialCfi, setInitialCfi] = useState<string>();
   const [initialProgress, setInitialProgress] = useState<ProgressRecord | null>(null);
+  const [isProgressReady, setIsProgressReady] = useState(!bookId);
   const [locationTarget, setLocationTarget] = useState<string>();
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentSpineItemId, setCurrentSpineItemId] = useState("");
+  const [readerStatus, setReaderStatus] = useState(
+    bookId ? "Restoring reading position..." : "Open a book from the shelf to start reading.",
+  );
   const [selectedSelection, setSelectedSelection] = useState<ReaderSelection | null>(null);
   const [aiError, setAiError] = useState("");
   const [aiResult, setAiResult] = useState("");
@@ -127,17 +131,57 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   }
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!bookId) {
       setInitialCfi(undefined);
       setInitialProgress(null);
+      setIsProgressReady(true);
+      setLocationTarget(undefined);
+      setCurrentLocation({ cfi: "", progress: 0, spineItemId: "" });
+      setCurrentSpineItemId("");
+      setReaderStatus("Open a book from the shelf to start reading.");
       return;
     }
 
-    void getProgress(bookId).then((progress) => {
-      setInitialProgress(progress ?? null);
-      setInitialCfi(progress?.cfi);
-      setLocationTarget(progress?.cfi);
-    });
+    setIsProgressReady(false);
+    setInitialCfi(undefined);
+    setInitialProgress(null);
+    setLocationTarget(undefined);
+    setCurrentLocation({ cfi: "", progress: 0, spineItemId: "" });
+    setCurrentSpineItemId("");
+    setReaderStatus("Restoring reading position...");
+
+    void getProgress(bookId)
+      .then((progress) => {
+        if (cancelled) {
+          return;
+        }
+
+        setInitialProgress(progress ?? null);
+        setInitialCfi(progress?.cfi);
+        setLocationTarget(progress?.cfi);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setInitialProgress(null);
+        setInitialCfi(undefined);
+        setLocationTarget(undefined);
+      })
+      .finally(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setIsProgressReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [bookId]);
 
   useEffect(() => {
@@ -715,6 +759,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const readerStyle: CSSProperties & Record<"--reader-font-scale", string> = {
     "--reader-font-scale": String(settings.fontScale),
   };
+  const shouldRenderViewport = Boolean(bookId) && isProgressReady;
+  const nextInitialCfi = locationTarget ?? initialCfi;
 
   return (
     <main className={`reader-layout theme-${settings.theme}`} style={readerStyle}>
@@ -739,53 +785,72 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           progress={currentLocation.progress}
           readingMode={settings.readingMode}
         />
-        <EpubViewport
-          activeTtsSegment={activeContinuousTtsSegment}
-          bookId={bookId}
-          initialCfi={locationTarget ?? initialCfi}
-          initialProgress={initialProgress}
-          onLocationChange={({ cfi, progress, spineItemId }) => {
-            setCurrentLocation({ cfi, progress, spineItemId });
-            setCurrentSpineItemId(spineItemId);
-          }}
-          onReady={setRuntimeHandle}
-          onTocChange={setToc}
-          readingMode={settings.readingMode}
-          runtime={runtime}
-          visibleAnnotations={visibleAnnotations}
-        />
-        <SelectionPopover
-          hasSelection={selectedText.length > 0}
-          onAddNote={handleAddNote}
-          onExplain={handleExplain}
-          onHighlight={handleHighlight}
-          onReadAloud={handleReadAloud}
-          onTranslate={handleTranslate}
-        />
+        <div className="reader-workspace">
+          <section className="reader-stage" aria-label="Reader stage">
+            {shouldRenderViewport ? (
+              <EpubViewport
+                activeTtsSegment={activeContinuousTtsSegment}
+                bookId={bookId}
+                initialCfi={nextInitialCfi}
+                initialProgress={initialProgress}
+                onLocationChange={({ cfi, progress, spineItemId }) => {
+                  setCurrentLocation({ cfi, progress, spineItemId });
+                  setCurrentSpineItemId(spineItemId);
+                }}
+                onReady={setRuntimeHandle}
+                onStatusChange={setReaderStatus}
+                onTocChange={setToc}
+                readingMode={settings.readingMode}
+                runtime={runtime}
+                visibleAnnotations={visibleAnnotations}
+              />
+            ) : (
+              <section className="epub-viewport" aria-label="Book content">
+                <article className="reader-page-card">
+                  <p className="reader-eyebrow">Reading session</p>
+                  <h1 className="reader-title">Preparing your book...</h1>
+                  <p className="reader-copy">
+                    Loading your saved location before opening the book so the page lands where you left off.
+                  </p>
+                </article>
+              </section>
+            )}
+            <SelectionPopover
+              hasSelection={selectedText.length > 0}
+              onAddNote={handleAddNote}
+              onExplain={handleExplain}
+              onHighlight={handleHighlight}
+              onReadAloud={handleReadAloud}
+              onTranslate={handleTranslate}
+            />
+          </section>
+          <RightPanel
+            aiError={aiError}
+            aiResult={aiResult}
+            aiTitle={aiTitle}
+            annotationCount={visibleAnnotations.length}
+            appearance={toReaderPreferences(settings)}
+            aria-label="Reader tools"
+            noteDraft={noteDraft}
+            noteOpen={noteOpen}
+            onAppearanceChange={handleAppearanceChange}
+            onNoteDraftChange={setNoteDraft}
+            onNoteSave={handleSaveNote}
+            onTtsPause={handlePauseTts}
+            onTtsRateChange={handleQuickTtsRateChange}
+            onTtsResume={handleResumeTts}
+            onTtsStart={handleStartTts}
+            onTtsStop={handleStopTts}
+            readerStatus={readerStatus}
+            selectedText={selectedText}
+            ttsCurrentText={ttsState.currentText}
+            ttsError={ttsState.error}
+            ttsRate={settings.ttsRate}
+            ttsStartDisabled={!ttsStartReady}
+            ttsStatus={ttsState.status}
+          />
+        </div>
       </section>
-      <RightPanel
-        aiError={aiError}
-        aiResult={aiResult}
-        aiTitle={aiTitle}
-        appearance={toReaderPreferences(settings)}
-        aria-label="Reader tools"
-        noteDraft={noteDraft}
-        noteOpen={noteOpen}
-        onAppearanceChange={handleAppearanceChange}
-        onNoteDraftChange={setNoteDraft}
-        onNoteSave={handleSaveNote}
-        onTtsPause={handlePauseTts}
-        onTtsRateChange={handleQuickTtsRateChange}
-        onTtsResume={handleResumeTts}
-        onTtsStart={handleStartTts}
-        onTtsStop={handleStopTts}
-        selectedText={selectedText}
-        ttsCurrentText={ttsState.currentText}
-        ttsError={ttsState.error}
-        ttsRate={settings.ttsRate}
-        ttsStartDisabled={!ttsStartReady}
-        ttsStatus={ttsState.status}
-      />
     </main>
   );
 }

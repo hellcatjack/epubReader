@@ -234,6 +234,24 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       onRelocated?.({ cfi, progress, spineItemId: location.start.href, textQuote });
     };
 
+    const syncDisplayedLocation = async () => {
+      try {
+        const displayedLocation = await rendition.currentLocation();
+        if (!displayedLocation) {
+          return;
+        }
+
+        await handleRelocated({
+          atEnd: false,
+          atStart: false,
+          end: displayedLocation,
+          start: displayedLocation,
+        });
+      } catch {
+        // Ignore synthetic location sync failures and fall back to epub.js events.
+      }
+    };
+
     const handleRendered = (_section: unknown, contents: Contents) => {
       currentContents = contents;
       applyActiveTtsSegment(activeTtsSegment);
@@ -247,6 +265,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     const navigation = await book.loaded.navigation;
     onTocChange?.(flattenTocItems(navigation.toc));
     await rendition.display(initialCfi);
+    await syncDisplayedLocation();
 
     return {
       async applyPreferences(preferences) {
@@ -318,6 +337,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       async goTo(target) {
         currentTarget = target;
         await rendition.display(target);
+        await syncDisplayedLocation();
       },
       next() {
         return rendition.next();
@@ -335,6 +355,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         };
         rendition.flow(toEpubFlow(nextFlow));
         await rendition.display(currentTarget || undefined);
+        await syncDisplayedLocation();
       },
     };
   },

@@ -22,6 +22,7 @@ type EpubViewportProps = {
   initialProgress?: ProgressRecord | null;
   onLocationChange?: (location: { cfi: string; progress: number; spineItemId: string }) => void;
   onReady?: (handle: RuntimeRenderHandle | null) => void;
+  onStatusChange?: (status: string) => void;
   onTocChange?: (toc: TocItem[]) => void;
   readingMode?: ReadingMode;
   visibleAnnotations?: AnnotationRecord[];
@@ -36,13 +37,13 @@ export function EpubViewport({
   initialProgress = null,
   onLocationChange,
   onReady,
+  onStatusChange,
   onTocChange,
   readingMode = "scrolled",
   runtime = epubViewportRuntime,
   visibleAnnotations = [],
 }: EpubViewportProps) {
   const [statusMessage, setStatusMessage] = useState("Open a book from the shelf to start reading.");
-  const [selectionPreview, setSelectionPreview] = useState("");
   const hostRef = useRef<HTMLDivElement | null>(null);
   const runtimeHandleRef = useRef<RuntimeRenderHandle | null>(null);
 
@@ -56,16 +57,8 @@ export function EpubViewport({
   }, [visibleAnnotations]);
 
   useEffect(() => {
-    if (!controller) {
-      return;
-    }
-
-    const unsubscribe = controller.observeSelection((selection) => {
-      setSelectionPreview(selection?.text ?? "");
-    });
-
-    return unsubscribe;
-  }, [controller]);
+    onStatusChange?.(statusMessage);
+  }, [onStatusChange, statusMessage]);
 
   useEffect(() => {
     if (!controller || !bookId) {
@@ -95,7 +88,6 @@ export function EpubViewport({
             onLocationChange?.({ cfi, progress, spineItemId });
           },
           onSelectionChange: ({ cfiRange, text }) => {
-            setSelectionPreview(text);
             selectionBridge.publish(text ? { cfiRange, text } : null);
           },
           onTocChange,
@@ -245,11 +237,6 @@ export function EpubViewport({
           </>
         ) : null}
       </div>
-      <p className="reader-status">{statusMessage}</p>
-      <p className="reader-status">
-        {visibleAnnotations.length} local annotation{visibleAnnotations.length === 1 ? "" : "s"} in view
-      </p>
-      {selectionPreview ? <p className="reader-selection-preview">Selection: {selectionPreview}</p> : null}
     </section>
   );
 }

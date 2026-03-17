@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import { EpubViewport } from "./EpubViewport";
 import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
 
 it("falls back to chapter start when a saved cfi is invalid", async () => {
+  const onStatusChange = vi.fn();
   const controller = {
     open: vi
       .fn<(bookId: string, cfi?: string) => Promise<void>>()
@@ -19,14 +20,19 @@ it("falls back to chapter start when a saved cfi is invalid", async () => {
     goToLocation: vi.fn(async () => undefined),
   };
 
-  render(<EpubViewport bookId="book-1" controller={controller} initialCfi="epubcfi(invalid)" />);
+  render(
+    <EpubViewport bookId="book-1" controller={controller} initialCfi="epubcfi(invalid)" onStatusChange={onStatusChange} />,
+  );
 
-  expect(await screen.findByText(/opened from chapter start/i)).toBeInTheDocument();
+  await vi.waitFor(() => {
+    expect(onStatusChange).toHaveBeenLastCalledWith("Opened from chapter start.");
+  });
   expect(controller.open).toHaveBeenNthCalledWith(1, "book-1", "epubcfi(invalid)");
   expect(controller.open).toHaveBeenNthCalledWith(2, "book-1", undefined);
 });
 
 it("uses the runtime renderer for persisted books when no test controller is provided", async () => {
+  const onStatusChange = vi.fn();
   const runtime = {
     render: vi.fn(async () => ({
       applyPreferences: vi.fn(async () => undefined),
@@ -43,9 +49,11 @@ it("uses the runtime renderer for persisted books when no test controller is pro
     })),
   };
 
-  render(<EpubViewport bookId="book-1" runtime={runtime} />);
+  render(<EpubViewport bookId="book-1" onStatusChange={onStatusChange} runtime={runtime} />);
 
-  expect(await screen.findByText(/opened from chapter start/i)).toBeInTheDocument();
+  await vi.waitFor(() => {
+    expect(onStatusChange).toHaveBeenLastCalledWith("Opened from chapter start.");
+  });
   expect(runtime.render).toHaveBeenCalledWith(
     expect.objectContaining({
       bookId: "book-1",
@@ -55,6 +63,7 @@ it("uses the runtime renderer for persisted books when no test controller is pro
 });
 
 it("falls back to a saved chapter and quote when the saved cfi cannot be reopened", async () => {
+  const onStatusChange = vi.fn();
   const findCfiFromTextQuote = vi.fn(async () => "epubcfi(/6/8!/4/1:12)");
   const goTo = vi.fn(async () => undefined);
   const runtime = {
@@ -88,11 +97,14 @@ it("falls back to a saved chapter and quote when the saved cfi cannot be reopene
         textQuote: "Morgan’s head was pressed against her pillow.",
         updatedAt: Date.now(),
       }}
+      onStatusChange={onStatusChange}
       runtime={runtime}
     />,
   );
 
-  expect(await screen.findByText(/recovered from saved reading position/i)).toBeInTheDocument();
+  await vi.waitFor(() => {
+    expect(onStatusChange).toHaveBeenLastCalledWith("Recovered from saved reading position.");
+  });
   expect(runtime.render).toHaveBeenNthCalledWith(
     2,
     expect.objectContaining({
@@ -140,6 +152,7 @@ it("destroys stale runtime handles that resolve after the viewport unmounts", as
 });
 
 it("forwards active tts segments to the runtime handle", async () => {
+  const onStatusChange = vi.fn();
   const setActiveTtsSegment = vi.fn(async () => undefined);
   const runtime: EpubViewportRuntime = {
     render: vi.fn(async () => ({
@@ -157,8 +170,10 @@ it("forwards active tts segments to the runtime handle", async () => {
     })),
   };
 
-  const { rerender } = render(<EpubViewport bookId="book-1" runtime={runtime} />);
-  expect(await screen.findByText(/opened from chapter start/i)).toBeInTheDocument();
+  const { rerender } = render(<EpubViewport bookId="book-1" onStatusChange={onStatusChange} runtime={runtime} />);
+  await vi.waitFor(() => {
+    expect(onStatusChange).toHaveBeenLastCalledWith("Opened from chapter start.");
+  });
 
   rerender(
     <EpubViewport

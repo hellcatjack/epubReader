@@ -11,6 +11,12 @@ test("bookshelf flow imports, reopens, and deletes a book", async ({ page }) => 
   const viewportHeight = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().height);
   expect(viewportHeight).toBeGreaterThan(100);
 
+  const viewportBox = await page.locator(".epub-root").boundingBox();
+  const toolsBox = await page.locator(".reader-tools").boundingBox();
+  expect(viewportBox).not.toBeNull();
+  expect(toolsBox).not.toBeNull();
+  expect(toolsBox.x).toBeGreaterThan(viewportBox.x + viewportBox.width - 5);
+
   const visibleText = await page.locator(".epub-root iframe").evaluate((node) =>
     node.contentDocument?.body?.textContent?.trim().length ?? 0,
   );

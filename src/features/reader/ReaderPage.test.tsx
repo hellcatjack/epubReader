@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
@@ -9,8 +10,23 @@ import { getSettings } from "../settings/settingsRepository";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
 
+const getProgressMock = vi.fn().mockResolvedValue(null);
+
+vi.mock("../bookshelf/progressRepository", async () => {
+  const actual = await vi.importActual<typeof import("../bookshelf/progressRepository")>(
+    "../bookshelf/progressRepository",
+  );
+
+  return {
+    ...actual,
+    getProgress: (...args: Parameters<typeof actual.getProgress>) => getProgressMock(...args),
+  };
+});
+
 afterEach(async () => {
   vi.unstubAllGlobals();
+  getProgressMock.mockReset();
+  getProgressMock.mockResolvedValue(null);
   await resetDb();
 });
 
@@ -75,6 +91,113 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
   expect(screen.getByRole("progressbar", { name: /reading progress/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
+});
+
+it("waits for saved progress before opening the reader and restores the saved cfi", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
+  let resolveProgress: ((value: { bookId: string; cfi: string; progress: number; spineItemId: string; textQuote: string; updatedAt: number } | null) => void) | undefined;
+  getProgressMock.mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveProgress = resolve;
+    }),
+  );
+  const renderSpy = vi.fn(async () => ({
+    applyPreferences: vi.fn(async () => undefined),
+    destroy() {
+      return undefined;
+    },
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route path="/books/:bookId" element={<ReaderPage runtime={{ render: renderSpy }} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(renderSpy).not.toHaveBeenCalled();
+  expect(screen.getByText(/restoring reading position/i)).toBeInTheDocument();
+
+  await act(async () => {
+    resolveProgress?.({
+      bookId: "book-1",
+      cfi: "epubcfi(/6/2!/4/1:24)",
+      progress: 0.42,
+      spineItemId: "chap-1",
+      textQuote: "Morgan’s head was pressed against her pillow.",
+      updatedAt: Date.now(),
+    });
+  });
+
+  await waitFor(() => {
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookId: "book-1",
+        initialCfi: "epubcfi(/6/2!/4/1:24)",
+      }),
+    );
+  });
+});
+
+it("shows reader status details in the tools rail instead of below the page surface", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  findCfiFromTextQuote: vi.fn(async () => null),
+                  getTextFromCurrentLocation: vi.fn(async () => ""),
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const toolsRail = screen.getByRole("complementary", { name: /reader tools/i });
+
+  await waitFor(() => {
+    expect(within(toolsRail).getByText(/opened from chapter start/i)).toBeInTheDocument();
+  });
+
+  expect(within(toolsRail).getByText(/0 local annotations in view/i)).toBeInTheDocument();
 });
 
 it("switches reading modes and pages through the active rendition", async () => {
@@ -623,20 +746,22 @@ it("keeps start tts disabled until the reading surface is ready", async () => {
 
   expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
 
-  if (!resolveRender) {
-    throw new Error("render was not captured");
-  }
+  await waitFor(() => {
+    expect(resolveRender).toBeTypeOf("function");
+  });
 
-  resolveRender({
-    applyPreferences: async () => undefined,
-    destroy: () => undefined,
-    findCfiFromTextQuote: async () => null,
-    getTextFromCurrentLocation: async () => "Ready text",
-    goTo: async () => undefined,
-    next: async () => undefined,
-    prev: async () => undefined,
-    setActiveTtsSegment: async () => undefined,
-    setFlow: async () => undefined,
+  await act(async () => {
+    resolveRender?.({
+      applyPreferences: async () => undefined,
+      destroy: () => undefined,
+      findCfiFromTextQuote: async () => null,
+      getTextFromCurrentLocation: async () => "Ready text",
+      goTo: async () => undefined,
+      next: async () => undefined,
+      prev: async () => undefined,
+      setActiveTtsSegment: async () => undefined,
+      setFlow: async () => undefined,
+    });
   });
 
   await waitFor(() => {

@@ -3,9 +3,11 @@ import type { ReaderPreferences } from "./readerPreferences";
 import { AiResultPanel } from "./panels/AiResultPanel";
 import { AppearancePanel } from "./panels/AppearancePanel";
 import { NoteEditorPanel } from "./panels/NoteEditorPanel";
+import { ReaderStatusPanel } from "./panels/ReaderStatusPanel";
 import { TtsStatusPanel } from "./panels/TtsStatusPanel";
 
 type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
+  annotationCount?: number;
   aiError?: string;
   aiResult?: string;
   aiTitle?: string;
@@ -20,6 +22,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onTtsResume?: () => void;
   onTtsStart?: () => void;
   onTtsStop?: () => void;
+  readerStatus?: string;
   ttsRate?: number;
   selectedText?: string;
   ttsStartDisabled?: boolean;
@@ -29,6 +32,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
 };
 
 export function RightPanel({
+  annotationCount,
   aiError,
   aiResult,
   aiTitle,
@@ -43,6 +47,7 @@ export function RightPanel({
   onTtsResume,
   onTtsStart,
   onTtsStop,
+  readerStatus,
   selectedText,
   ttsStartDisabled,
   ttsCurrentText,
@@ -54,6 +59,7 @@ export function RightPanel({
   return (
     <aside className="reader-tools" {...props}>
       <AiResultPanel error={aiError} result={aiResult} selectedText={selectedText} title={aiTitle} />
+      <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
       {appearance ? <AppearancePanel onChange={onAppearanceChange} preferences={appearance} /> : null}
       <NoteEditorPanel
         isOpen={noteOpen}

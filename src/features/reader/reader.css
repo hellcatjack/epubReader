@@ -1,12 +1,11 @@
 .reader-layout {
   font-size: calc(16px * var(--reader-font-scale, 1));
   display: grid;
-  grid-template-columns: 18rem minmax(0, 1fr) 20rem;
-  gap: 1.5rem;
-  min-height: 100vh;
-  padding: 1.5rem;
-  place-items: stretch;
-  align-items: stretch;
+  grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+  gap: 1.25rem;
+  min-height: 100dvh;
+  padding: 1rem 1.25rem;
+  align-items: start;
   background:
     radial-gradient(circle at top left, rgba(197, 134, 66, 0.18), transparent 28rem),
     linear-gradient(180deg, #f7f0e4 0%, #efe3cf 100%);
@@ -45,14 +44,17 @@
 
 .reader-rail,
 .reader-tools,
-.reader-center {
+.reader-center,
+.reader-stage,
+.reader-workspace {
   display: grid;
   gap: 1rem;
-  align-content: start;
+  min-width: 0;
 }
 
 .reader-center {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: calc(100dvh - 2rem);
 }
 
 .reader-panel {
@@ -117,6 +119,27 @@
   background: rgba(255, 252, 248, 0.88);
   border: 1px solid rgba(79, 49, 24, 0.14);
   box-shadow: 0 0.65rem 1.8rem rgba(87, 57, 35, 0.08);
+}
+
+.reader-workspace {
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 21rem);
+  min-height: 0;
+  align-items: stretch;
+}
+
+.reader-stage {
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  align-content: stretch;
+}
+
+.reader-tools {
+  align-content: start;
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding-right: 0.15rem;
 }
 
 .reader-topbar-actions,
@@ -196,9 +219,10 @@
 
 .epub-viewport {
   display: grid;
-  gap: 1rem;
   min-height: 0;
-  padding: 1.5rem;
+  height: 100%;
+  align-content: stretch;
+  padding: 1rem;
   border-radius: 1.4rem;
   border: 1px solid rgba(79, 49, 24, 0.1);
   background:
@@ -214,9 +238,9 @@
 
 .epub-root {
   display: block;
-  width: min(44rem, 100%);
-  height: min(72vh, 56rem);
-  min-height: 32rem;
+  width: 100%;
+  height: clamp(38rem, calc(100dvh - 11rem), 80rem);
+  min-height: 0;
   padding: 0;
   overflow: hidden;
   border-radius: 1.2rem;
@@ -231,11 +255,14 @@
 }
 
 .reader-page-card {
-  width: min(44rem, 100%);
-  padding: 3rem;
+  width: 100%;
+  min-height: clamp(38rem, calc(100dvh - 11rem), 80rem);
+  padding: clamp(1.5rem, 3vw, 3rem);
   border-radius: 1.2rem;
   background: #fffdf9;
   box-shadow: 0 1.2rem 3rem rgba(77, 50, 28, 0.12);
+  display: grid;
+  align-content: center;
 }
 
 .reader-title {
@@ -245,7 +272,7 @@
 
 .reader-copy {
   margin: 0;
-  max-width: 34rem;
+  max-width: 42rem;
   color: #5c4635;
   font-size: 1.02rem;
 }
@@ -293,7 +320,7 @@
   padding: 0.75rem 1rem;
   border-radius: 999px;
   background: rgba(58, 32, 18, 0.94);
-  justify-self: center;
+  justify-self: start;
 }
 
 .selection-action {
@@ -302,13 +329,36 @@
   font: inherit;
 }
 
+@media (max-width: 1180px) {
+  .reader-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reader-tools {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+}
+
 @media (max-width: 1100px) {
   .reader-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .reader-center {
+    min-height: 0;
+  }
+
   .reader-progress {
     width: min(18rem, 100%);
+  }
+
+  .epub-root,
+  .reader-page-card {
+    height: auto;
+    min-height: min(70dvh, 38rem);
   }
 }
 
