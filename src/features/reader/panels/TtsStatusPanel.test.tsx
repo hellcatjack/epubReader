@@ -4,9 +4,15 @@ import { describe, expect, it } from "vitest";
 import { TtsStatusPanel } from "./TtsStatusPanel";
 
 describe("TtsStatusPanel", () => {
+  it("shows a warmup label before the first segment is ready", () => {
+    render(<TtsStatusPanel status="warming_up" currentText="First chunk." />);
+
+    expect(screen.getByText(/tts status: warming up model/i)).toBeInTheDocument();
+  });
+
   it("shows a clearer label while audio is being generated", () => {
     render(<TtsStatusPanel status="loading" currentText="First chunk." />);
 
-    expect(screen.getByText(/tts status: generating audio/i)).toBeInTheDocument();
+    expect(screen.getByText(/tts status: generating next segment/i)).toBeInTheDocument();
   });
 });

@@ -16,7 +16,7 @@ type TtsQueueDeps = {
 
 export type TtsQueueState = {
   currentText: string;
-  status: "idle" | "loading" | "playing" | "paused" | "error";
+  status: "idle" | "warming_up" | "loading" | "playing" | "paused" | "error";
 };
 
 type StartArgs = {
@@ -75,6 +75,12 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
     }
 
     let currentTask: AudioTask | null = createAudioTask(chunks[0], request);
+    let nextTask: AudioTask | null = chunks[1] ? createAudioTask(chunks[1], request) : null;
+
+    emitState({
+      currentText: chunks[0] ?? "",
+      status: "warming_up",
+    });
 
     for (const [index, chunk] of chunks.entries()) {
       if (activeRunId !== runId) {
@@ -83,13 +89,6 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
 
       if (!currentTask) {
         break;
-      }
-
-      if (index === 0 || !currentTask.settled) {
-        emitState({
-          currentText: chunk,
-          status: "loading",
-        });
       }
 
       let audio: Blob;
@@ -109,14 +108,14 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
         break;
       }
 
-      const nextChunk = chunks[index + 1];
-      const nextTask = nextChunk ? createAudioTask(nextChunk, request) : null;
-
       await player.load(audio);
       emitState({
         currentText: chunk,
         status: "playing",
       });
+
+      const futureChunk = chunks[index + 2];
+      const futureTask = futureChunk ? createAudioTask(futureChunk, request) : null;
 
       try {
         await player.playUntilEnded();
@@ -131,6 +130,14 @@ export function createTtsQueue({ onStateChange, player, speak }: TtsQueueDeps) {
       }
 
       currentTask = nextTask;
+      nextTask = futureTask;
+
+      if (currentTask && activeRunId === runId) {
+        emitState({
+          currentText: currentTask.chunk,
+          status: currentTask.settled ? "playing" : "loading",
+        });
+      }
     }
 
     if (activeRunId === runId) {

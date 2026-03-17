@@ -70,9 +70,10 @@ describe("ttsQueue", () => {
     });
   });
 
-  it("prefetches the next chunk while the current chunk is playing", async () => {
+  it("warms up with the first two chunks before playback starts", async () => {
     let resolveFirstAudio: ((blob: Blob) => void) | undefined;
     let resolveSecondAudio: ((blob: Blob) => void) | undefined;
+    let resolveThirdAudio: ((blob: Blob) => void) | undefined;
     const playResolvers: Array<() => void> = [];
     const speak = vi.fn(({ text }: { text: string }) => {
       return new Promise<Blob>((resolve) => {
@@ -81,7 +82,12 @@ describe("ttsQueue", () => {
           return;
         }
 
-        resolveSecondAudio = resolve;
+        if (text === "Second chunk.") {
+          resolveSecondAudio = resolve;
+          return;
+        }
+
+        resolveThirdAudio = resolve;
       });
     });
     const player = {
@@ -103,7 +109,7 @@ describe("ttsQueue", () => {
     });
 
     const run = queue.start({
-      chunks: ["First chunk.", "Second chunk."],
+      chunks: ["First chunk.", "Second chunk.", "Third chunk."],
       request: {
         format: "wav",
         rate: 1,
@@ -121,6 +127,17 @@ describe("ttsQueue", () => {
       );
     });
 
+    expect(speak).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        text: "Second chunk.",
+      }),
+    );
+    expect(queue.getState()).toMatchObject({
+      currentText: "First chunk.",
+      status: "warming_up",
+    });
+
     resolveFirstAudio?.(new Blob(["first"], { type: "audio/wav" }));
 
     await vi.waitFor(() => {
@@ -130,22 +147,19 @@ describe("ttsQueue", () => {
       });
     });
 
-    expect(speak).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        text: "Second chunk.",
-      }),
-    );
-
     resolveSecondAudio?.(new Blob(["second"], { type: "audio/wav" }));
-    playResolvers.shift()?.();
-
     await vi.waitFor(() => {
-      expect(playResolvers.length).toBeGreaterThan(0);
+      expect(speak).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          text: "Third chunk.",
+        }),
+      );
     });
 
+    resolveThirdAudio?.(new Blob(["third"], { type: "audio/wav" }));
+    queue.stop();
     playResolvers.shift()?.();
-
     await run;
   });
 });
