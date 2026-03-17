@@ -33,6 +33,17 @@ type ChunkOptions = {
   segmentMax?: number;
 };
 
+export type ChunkMarker = {
+  end: number;
+  start: number;
+  text: string;
+};
+
+export type ChunkSegment = {
+  markers: ChunkMarker[];
+  text: string;
+};
+
 function normalizeParagraphs(text: string) {
   return text
     .split(/\n\s*\n/)
@@ -63,12 +74,14 @@ function toUnits(text: string, maxCharacters: number) {
 function joinUnits(units: string[], maxCharacters: number) {
   let current = "";
   let consumed = 0;
+  const segmentUnits: string[] = [];
 
   for (const unit of units) {
     const candidate = current ? `${current} ${unit}` : unit;
     if (candidate.length <= maxCharacters || !current) {
       current = candidate;
       consumed += 1;
+      segmentUnits.push(unit);
       continue;
     }
     break;
@@ -76,11 +89,12 @@ function joinUnits(units: string[], maxCharacters: number) {
 
   return {
     consumed,
+    units: segmentUnits,
     segment: current,
   };
 }
 
-export function chunkText(text: string, options: number | ChunkOptions = {}) {
+export function chunkTextSegments(text: string, options: number | ChunkOptions = {}): ChunkSegment[] {
   const normalizedOptions =
     typeof options === "number"
       ? { firstSegmentMax: options, segmentMax: options }
@@ -88,20 +102,39 @@ export function chunkText(text: string, options: number | ChunkOptions = {}) {
   const firstSegmentMax = normalizedOptions.firstSegmentMax ?? 280;
   const segmentMax = normalizedOptions.segmentMax ?? Math.max(firstSegmentMax, 500);
   const paragraphUnits = toUnits(text, segmentMax);
-  const segments: string[] = [];
+  const segments: ChunkSegment[] = [];
   let index = 0;
 
   while (index < paragraphUnits.length) {
     const maxCharacters = segments.length === 0 ? firstSegmentMax : segmentMax;
-    const { consumed, segment } = joinUnits(paragraphUnits.slice(index), maxCharacters);
+    const { consumed, segment, units } = joinUnits(paragraphUnits.slice(index), maxCharacters);
 
     if (!segment || consumed === 0) {
       break;
     }
 
-    segments.push(segment);
+    let cursor = 0;
+    const markers = units.map((unit) => {
+      const start = cursor;
+      const end = cursor + unit.length;
+      cursor = end + 1;
+      return {
+        end,
+        start,
+        text: unit,
+      };
+    });
+
+    segments.push({
+      markers,
+      text: segment,
+    });
     index += consumed;
   }
 
   return segments;
+}
+
+export function chunkText(text: string, options: number | ChunkOptions = {}) {
+  return chunkTextSegments(text, options).map((segment) => segment.text);
 }

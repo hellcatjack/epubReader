@@ -8,7 +8,7 @@ import { annotationService } from "../annotations/annotationService";
 import { getProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
 import { createBrowserTtsClient } from "../tts/browserTtsClient";
-import { chunkText } from "../tts/chunkText";
+import { chunkText, chunkTextSegments } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
@@ -599,7 +599,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     const queue = ensureTtsQueue();
     const text = await runtimeHandle.getTextFromCurrentLocation();
-    const chunks = chunkText(text, { firstSegmentMax: 280, segmentMax: 500 });
+    const chunks = chunkTextSegments(text, { firstSegmentMax: 280, segmentMax: 500 });
 
     if (!chunks.length) {
       setTtsState({
@@ -616,9 +616,9 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     continuousSpineItemIdRef.current = currentSpineItemId;
     browserTtsClientRef.current.stop();
     setTtsState({
-      currentText: chunks[0] ?? "",
+      currentText: chunks[0]?.text ?? "",
       error: "",
-      markerText: chunks[0] ?? "",
+      markerText: chunks[0]?.markers[0]?.text ?? chunks[0]?.text ?? "",
       mode: "continuous",
       status: "loading",
     });

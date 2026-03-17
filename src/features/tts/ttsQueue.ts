@@ -1,4 +1,5 @@
 import type { BrowserTtsSpeakOptions } from "./browserTtsClient";
+import type { ChunkSegment } from "./chunkText";
 
 type TtsQueueClient = {
   pause(): void;
@@ -19,9 +20,11 @@ export type TtsQueueState = {
 };
 
 type StartArgs = {
-  chunks: string[];
+  chunks: Array<ChunkSegment | string>;
   request: Omit<BrowserTtsSpeakOptions, "onEnd" | "onError">;
 };
+
+export type TtsQueueChunk = ChunkSegment;
 
 export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
   let state: TtsQueueState = {
@@ -31,14 +34,21 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
   };
   let runId = 0;
 
-  const buildMarkerText = (chunk: string, charIndex = 0) => {
-    let start = Math.max(0, Math.min(charIndex, chunk.length));
+  const normalizeChunk = (chunk: StartArgs["chunks"][number]): TtsQueueChunk =>
+    typeof chunk === "string"
+      ? {
+          markers: [{ end: chunk.length, start: 0, text: chunk }],
+          text: chunk,
+        }
+      : chunk;
 
-    while (start > 0 && /\S/.test(chunk[start - 1] ?? "") && /\S/.test(chunk[start] ?? "")) {
-      start -= 1;
-    }
+  const buildMarkerText = (chunk: TtsQueueChunk, charIndex = 0) => {
+    const normalizedIndex = Math.max(0, Math.min(charIndex, chunk.text.length));
+    const marker =
+      chunk.markers.find((candidate) => normalizedIndex >= candidate.start && normalizedIndex <= candidate.end) ??
+      chunk.markers.at(-1);
 
-    return chunk.slice(start).trimStart().slice(0, 180) || chunk.slice(0, 180);
+    return marker?.text || chunk.text;
   };
 
   const emitState = (nextState: TtsQueueState) => {
@@ -46,7 +56,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
     onStateChange?.(nextState);
   };
 
-  async function speakChunk(chunks: string[], index: number, request: StartArgs["request"], activeRunId: number) {
+  async function speakChunk(chunks: TtsQueueChunk[], index: number, request: StartArgs["request"], activeRunId: number) {
     if (activeRunId !== runId) {
       return;
     }
@@ -62,13 +72,13 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
     }
 
     emitState({
-      currentText: chunk,
+      currentText: chunk.text,
       markerText: buildMarkerText(chunk),
       status: index === 0 ? "loading" : "playing",
     });
 
     try {
-      await client.speakSelection(chunk, {
+      await client.speakSelection(chunk.text, {
         ...request,
         onBoundary: (event) => {
           if (activeRunId !== runId) {
@@ -77,7 +87,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
 
           emitState({
             ...state,
-            currentText: chunk,
+            currentText: chunk.text,
             markerText: buildMarkerText(chunk, event.charIndex),
           });
         },
@@ -87,7 +97,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
         onError: () => {
           if (activeRunId === runId) {
             emitState({
-              currentText: chunk,
+              currentText: chunk.text,
               markerText: state.markerText || buildMarkerText(chunk),
               status: "error",
             });
@@ -97,7 +107,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
     } catch {
       if (activeRunId === runId) {
         emitState({
-          currentText: chunk,
+          currentText: chunk.text,
           markerText: state.markerText || buildMarkerText(chunk),
           status: "error",
         });
@@ -107,7 +117,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
 
     if (activeRunId === runId) {
       emitState({
-        currentText: chunk,
+        currentText: chunk.text,
         markerText: state.markerText || buildMarkerText(chunk),
         status: "playing",
       });
@@ -153,7 +163,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
         return;
       }
 
-      await speakChunk(chunks, 0, request, activeRunId);
+      await speakChunk(chunks.map(normalizeChunk), 0, request, activeRunId);
     },
     stop() {
       runId += 1;

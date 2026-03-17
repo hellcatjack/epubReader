@@ -154,9 +154,26 @@ describe("ttsQueue", () => {
     });
     const chunk =
       "First paragraph keeps the opening marker. Second paragraph should move the marker when the spoken boundary reaches it.";
+    const expectedParagraph = "Second paragraph should move the marker when the spoken boundary reaches it.";
 
     await queue.start({
-      chunks: [chunk],
+      chunks: [
+        {
+          markers: [
+            {
+              end: "First paragraph keeps the opening marker.".length,
+              start: 0,
+              text: "First paragraph keeps the opening marker.",
+            },
+            {
+              end: chunk.length,
+              start: "First paragraph keeps the opening marker. ".length,
+              text: expectedParagraph,
+            },
+          ],
+          text: chunk,
+        },
+      ],
       request: {
         rate: 1,
         voiceId: "en-US-Natural-A",
@@ -164,11 +181,11 @@ describe("ttsQueue", () => {
       },
     });
 
-    client.emitBoundary(chunk.indexOf("Second paragraph"));
+    client.emitBoundary(chunk.indexOf("spoken boundary"));
 
     expect(queue.getState()).toMatchObject({
       currentText: chunk,
-      markerText: "Second paragraph should move the marker when the spoken boundary reaches it.",
+      markerText: expectedParagraph,
       status: "playing",
     });
   });
