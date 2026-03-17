@@ -17,6 +17,7 @@ export type BrowserTtsVoice = {
 };
 
 export type BrowserTtsSpeakOptions = {
+  onBoundary?: (event: SpeechSynthesisEvent) => void;
   onEnd?: () => void;
   onError?: (error: SpeechSynthesisErrorEvent | Event) => void;
   rate: number;
@@ -122,6 +123,9 @@ export function createBrowserTtsClient({
 
       utterance.onend = () => {
         options.onEnd?.();
+      };
+      utterance.onboundary = (event) => {
+        options.onBoundary?.(event);
       };
       utterance.onerror = (event) => {
         options.onError?.(event);

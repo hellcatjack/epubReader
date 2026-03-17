@@ -4,6 +4,7 @@ import { createTtsQueue } from "./ttsQueue";
 function createFakeBrowserTtsClient() {
   let current:
     | {
+        onBoundary?: (event: SpeechSynthesisEvent) => void;
         onEnd?: () => void;
         onError?: (error: Event | SpeechSynthesisErrorEvent) => void;
         text: string;
@@ -11,6 +12,9 @@ function createFakeBrowserTtsClient() {
     | undefined;
 
   return {
+    emitBoundary(charIndex: number) {
+      current?.onBoundary?.({ charIndex } as SpeechSynthesisEvent);
+    },
     finishCurrent() {
       current?.onEnd?.();
     },
@@ -23,6 +27,7 @@ function createFakeBrowserTtsClient() {
       async (
         text: string,
         options: {
+          onBoundary?: (event: SpeechSynthesisEvent) => void;
           onEnd?: () => void;
           onError?: (error: Event | SpeechSynthesisErrorEvent) => void;
           rate: number;
@@ -31,6 +36,7 @@ function createFakeBrowserTtsClient() {
         },
       ) => {
         current = {
+          onBoundary: options.onBoundary,
           onEnd: options.onEnd,
           onError: options.onError,
           text,
@@ -136,7 +142,34 @@ describe("ttsQueue", () => {
     expect(client.stop).toHaveBeenCalledTimes(1);
     expect(queue.getState()).toMatchObject({
       currentText: "",
+      markerText: "",
       status: "idle",
+    });
+  });
+
+  it("updates marker text from boundary progress inside the active chunk", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+    const chunk =
+      "First paragraph keeps the opening marker. Second paragraph should move the marker when the spoken boundary reaches it.";
+
+    await queue.start({
+      chunks: [chunk],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.emitBoundary(chunk.indexOf("Second paragraph"));
+
+    expect(queue.getState()).toMatchObject({
+      currentText: chunk,
+      markerText: "Second paragraph should move the marker when the spoken boundary reaches it.",
+      status: "playing",
     });
   });
 });

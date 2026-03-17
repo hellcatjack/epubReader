@@ -1,12 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
 import { getSettings } from "../settings/settingsRepository";
-import type { RuntimeRenderHandle } from "./epubRuntime";
+import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
 
 afterEach(async () => {
@@ -41,6 +41,7 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
   vi.stubGlobal(
     "SpeechSynthesisUtterance",
     class {
+      onboundary: ((event: SpeechSynthesisEvent) => void) | null = null;
       onend: (() => void) | null = null;
       onerror: ((event: Event) => void) | null = null;
       rate = 1;
@@ -55,6 +56,11 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
   );
 
   return {
+    emitBoundary(charIndex: number) {
+      const boundaryEvent = { charIndex } as SpeechSynthesisEvent;
+      (currentUtterance as (SpeechSynthesisUtterance & { onboundary?: (event: SpeechSynthesisEvent) => void }) | undefined)
+        ?.onboundary?.(boundaryEvent);
+    },
     finishCurrent() {
       currentUtterance?.onend?.(new Event("end") as SpeechSynthesisEvent);
     },
@@ -284,7 +290,7 @@ it("tracks the active continuous tts segment for viewport highlighting", async (
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
-  const setActiveTtsSegment = vi.fn(async () => undefined);
+  const setActiveTtsSegment = vi.fn<(segment: ActiveTtsSegment | null) => Promise<void>>(async () => undefined);
 
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
@@ -341,6 +347,89 @@ it("tracks the active continuous tts segment for viewport highlighting", async (
       text: expect.stringContaining("First paragraph"),
     }),
   );
+});
+
+it("moves the active viewport marker when boundary events advance into the next paragraph", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const setActiveTtsSegment = vi.fn<(segment: ActiveTtsSegment | null) => Promise<void>>(async () => undefined);
+  const chapterText =
+    "First paragraph keeps the marker at the opening position.\n\nSecond paragraph should take over the marker after the boundary crosses into it.";
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => chapterText),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment,
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & {
+                    setActiveTtsSegment: typeof setActiveTtsSegment;
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(setActiveTtsSegment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("First paragraph"),
+      }),
+    );
+  });
+
+  act(() => {
+    browserTts.emitBoundary(chapterText.indexOf("Second paragraph"));
+  });
+
+  await waitFor(() => {
+    const lastCall = setActiveTtsSegment.mock.calls.at(-1)?.[0];
+    expect(lastCall).toEqual(
+      expect.objectContaining({
+        text: expect.stringMatching(/^Second paragraph/),
+      }),
+    );
+  });
 });
 
 it("persistently updates tts rate from the quick control", async () => {

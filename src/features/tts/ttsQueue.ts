@@ -14,6 +14,7 @@ type TtsQueueDeps = {
 
 export type TtsQueueState = {
   currentText: string;
+  markerText: string;
   status: "idle" | "loading" | "playing" | "paused" | "error";
 };
 
@@ -25,9 +26,20 @@ type StartArgs = {
 export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
   let state: TtsQueueState = {
     currentText: "",
+    markerText: "",
     status: "idle",
   };
   let runId = 0;
+
+  const buildMarkerText = (chunk: string, charIndex = 0) => {
+    let start = Math.max(0, Math.min(charIndex, chunk.length));
+
+    while (start > 0 && /\S/.test(chunk[start - 1] ?? "") && /\S/.test(chunk[start] ?? "")) {
+      start -= 1;
+    }
+
+    return chunk.slice(start).trimStart().slice(0, 180) || chunk.slice(0, 180);
+  };
 
   const emitState = (nextState: TtsQueueState) => {
     state = nextState;
@@ -43,6 +55,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
     if (!chunk) {
       emitState({
         currentText: "",
+        markerText: "",
         status: "idle",
       });
       return;
@@ -50,12 +63,24 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
 
     emitState({
       currentText: chunk,
+      markerText: buildMarkerText(chunk),
       status: index === 0 ? "loading" : "playing",
     });
 
     try {
       await client.speakSelection(chunk, {
         ...request,
+        onBoundary: (event) => {
+          if (activeRunId !== runId) {
+            return;
+          }
+
+          emitState({
+            ...state,
+            currentText: chunk,
+            markerText: buildMarkerText(chunk, event.charIndex),
+          });
+        },
         onEnd: () => {
           void speakChunk(chunks, index + 1, request, activeRunId);
         },
@@ -63,6 +88,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
           if (activeRunId === runId) {
             emitState({
               currentText: chunk,
+              markerText: state.markerText || buildMarkerText(chunk),
               status: "error",
             });
           }
@@ -72,6 +98,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
       if (activeRunId === runId) {
         emitState({
           currentText: chunk,
+          markerText: state.markerText || buildMarkerText(chunk),
           status: "error",
         });
       }
@@ -81,6 +108,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
     if (activeRunId === runId) {
       emitState({
         currentText: chunk,
+        markerText: state.markerText || buildMarkerText(chunk),
         status: "playing",
       });
     }
@@ -119,6 +147,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
       if (!chunks.length) {
         emitState({
           currentText: "",
+          markerText: "",
           status: "idle",
         });
         return;
@@ -131,6 +160,7 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
       client.stop();
       emitState({
         currentText: "",
+        markerText: "",
         status: "idle",
       });
     },

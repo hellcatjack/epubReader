@@ -28,6 +28,7 @@ type ReaderPageProps = {
 type ReaderTtsState = {
   currentText: string;
   error: string;
+  markerText: string;
   mode: "continuous" | "idle" | "selection";
   status: "error" | "idle" | "loading" | "paused" | "playing";
 };
@@ -79,6 +80,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [ttsState, setTtsState] = useState<ReaderTtsState>({
     currentText: "",
     error: "",
+    markerText: "",
     mode: "idle",
     status: "idle",
   });
@@ -99,6 +101,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           setTtsState((currentState) => ({
             ...currentState,
             currentText: nextState.currentText,
+            markerText: nextState.markerText,
             mode:
               nextState.status === "idle" ? "idle" : currentState.mode === "idle" ? "continuous" : currentState.mode,
             status: nextState.status,
@@ -181,6 +184,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setTtsState({
         currentText: "",
         error: "TTS is optimized for Microsoft Edge on desktop.",
+        markerText: "",
         mode: "idle",
         status: "error",
       });
@@ -198,6 +202,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           setTtsState({
             currentText: "",
             error: "No compatible Edge English voices detected.",
+            markerText: "",
             mode: "idle",
             status: "error",
           });
@@ -224,6 +229,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
             ? {
                 currentText: "",
                 error: "",
+                markerText: "",
                 mode: "idle",
                 status: "idle",
               }
@@ -241,6 +247,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
             ? {
                 currentText: "",
                 error: "Browser speech synthesis unavailable.",
+                markerText: "",
                 mode: "idle",
                 status: "error",
               }
@@ -317,6 +324,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setTtsState({
         currentText: "",
         error: "Reading position changed.",
+        markerText: "",
         mode: "idle",
         status: "idle",
       });
@@ -421,6 +429,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     setTtsState({
       currentText: nextText,
       error: "",
+      markerText: "",
       mode: "selection",
       status: "loading",
     });
@@ -435,6 +444,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           setTtsState({
             currentText: "",
             error: "",
+            markerText: "",
             mode: "idle",
             status: "idle",
           });
@@ -447,6 +457,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           setTtsState({
             currentText: nextText,
             error: `TTS failed: ${formatTtsError(error)}`,
+            markerText: "",
             mode: "selection",
             status: "error",
           });
@@ -462,6 +473,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setTtsState({
         currentText: nextText,
         error: "",
+        markerText: "",
         mode: "selection",
         status: "playing",
       });
@@ -473,6 +485,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setTtsState({
         currentText: nextText,
         error: `TTS failed: ${formatTtsError(error)}`,
+        markerText: "",
         mode: "selection",
         status: "error",
       });
@@ -592,6 +605,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setTtsState({
         currentText: "",
         error: "No readable text is available from the current location.",
+        markerText: "",
         mode: "idle",
         status: "error",
       });
@@ -604,6 +618,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     setTtsState({
       currentText: chunks[0] ?? "",
       error: "",
+      markerText: chunks[0] ?? "",
       mode: "continuous",
       status: "loading",
     });
@@ -654,6 +669,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
       setTtsState({
         currentText: "",
         error: "",
+        markerText: "",
         mode: "idle",
         status: "idle",
       });
@@ -679,10 +695,10 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   }));
   const isCurrentLocationBookmarked = bookmarks.some((bookmark) => bookmark.cfi === currentLocation.cfi);
   const activeContinuousTtsSegment: ActiveTtsSegment | null =
-    ttsState.mode === "continuous" && ttsState.status !== "idle" && ttsState.currentText && continuousSpineItemIdRef.current
+    ttsState.mode === "continuous" && ttsState.status !== "idle" && ttsState.markerText && continuousSpineItemIdRef.current
       ? {
           spineItemId: continuousSpineItemIdRef.current,
-          text: ttsState.currentText,
+          text: ttsState.markerText,
         }
       : null;
   const readerStyle: CSSProperties & Record<"--reader-font-scale", string> = {
