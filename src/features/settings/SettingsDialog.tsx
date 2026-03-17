@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReaderFontFamily, ReadingMode, SettingsInput, ThemeName } from "../../lib/types/settings";
-import { createLocalTtsClient, type LocalTtsVoice } from "../tts/localTtsClient";
+import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
 import { defaultSettings, getResolvedSettings, saveSettings } from "./settingsRepository";
 
 const themeOptions: ThemeName[] = ["light", "sepia", "dark"];
@@ -27,11 +27,9 @@ export function SettingsDialog() {
   const [maxLineWidthInput, setMaxLineWidthInput] = useState(String(defaultSettings.maxLineWidth));
   const [ttsRateInput, setTtsRateInput] = useState(String(defaultSettings.ttsRate));
   const [ttsVolumeInput, setTtsVolumeInput] = useState(String(defaultSettings.ttsVolume));
-  const [ttsVoices, setTtsVoices] = useState<LocalTtsVoice[]>([]);
+  const [ttsVoices, setTtsVoices] = useState<BrowserTtsVoice[]>([]);
   const [isReady, setIsReady] = useState(false);
-  const [status, setStatus] = useState(
-    "Local translation is enabled. Kokoro is available through the configured localhost service.",
-  );
+  const [status, setStatus] = useState("Local translation is enabled. TTS is optimized for Microsoft Edge on desktop.");
 
   useEffect(() => {
     let cancelled = false;
@@ -42,9 +40,9 @@ export function SettingsDialog() {
       }
 
       const resolvedSettings = { ...defaultSettings, ...nextSettings };
-      let nextVoices: LocalTtsVoice[] = [];
+      let nextVoices: BrowserTtsVoice[] = [];
       try {
-        nextVoices = await createLocalTtsClient({ baseUrl: resolvedSettings.ttsHelperUrl }).getVoices();
+        nextVoices = await createBrowserTtsClient().getVoices();
       } catch {
         nextVoices = [];
       }
@@ -77,41 +75,6 @@ export function SettingsDialog() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!isReady || !settings.ttsHelperUrl) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void createLocalTtsClient({ baseUrl: settings.ttsHelperUrl })
-      .getVoices()
-      .then((voices) => {
-        if (cancelled) {
-          return;
-        }
-
-        setTtsVoices(voices);
-
-        if (!voices.some((voice) => voice.id === settings.ttsVoice)) {
-          const fallbackVoice = voices.find((voice) => voice.isDefault)?.id ?? voices[0]?.id ?? defaultSettings.ttsVoice;
-          setSettings((current) => ({
-            ...current,
-            ttsVoice: fallbackVoice,
-          }));
-        }
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isReady, settings.ttsHelperUrl, settings.ttsVoice]);
 
   async function handleSave() {
     const nextFontScale = parseNumberInput(fontScaleInput, defaultSettings.fontScale);
@@ -206,15 +169,6 @@ export function SettingsDialog() {
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            TTS helper URL
-            <input
-              aria-label="TTS helper URL"
-              onChange={(event) => setSettings((current) => ({ ...current, ttsHelperUrl: event.target.value }))}
-              type="url"
-              value={settings.ttsHelperUrl}
-            />
           </label>
           <label>
             TTS voice

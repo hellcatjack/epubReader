@@ -4,56 +4,74 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
-import { createDefaultSettings, getSettings, migrateLegacyTtsHelperUrl } from "./settingsRepository";
+import { createDefaultSettings, getSettings } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
+
+function buildVoice(name: string, lang = "en-US", defaultValue = false): SpeechSynthesisVoice {
+  return {
+    default: defaultValue,
+    lang,
+    localService: false,
+    name,
+    voiceURI: name,
+  };
+}
+
+function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
+  const listeners = new Map<string, Array<() => void>>();
+  const speechSynthesis = {
+    addEventListener: vi.fn((type: string, callback: () => void) => {
+      const callbacks = listeners.get(type) ?? [];
+      callbacks.push(callback);
+      listeners.set(type, callbacks);
+    }),
+    cancel: vi.fn(),
+    getVoices: vi.fn(() => voices),
+    pause: vi.fn(),
+    pending: false,
+    removeEventListener: vi.fn((type: string, callback: () => void) => {
+      const callbacks = listeners.get(type) ?? [];
+      listeners.set(
+        type,
+        callbacks.filter((item) => item !== callback),
+      );
+    }),
+    resume: vi.fn(),
+    speak: vi.fn(),
+    speaking: false,
+  } as unknown as SpeechSynthesis;
+
+  vi.stubGlobal("speechSynthesis", speechSynthesis);
+  vi.stubGlobal("SpeechSynthesisUtterance", class {
+    text: string;
+    constructor(text: string) {
+      this.text = text;
+    }
+  });
+
+  return speechSynthesis;
+}
 
 afterEach(async () => {
   vi.unstubAllGlobals();
   await resetDb();
 });
 
-it("defaults to the current host for kokoro tts settings", async () => {
+it("does not include a localhost helper url in default settings", () => {
   expect(createDefaultSettings("192.168.1.31")).toMatchObject({
-    ttsHelperUrl: "http://192.168.1.31:43115",
-    ttsVoice: "af_heart",
     ttsRate: 1,
+    ttsVoice: "",
     ttsVolume: 1,
   });
+  expect(createDefaultSettings("192.168.1.31")).not.toHaveProperty("ttsHelperUrl");
 });
 
-it("migrates legacy localhost tts helper urls to the current reader host", () => {
-  expect(migrateLegacyTtsHelperUrl("http://127.0.0.1:43115", "192.168.1.31")).toBe("http://192.168.1.31:43115");
-  expect(migrateLegacyTtsHelperUrl("http://localhost:43115", "192.168.1.31")).toBe("http://192.168.1.31:43115");
-  expect(migrateLegacyTtsHelperUrl("http://192.168.1.31:43115", "192.168.1.31")).toBe("http://192.168.1.31:43115");
-});
-
-it("persists target language, theme, reading mode, typography settings, and local tts helper fields", async () => {
+it("persists browser tts settings without rendering a helper url field", async () => {
   const user = userEvent.setup();
-  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-    new Response(
-      JSON.stringify([
-        {
-          id: "af_heart",
-          displayName: "Heart",
-          locale: "en-US",
-          gender: "female",
-          isDefault: true,
-        },
-        {
-          id: "am_michael",
-          displayName: "Michael",
-          locale: "en-US",
-          gender: "male",
-          isDefault: false,
-        },
-      ]),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      },
-    ),
-  );
-  vi.stubGlobal("fetch", fetchMock);
+  installSpeechSynthesis([
+    buildVoice("Microsoft Ava Online (Natural)", "en-US", true),
+    buildVoice("Microsoft Andrew Online (Natural)", "en-US"),
+  ]);
 
   render(<SettingsDialog />);
 
@@ -69,10 +87,11 @@ it("persists target language, theme, reading mode, typography settings, and loca
   const maxLineWidth = screen.getByLabelText(/max line width/i);
   const columnCount = screen.getByLabelText(/column count/i);
   const fontFamily = screen.getByLabelText(/font family/i);
-  const ttsHelperUrl = screen.getByLabelText(/tts helper url/i);
   const ttsVoice = await screen.findByRole("combobox", { name: /tts voice/i });
   const ttsRate = screen.getByLabelText(/tts rate/i);
   const ttsVolume = screen.getByLabelText(/tts volume/i);
+
+  expect(screen.queryByLabelText(/tts helper url/i)).not.toBeInTheDocument();
 
   await user.selectOptions(targetLanguage, "zh-CN");
   await user.selectOptions(theme, "dark");
@@ -93,9 +112,7 @@ it("persists target language, theme, reading mode, typography settings, and loca
   await user.type(maxLineWidth, "780");
   await user.selectOptions(columnCount, "2");
   await user.selectOptions(fontFamily, "book");
-  await user.clear(ttsHelperUrl);
-  await user.type(ttsHelperUrl, "http://127.0.0.1:43115");
-  await user.selectOptions(ttsVoice, "am_michael");
+  await user.selectOptions(ttsVoice, "Microsoft Andrew Online (Natural)");
   await user.clear(ttsRate);
   await user.type(ttsRate, "1.15");
   await user.clear(ttsVolume);
@@ -116,9 +133,8 @@ it("persists target language, theme, reading mode, typography settings, and loca
     maxLineWidth: 780,
     columnCount: 2,
     fontFamily: "book",
-    ttsHelperUrl: "http://127.0.0.1:43115",
     ttsRate: 1.15,
-    ttsVoice: "am_michael",
+    ttsVoice: "Microsoft Andrew Online (Natural)",
     ttsVolume: 0.9,
   });
 });

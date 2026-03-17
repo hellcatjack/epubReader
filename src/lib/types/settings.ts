@@ -8,7 +8,6 @@ export type SettingsRecord = {
   targetLanguage: string;
   targetLanguageCustomized: boolean;
   theme: ThemeName;
-  ttsHelperUrl: string;
   ttsRate: number;
   ttsVoice: string;
   ttsVolume: number;
