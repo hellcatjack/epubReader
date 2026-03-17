@@ -10,7 +10,7 @@ export function createDefaultSettings(hostname?: string): SettingsInput {
     theme: "sepia",
     ttsHelperUrl: resolveDefaultTtsHelperUrl(hostname),
     ttsRate: 1,
-    ttsVoice: "Ryan",
+    ttsVoice: "af_heart",
     ttsVolume: 1,
     fontScale: 1,
     readingMode: "scrolled",
@@ -84,8 +84,12 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
     migratedSettings.targetLanguage = "zh-CN";
   }
 
-  if (record.ttsVoice === "disabled" || record.ttsVoice === "system-default") {
-    migratedSettings.ttsVoice = "Ryan";
+  if (
+    record.ttsVoice === "Ryan" ||
+    record.ttsVoice === "disabled" ||
+    record.ttsVoice === "system-default"
+  ) {
+    migratedSettings.ttsVoice = "af_heart";
   }
 
   migratedSettings.ttsHelperUrl =

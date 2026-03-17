@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReaderFontFamily, ReadingMode, SettingsInput, ThemeName } from "../../lib/types/settings";
+import { createLocalTtsClient, type LocalTtsVoice } from "../tts/localTtsClient";
 import { defaultSettings, getResolvedSettings, saveSettings } from "./settingsRepository";
 
 const themeOptions: ThemeName[] = ["light", "sepia", "dark"];
@@ -26,14 +27,40 @@ export function SettingsDialog() {
   const [maxLineWidthInput, setMaxLineWidthInput] = useState(String(defaultSettings.maxLineWidth));
   const [ttsRateInput, setTtsRateInput] = useState(String(defaultSettings.ttsRate));
   const [ttsVolumeInput, setTtsVolumeInput] = useState(String(defaultSettings.ttsVolume));
+  const [ttsVoices, setTtsVoices] = useState<LocalTtsVoice[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [status, setStatus] = useState(
-    "Local translation is enabled. Qwen3-TTS is available through the configured localhost service.",
+    "Local translation is enabled. Kokoro is available through the configured localhost service.",
   );
 
   useEffect(() => {
-    void getResolvedSettings().then((nextSettings) => {
-      setSettings({ ...defaultSettings, ...nextSettings });
+    let cancelled = false;
+
+    void getResolvedSettings().then(async (nextSettings) => {
+      if (cancelled) {
+        return;
+      }
+
+      const resolvedSettings = { ...defaultSettings, ...nextSettings };
+      let nextVoices: LocalTtsVoice[] = [];
+      try {
+        nextVoices = await createLocalTtsClient({ baseUrl: resolvedSettings.ttsHelperUrl }).getVoices();
+      } catch {
+        nextVoices = [];
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      const resolvedVoice =
+        nextVoices.find((voice) => voice.id === resolvedSettings.ttsVoice)?.id ??
+        nextVoices.find((voice) => voice.isDefault)?.id ??
+        nextVoices[0]?.id ??
+        resolvedSettings.ttsVoice;
+
+      setTtsVoices(nextVoices);
+      setSettings({ ...resolvedSettings, ttsVoice: resolvedVoice });
       setFontScaleInput(String(nextSettings.fontScale));
       setLineHeightInput(String(nextSettings.lineHeight));
       setLetterSpacingInput(String(nextSettings.letterSpacing));
@@ -45,7 +72,46 @@ export function SettingsDialog() {
       setTtsVolumeInput(String(nextSettings.ttsVolume));
       setIsReady(true);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!isReady || !settings.ttsHelperUrl) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void createLocalTtsClient({ baseUrl: settings.ttsHelperUrl })
+      .getVoices()
+      .then((voices) => {
+        if (cancelled) {
+          return;
+        }
+
+        setTtsVoices(voices);
+
+        if (!voices.some((voice) => voice.id === settings.ttsVoice)) {
+          const fallbackVoice = voices.find((voice) => voice.isDefault)?.id ?? voices[0]?.id ?? defaultSettings.ttsVoice;
+          setSettings((current) => ({
+            ...current,
+            ttsVoice: fallbackVoice,
+          }));
+        }
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady, settings.ttsHelperUrl, settings.ttsVoice]);
 
   async function handleSave() {
     const nextFontScale = parseNumberInput(fontScaleInput, defaultSettings.fontScale);
@@ -152,12 +218,20 @@ export function SettingsDialog() {
           </label>
           <label>
             TTS voice
-            <input
+            <select
               aria-label="TTS voice"
               onChange={(event) => setSettings((current) => ({ ...current, ttsVoice: event.target.value }))}
-              type="text"
               value={settings.ttsVoice}
-            />
+            >
+              {ttsVoices.length ? null : (
+                <option value={settings.ttsVoice}>{settings.ttsVoice}</option>
+              )}
+              {ttsVoices.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.displayName}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             TTS rate

@@ -2,19 +2,20 @@ import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { resetDb } from "../../lib/db/appDb";
 import { createDefaultSettings, getSettings, migrateLegacyTtsHelperUrl } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await resetDb();
 });
 
-it("defaults to the current host for qwen tts settings", async () => {
+it("defaults to the current host for kokoro tts settings", async () => {
   expect(createDefaultSettings("192.168.1.31")).toMatchObject({
     ttsHelperUrl: "http://192.168.1.31:43115",
-    ttsVoice: "Ryan",
+    ttsVoice: "af_heart",
     ttsRate: 1,
     ttsVolume: 1,
   });
@@ -28,6 +29,31 @@ it("migrates legacy localhost tts helper urls to the current reader host", () =>
 
 it("persists target language, theme, reading mode, typography settings, and local tts helper fields", async () => {
   const user = userEvent.setup();
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(
+      JSON.stringify([
+        {
+          id: "af_heart",
+          displayName: "Heart",
+          locale: "en-US",
+          gender: "female",
+          isDefault: true,
+        },
+        {
+          id: "am_michael",
+          displayName: "Michael",
+          locale: "en-US",
+          gender: "male",
+          isDefault: false,
+        },
+      ]),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
 
   render(<SettingsDialog />);
 
@@ -44,7 +70,7 @@ it("persists target language, theme, reading mode, typography settings, and loca
   const columnCount = screen.getByLabelText(/column count/i);
   const fontFamily = screen.getByLabelText(/font family/i);
   const ttsHelperUrl = screen.getByLabelText(/tts helper url/i);
-  const ttsVoice = screen.getByLabelText(/tts voice/i);
+  const ttsVoice = await screen.findByRole("combobox", { name: /tts voice/i });
   const ttsRate = screen.getByLabelText(/tts rate/i);
   const ttsVolume = screen.getByLabelText(/tts volume/i);
 
@@ -69,8 +95,7 @@ it("persists target language, theme, reading mode, typography settings, and loca
   await user.selectOptions(fontFamily, "book");
   await user.clear(ttsHelperUrl);
   await user.type(ttsHelperUrl, "http://127.0.0.1:43115");
-  await user.clear(ttsVoice);
-  await user.type(ttsVoice, "Ryan");
+  await user.selectOptions(ttsVoice, "am_michael");
   await user.clear(ttsRate);
   await user.type(ttsRate, "1.15");
   await user.clear(ttsVolume);
@@ -93,7 +118,7 @@ it("persists target language, theme, reading mode, typography settings, and loca
     fontFamily: "book",
     ttsHelperUrl: "http://127.0.0.1:43115",
     ttsRate: 1.15,
-    ttsVoice: "Ryan",
+    ttsVoice: "am_michael",
     ttsVolume: 0.9,
   });
 });
