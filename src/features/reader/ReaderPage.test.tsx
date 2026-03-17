@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
-import { resetDb } from "../../lib/db/appDb";
+import { db, resetDb } from "../../lib/db/appDb";
 import { getSettings } from "../settings/settingsRepository";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
@@ -96,6 +96,63 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
   expect(screen.getByRole("progressbar", { name: /reading progress/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
+});
+
+it("waits for persisted reader settings before mounting the viewport runtime", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
+  await db.settings.put({
+    id: "settings",
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+    apiKey: "",
+  });
+  const renderSpy = vi.fn(async () => ({
+    applyPreferences: vi.fn(async () => undefined),
+    destroy() {
+      return undefined;
+    },
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route path="/books/:bookId" element={<ReaderPage runtime={{ render: renderSpy }} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookId: "book-1",
+        flow: "paginated",
+      }),
+    );
+  });
 });
 
 it("waits for saved progress before opening the reader and restores the saved cfi", async () => {
@@ -202,6 +259,71 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
     spineItemId: "chapter-one.xhtml",
     textQuote: "sound had been in time with her heartbeat",
     updatedAt: 100,
+  });
+  const renderSpy = vi.fn(async () => ({
+    applyPreferences: vi.fn(async () => undefined),
+    destroy() {
+      return undefined;
+    },
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route path="/books/:bookId" element={<ReaderPage runtime={{ render: renderSpy }} />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(renderSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bookId: "book-1",
+        initialCfi: "epubcfi(/6/14!/4/2/26/1:193)",
+        initialPageOffset: 1732,
+      }),
+    );
+  });
+});
+
+it("always prefers the same-tab refresh snapshot over persisted progress during reload recovery", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  sessionStorage.setItem(
+    "reader-refresh-progress:book-1",
+    JSON.stringify({
+      bookId: "book-1",
+      cfi: "epubcfi(/6/14!/4/2/26/1:193)",
+      pageOffset: 1732,
+      progress: 0.63,
+      spineItemId: "chapter-one.xhtml",
+      textQuote: "without Eli, the new foster kid",
+      updatedAt: 100,
+    }),
+  );
+  getProgressMock.mockResolvedValueOnce({
+    bookId: "book-1",
+    cfi: "epubcfi(/6/14!/4/2/14/1:37)",
+    pageOffset: 984,
+    progress: 0.51,
+    spineItemId: "chapter-one.xhtml",
+    textQuote: "sound had been in time with her heartbeat",
+    updatedAt: 200,
   });
   const renderSpy = vi.fn(async () => ({
     applyPreferences: vi.fn(async () => undefined),

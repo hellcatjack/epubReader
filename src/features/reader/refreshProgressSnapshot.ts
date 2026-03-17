@@ -58,13 +58,5 @@ export function resolvePreferredProgress(
   refreshSnapshot: ProgressRecord | null,
   persistedProgress: ProgressRecord | null,
 ): ProgressRecord | null {
-  if (!refreshSnapshot) {
-    return persistedProgress;
-  }
-
-  if (!persistedProgress) {
-    return refreshSnapshot;
-  }
-
-  return (refreshSnapshot.updatedAt ?? 0) >= (persistedProgress.updatedAt ?? 0) ? refreshSnapshot : persistedProgress;
+  return refreshSnapshot ?? persistedProgress;
 }
