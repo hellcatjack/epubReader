@@ -3,13 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .config import DEFAULT_CONFIG, ServiceConfig
+from .kokoro_runtime import KokoroRuntime
 from .runtime import BaseKokoroRuntime
 from .schemas import HealthResponse, PrewarmResponse, SpeakRequest, VoiceResponse
 
 
 def create_app(runtime: BaseKokoroRuntime | None = None, config: ServiceConfig = DEFAULT_CONFIG):
     app = FastAPI(title="Kokoro TTS Service", version=config.version)
-    service_runtime = runtime or BaseKokoroRuntime()
+    service_runtime = runtime or KokoroRuntime.from_environment()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

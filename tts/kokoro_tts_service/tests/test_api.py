@@ -1,3 +1,9 @@
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
+from tts.kokoro_tts_service.app import create_app
+
+
 def test_health_reports_kokoro_backend(client):
     response = client.get("/health")
     assert response.status_code == 200
@@ -47,3 +53,17 @@ def test_speak_rejects_unknown_voice(client):
         },
     )
     assert response.status_code == 400
+
+
+def test_create_app_uses_kokoro_runtime_by_default():
+    fake_runtime = MagicMock()
+    fake_runtime.get_status.return_value = {
+        "device": "cuda:0",
+        "status": "warming_up",
+        "warmed": False,
+    }
+    fake_runtime.list_voices.return_value = []
+    with patch("tts.kokoro_tts_service.app.KokoroRuntime.from_environment", return_value=fake_runtime) as factory:
+        create_app()
+
+    factory.assert_called_once_with()
