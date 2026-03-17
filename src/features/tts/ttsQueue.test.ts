@@ -1,165 +1,142 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTtsQueue } from "./ttsQueue";
 
-describe("ttsQueue", () => {
-  it("plays chunks sequentially and supports pause resume and stop", async () => {
-    const speak = vi.fn(async ({ text }: { text: string }) => new Blob([text], { type: "audio/wav" }));
-    const playResolvers: Array<() => void> = [];
-    const player = {
-      load: vi.fn(async () => undefined),
-      pause: vi.fn(),
-      playUntilEnded: vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            playResolvers.push(resolve);
-          }),
-      ),
-      resume: vi.fn(async () => undefined),
-      stop: vi.fn(),
-    };
+function createFakeBrowserTtsClient() {
+  let current:
+    | {
+        onEnd?: () => void;
+        onError?: (error: Error) => void;
+        text: string;
+      }
+    | undefined;
 
+  return {
+    finishCurrent() {
+      current?.onEnd?.();
+    },
+    failCurrent(error = new Error("synthesis failed")) {
+      current?.onError?.(error);
+    },
+    pause: vi.fn(),
+    resume: vi.fn(),
+    speakSelection: vi.fn(
+      async (
+        text: string,
+        options: {
+          onEnd?: () => void;
+          onError?: (error: Error) => void;
+          rate: number;
+          voiceId: string;
+          volume: number;
+        },
+      ) => {
+        current = {
+          onEnd: options.onEnd,
+          onError: options.onError,
+          text,
+        };
+      },
+    ),
+    stop: vi.fn(),
+  };
+}
+
+describe("ttsQueue", () => {
+  it("advances to the next queued segment after the current utterance ends", async () => {
+    const client = createFakeBrowserTtsClient();
     const queue = createTtsQueue({
-      player,
-      speak,
+      client,
     });
 
-    const run = queue.start({
-      chunks: ["First chunk.", "Second chunk."],
+    await queue.start({
+      chunks: ["First paragraph.", "Second paragraph."],
       request: {
-        format: "wav",
         rate: 1,
-        voiceId: "voice-1",
+        voiceId: "en-US-Natural-A",
         volume: 1,
       },
     });
 
-    await vi.waitFor(() => {
-      expect(queue.getState()).toMatchObject({
-        currentText: "First chunk.",
-        status: "playing",
-      });
+    expect(client.speakSelection).toHaveBeenCalledWith(
+      "First paragraph.",
+      expect.objectContaining({
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      }),
+    );
+    expect(queue.getState()).toMatchObject({
+      currentText: "First paragraph.",
+      status: "playing",
     });
 
-    queue.pause();
-    expect(player.pause).toHaveBeenCalledTimes(1);
-    expect(queue.getState().status).toBe("paused");
-
-    await queue.resume();
-    expect(player.resume).toHaveBeenCalledTimes(1);
-    expect(queue.getState().status).toBe("playing");
-
-    playResolvers.shift()?.();
+    client.finishCurrent();
 
     await vi.waitFor(() => {
-      expect(speak).toHaveBeenCalledWith(
+      expect(client.speakSelection).toHaveBeenCalledWith(
+        "Second paragraph.",
         expect.objectContaining({
-          text: "Second chunk.",
+          rate: 1,
+          voiceId: "en-US-Natural-A",
+          volume: 1,
         }),
       );
     });
+  });
+
+  it("stops the queue on utterance error", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+
+    await queue.start({
+      chunks: ["First paragraph."],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.failCurrent(new Error("synthesis failed"));
+
+    await vi.waitFor(() => {
+      expect(queue.getState()).toMatchObject({
+        currentText: "First paragraph.",
+        status: "error",
+      });
+    });
+  });
+
+  it("supports pause resume and stop with the browser client", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+
+    await queue.start({
+      chunks: ["First paragraph."],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    queue.pause();
+    expect(client.pause).toHaveBeenCalledTimes(1);
+    expect(queue.getState().status).toBe("paused");
+
+    await queue.resume();
+    expect(client.resume).toHaveBeenCalledTimes(1);
+    expect(queue.getState().status).toBe("playing");
 
     queue.stop();
-    expect(player.stop).toHaveBeenCalledTimes(1);
-
-    playResolvers.shift()?.();
-    await run;
-
+    expect(client.stop).toHaveBeenCalledTimes(1);
     expect(queue.getState()).toMatchObject({
       currentText: "",
       status: "idle",
     });
-  });
-
-  it("warms up with the first two chunks before playback starts", async () => {
-    let resolveFirstAudio: ((blob: Blob) => void) | undefined;
-    let resolveSecondAudio: ((blob: Blob) => void) | undefined;
-    let resolveThirdAudio: ((blob: Blob) => void) | undefined;
-    const playResolvers: Array<() => void> = [];
-    const speak = vi.fn(({ text }: { text: string }) => {
-      return new Promise<Blob>((resolve) => {
-        if (text === "First chunk.") {
-          resolveFirstAudio = resolve;
-          return;
-        }
-
-        if (text === "Second chunk.") {
-          resolveSecondAudio = resolve;
-          return;
-        }
-
-        resolveThirdAudio = resolve;
-      });
-    });
-    const player = {
-      load: vi.fn(async () => undefined),
-      pause: vi.fn(),
-      playUntilEnded: vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            playResolvers.push(resolve);
-          }),
-      ),
-      resume: vi.fn(async () => undefined),
-      stop: vi.fn(),
-    };
-
-    const queue = createTtsQueue({
-      player,
-      speak,
-    });
-
-    const run = queue.start({
-      chunks: ["First chunk.", "Second chunk.", "Third chunk."],
-      request: {
-        format: "wav",
-        rate: 1,
-        voiceId: "voice-1",
-        volume: 1,
-      },
-    });
-
-    await vi.waitFor(() => {
-      expect(speak).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({
-          text: "First chunk.",
-        }),
-      );
-    });
-
-    expect(speak).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        text: "Second chunk.",
-      }),
-    );
-    expect(queue.getState()).toMatchObject({
-      currentText: "First chunk.",
-      status: "warming_up",
-    });
-
-    resolveFirstAudio?.(new Blob(["first"], { type: "audio/wav" }));
-
-    await vi.waitFor(() => {
-      expect(queue.getState()).toMatchObject({
-        currentText: "First chunk.",
-        status: "playing",
-      });
-    });
-
-    resolveSecondAudio?.(new Blob(["second"], { type: "audio/wav" }));
-    await vi.waitFor(() => {
-      expect(speak).toHaveBeenNthCalledWith(
-        3,
-        expect.objectContaining({
-          text: "Third chunk.",
-        }),
-      );
-    });
-
-    resolveThirdAudio?.(new Blob(["third"], { type: "audio/wav" }));
-    queue.stop();
-    playResolvers.shift()?.();
-    await run;
   });
 });
