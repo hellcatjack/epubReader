@@ -14,6 +14,14 @@ class PrewarmResponse(BaseModel):
     status: str
 
 
+class SpeakRequest(BaseModel):
+    format: str
+    rate: float
+    text: str
+    voiceId: str
+    volume: float
+
+
 class VoiceResponse(BaseModel):
     displayName: str
     gender: str

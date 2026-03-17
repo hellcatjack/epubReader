@@ -18,3 +18,32 @@ def test_prewarm_reports_success(client):
     response = client.post("/prewarm")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_speak_returns_wav_audio(client):
+    response = client.post(
+        "/speak",
+        json={
+            "text": "Hello world",
+            "voiceId": "af_heart",
+            "rate": 1.0,
+            "volume": 1.0,
+            "format": "wav",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"
+
+
+def test_speak_rejects_unknown_voice(client):
+    response = client.post(
+        "/speak",
+        json={
+            "text": "Hello world",
+            "voiceId": "unknown",
+            "rate": 1.0,
+            "volume": 1.0,
+            "format": "wav",
+        },
+    )
+    assert response.status_code == 400

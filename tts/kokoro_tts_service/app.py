@@ -1,9 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from .config import DEFAULT_CONFIG, ServiceConfig
 from .runtime import BaseKokoroRuntime
-from .schemas import HealthResponse, PrewarmResponse, VoiceResponse
+from .schemas import HealthResponse, PrewarmResponse, SpeakRequest, VoiceResponse
 
 
 def create_app(runtime: BaseKokoroRuntime | None = None, config: ServiceConfig = DEFAULT_CONFIG):
@@ -36,5 +37,24 @@ def create_app(runtime: BaseKokoroRuntime | None = None, config: ServiceConfig =
     def prewarm():
         service_runtime.prewarm()
         return PrewarmResponse(status="ok")
+
+    @app.post("/speak")
+    def speak(request: SpeakRequest):
+        if not request.text.strip():
+            raise HTTPException(status_code=400, detail="text is required")
+
+        if request.format.lower() != "wav":
+            raise HTTPException(status_code=400, detail="only wav format is supported")
+
+        if not service_runtime.has_voice(request.voiceId):
+            raise HTTPException(status_code=400, detail="unsupported voiceId")
+
+        audio = service_runtime.synthesize(
+            text=request.text,
+            voice_id=request.voiceId,
+            rate=request.rate,
+            volume=request.volume,
+        )
+        return Response(content=audio, media_type="audio/wav")
 
     return app
