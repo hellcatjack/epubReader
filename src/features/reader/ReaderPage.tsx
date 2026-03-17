@@ -7,9 +7,8 @@ import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
 import { getProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
-import { createAudioPlayer, type AudioPlayer } from "../tts/audioPlayer";
+import { createBrowserTtsClient } from "../tts/browserTtsClient";
 import { chunkText } from "../tts/chunkText";
-import { createLocalTtsClient } from "../tts/localTtsClient";
 import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
@@ -24,17 +23,32 @@ import { selectionBridge, type ReaderSelection } from "./selectionBridge";
 type ReaderPageProps = {
   ai?: Pick<AiService, "explainSelection" | "synthesizeSpeech" | "translateSelection">;
   runtime?: EpubViewportRuntime;
-  ttsPlayer?: AudioPlayer;
 };
 
 type ReaderTtsState = {
   currentText: string;
   error: string;
   mode: "continuous" | "idle" | "selection";
-  status: "error" | "idle" | "warming_up" | "loading" | "paused" | "playing";
+  status: "error" | "idle" | "loading" | "paused" | "playing";
 };
 
-export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPageProps) {
+function isEdgeDesktopBrowser(userAgent: string) {
+  return /Edg\//.test(userAgent) && !/(Android|iPhone|iPad|Mobile)/i.test(userAgent);
+}
+
+function formatTtsError(error: unknown) {
+  if (typeof error === "object" && error && "error" in error && typeof error.error === "string") {
+    return error.error;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "Browser speech synthesis error.";
+}
+
+export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const [initialCfi, setInitialCfi] = useState<string>();
   const [locationTarget, setLocationTarget] = useState<string>();
@@ -64,18 +78,13 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
   const activeSelectionSpeechRequestRef = useRef(0);
   const continuousSpineItemIdRef = useRef("");
   const ttsReadinessRequestRef = useRef(0);
-  const settingsRef = useRef(settings);
-  const aiRef = useRef(ai);
-  const ttsPlayerRef = useRef<AudioPlayer | null>(ttsPlayer ?? null);
+  const browserTtsClientRef = useRef(createBrowserTtsClient());
   const ttsQueueRef = useRef<ReturnType<typeof createTtsQueue> | null>(null);
 
   function ensureTtsQueue() {
-    if (!ttsPlayerRef.current) {
-      ttsPlayerRef.current = ttsPlayer ?? createAudioPlayer();
-    }
-
     if (!ttsQueueRef.current) {
       ttsQueueRef.current = createTtsQueue({
+        client: browserTtsClientRef.current,
         onStateChange(nextState) {
           setTtsState((currentState) => ({
             ...currentState,
@@ -85,14 +94,6 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
             status: nextState.status,
           }));
         },
-        player: ttsPlayerRef.current,
-        speak: (request) =>
-          aiRef.current.synthesizeSpeech(request.text, {
-            helperUrl: settingsRef.current.ttsHelperUrl,
-            rate: request.rate,
-            voice: request.voiceId,
-            volume: request.volume,
-          }),
       });
     }
 
@@ -118,14 +119,6 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
       }
     });
   }, []);
-
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-
-  useEffect(() => {
-    aiRef.current = ai;
-  }, [ai]);
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
@@ -172,35 +165,45 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
 
     setTtsStartReady(false);
 
-    const ttsClient = createLocalTtsClient({ baseUrl: settings.ttsHelperUrl });
+    if (!isEdgeDesktopBrowser(globalThis.navigator?.userAgent ?? "")) {
+      setTtsState({
+        currentText: "",
+        error: "TTS is optimized for Microsoft Edge on desktop.",
+        mode: "idle",
+        status: "error",
+      });
+      return;
+    }
 
-    void Promise.all([runtimeHandle.getTextFromCurrentLocation(), ttsClient.getHealth()])
-      .then(async ([text, health]) => {
+    void Promise.all([runtimeHandle.getTextFromCurrentLocation(), browserTtsClientRef.current.getVoices()])
+      .then(([text, voices]) => {
         if (ttsReadinessRequestRef.current !== requestId) {
           return;
+        }
+
+        if (!voices.length) {
+          setTtsStartReady(false);
+          setTtsState({
+            currentText: "",
+            error: "No compatible Edge English voices detected.",
+            mode: "idle",
+            status: "error",
+          });
+          return;
+        }
+
+        if (!settings.ttsVoice || !voices.some((voice) => voice.id === settings.ttsVoice)) {
+          const fallbackVoice = voices.find((voice) => voice.isDefault)?.id ?? voices[0]?.id ?? "";
+          setSettings((current) => ({
+            ...current,
+            ttsVoice: fallbackVoice,
+          }));
         }
 
         const hasReadableText = chunkText(text, { firstSegmentMax: 280, segmentMax: 500 }).length > 0;
         if (!hasReadableText) {
           setTtsStartReady(false);
           return;
-        }
-
-        if (!health.warmed) {
-          setTtsState((currentState) =>
-            currentState.mode === "idle"
-              ? {
-                  currentText: "",
-                  error: "",
-                  mode: "idle",
-                  status: "warming_up",
-                }
-              : currentState,
-          );
-          await ttsClient.prewarm();
-          if (ttsReadinessRequestRef.current !== requestId) {
-            return;
-          }
         }
 
         setTtsStartReady(true);
@@ -225,14 +228,14 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
           currentState.mode === "idle"
             ? {
                 currentText: "",
-                error: "Local TTS helper unavailable.",
+                error: "Browser speech synthesis unavailable.",
                 mode: "idle",
                 status: "error",
               }
             : currentState,
         );
       });
-  }, [currentLocation.cfi, currentLocation.spineItemId, runtimeHandle, settings.ttsHelperUrl]);
+  }, [currentLocation.cfi, currentLocation.spineItemId, runtimeHandle, settings.ttsVoice]);
 
   useEffect(() => {
     const unsubscribe = selectionBridge.subscribe((selection) => {
@@ -308,7 +311,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
   useEffect(() => {
     return () => {
       ttsQueueRef.current?.stop();
-      ttsPlayerRef.current?.destroy();
+      browserTtsClientRef.current.stop();
     };
   }, []);
 
@@ -402,13 +405,11 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
       return;
     }
 
-    const player = ttsPlayerRef.current ?? (ttsPlayerRef.current = ttsPlayer ?? createAudioPlayer());
-
     activeSelectionSpeechRequestRef.current += 1;
     const requestId = activeSelectionSpeechRequestRef.current;
     continuousSpineItemIdRef.current = "";
     ttsQueueRef.current?.stop();
-    player.stop();
+    browserTtsClientRef.current.stop();
     setTtsState({
       currentText: selectedText,
       error: "",
@@ -417,54 +418,53 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
     });
 
     try {
-      const audio = await ai.synthesizeSpeech(selectedText, {
-        helperUrl: settings.ttsHelperUrl,
+      await browserTtsClientRef.current.speakSelection(selectedText, {
+        onEnd: () => {
+          if (activeSelectionSpeechRequestRef.current !== requestId) {
+            return;
+          }
+
+          setTtsState({
+            currentText: "",
+            error: "",
+            mode: "idle",
+            status: "idle",
+          });
+        },
+        onError: (error) => {
+          if (activeSelectionSpeechRequestRef.current !== requestId) {
+            return;
+          }
+
+          setTtsState({
+            currentText: selectedText,
+            error: `TTS failed: ${formatTtsError(error)}`,
+            mode: "selection",
+            status: "error",
+          });
+        },
         rate: settings.ttsRate,
-        voice: settings.ttsVoice,
+        voiceId: settings.ttsVoice,
         volume: settings.ttsVolume,
       });
 
       if (activeSelectionSpeechRequestRef.current !== requestId) {
         return;
       }
-
-      await player.load(audio);
       setTtsState({
         currentText: selectedText,
         error: "",
         mode: "selection",
         status: "playing",
       });
-      await player.playUntilEnded();
-
-      if (activeSelectionSpeechRequestRef.current !== requestId) {
-        return;
-      }
-
-      setTtsState({
-        currentText: "",
-        error: "",
-        mode: "idle",
-        status: "idle",
-      });
     } catch (error) {
       if (activeSelectionSpeechRequestRef.current !== requestId) {
         return;
       }
 
-      if (error instanceof Error && error.message === "stopped") {
-        setTtsState({
-          currentText: "",
-          error: "",
-          mode: "idle",
-          status: "idle",
-        });
-        return;
-      }
-
       setTtsState({
         currentText: selectedText,
-        error: `TTS failed: ${String(error)}`,
+        error: `TTS failed: ${formatTtsError(error)}`,
         mode: "selection",
         status: "error",
       });
@@ -572,17 +572,17 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
 
     activeSelectionSpeechRequestRef.current += 1;
     continuousSpineItemIdRef.current = currentSpineItemId;
+    browserTtsClientRef.current.stop();
     setTtsState({
       currentText: chunks[0] ?? "",
       error: "",
       mode: "continuous",
-      status: "warming_up",
+      status: "loading",
     });
 
     void queue.start({
       chunks,
       request: {
-        format: "wav",
         rate: settings.ttsRate,
         voiceId: settings.ttsVoice,
         volume: settings.ttsVolume,
@@ -596,7 +596,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
       return;
     }
 
-    ttsPlayerRef.current?.pause();
+    browserTtsClientRef.current.pause();
     setTtsState((currentState) => ({
       ...currentState,
       status: "paused",
@@ -609,7 +609,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
       return;
     }
 
-    await ttsPlayerRef.current?.resume();
+    browserTtsClientRef.current.resume();
     setTtsState((currentState) => ({
       ...currentState,
       status: "playing",
@@ -622,7 +622,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
     if (ttsState.mode === "continuous") {
       ttsQueueRef.current?.stop();
     } else {
-      ttsPlayerRef.current?.stop();
+      browserTtsClientRef.current.stop();
       setTtsState({
         currentText: "",
         error: "",
@@ -717,7 +717,7 @@ export function ReaderPage({ ai = aiService, runtime, ttsPlayer }: ReaderPagePro
         selectedText={selectedText}
         ttsCurrentText={ttsState.currentText}
         ttsError={ttsState.error}
-        ttsStartDisabled={!ttsStartReady || ttsState.status === "warming_up"}
+        ttsStartDisabled={!ttsStartReady}
         ttsStatus={ttsState.status}
       />
     </main>

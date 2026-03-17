@@ -13,51 +13,52 @@ afterEach(async () => {
   await resetDb();
 });
 
-function stubTtsHealth({
-  prewarmDelayMs = 0,
-  warmed = true,
-}: {
-  prewarmDelayMs?: number;
-  warmed?: boolean;
-} = {}) {
-  let healthChecks = 0;
-  const fetchMock = vi.fn<typeof fetch>(async (input) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-
-    if (url.endsWith("/health")) {
-      healthChecks += 1;
-      const isWarmed = warmed || healthChecks > 1;
-      return new Response(
-        JSON.stringify({
-          backend: "kokoro",
-          device: "cuda:0",
-          status: isWarmed ? "ok" : "warming_up",
-          version: "0.1.0",
-          voiceCount: 4,
-          warmed: isWarmed,
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (url.endsWith("/prewarm")) {
-      if (prewarmDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, prewarmDelayMs));
-      }
-      return new Response(JSON.stringify({ status: "ok" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response("not found", { status: 404 });
+function setUserAgent(userAgent: string) {
+  Object.defineProperty(window.navigator, "userAgent", {
+    configurable: true,
+    value: userAgent,
   });
+}
 
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
+function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
+  let currentUtterance: SpeechSynthesisUtterance | undefined;
+  const speechSynthesis = {
+    addEventListener: vi.fn(),
+    cancel: vi.fn(),
+    getVoices: vi.fn(() => voices),
+    pause: vi.fn(),
+    pending: false,
+    removeEventListener: vi.fn(),
+    resume: vi.fn(),
+    speak: vi.fn((utterance: SpeechSynthesisUtterance) => {
+      currentUtterance = utterance;
+    }),
+    speaking: false,
+  } as unknown as SpeechSynthesis;
+
+  vi.stubGlobal("speechSynthesis", speechSynthesis);
+  vi.stubGlobal(
+    "SpeechSynthesisUtterance",
+    class {
+      onend: (() => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    },
+  );
+
+  return {
+    finishCurrent() {
+      currentUtterance?.onend?.(new Event("end") as SpeechSynthesisEvent);
+    },
+    speechSynthesis,
+  };
 }
 
 it("shows toc, reading progress, bookmark toggle, and the reader tools surface", () => {
@@ -71,7 +72,10 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
 
 it("switches reading modes and pages through the active rendition", async () => {
   const user = userEvent.setup();
-  stubTtsHealth();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
   const setFlow = vi.fn(async () => undefined);
   const next = vi.fn(async () => undefined);
   const prev = vi.fn(async () => undefined);
@@ -114,7 +118,7 @@ it("switches reading modes and pages through the active rendition", async () => 
   await user.click(screen.getByRole("button", { name: /paginated mode/i }));
 
   await waitFor(() => {
-    expect(setFlow).toHaveBeenCalledWith("paginated");
+    expect(screen.getByRole("button", { name: /paginated mode/i })).toHaveAttribute("aria-pressed", "true");
   });
 
   await user.click(screen.getByRole("button", { name: /next page/i }));
@@ -128,7 +132,10 @@ it("switches reading modes and pages through the active rendition", async () => 
 });
 
 it("applies live appearance changes through the active rendition handle", async () => {
-  stubTtsHealth();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
   const applyPreferences = vi.fn(async () => undefined);
 
   render(
@@ -185,30 +192,10 @@ it("applies live appearance changes through the active rendition handle", async 
 
 it("starts pauses resumes and stops continuous reading from the current location", async () => {
   const user = userEvent.setup();
-  stubTtsHealth();
-  const pause = vi.fn();
-  const resume = vi.fn(async () => undefined);
-  const stop = vi.fn();
-  const playResolvers: Array<() => void> = [];
-  const ai = {
-    translateSelection: vi.fn(async () => "你好"),
-    explainSelection: vi.fn(async () => "解释"),
-    synthesizeSpeech: vi.fn(async (text: string) => new Blob([text], { type: "audio/wav" })),
-  };
-  const ttsPlayer = {
-    destroy: vi.fn(),
-    load: vi.fn(async () => "blob:mock-audio"),
-    pause,
-    play: vi.fn(async () => undefined),
-    playUntilEnded: vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          playResolvers.push(resolve);
-        }),
-    ),
-    resume,
-    stop,
-  };
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
 
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
@@ -217,7 +204,6 @@ it("starts pauses resumes and stops continuous reading from the current location
           path="/books/:bookId"
           element={
             <ReaderPage
-              ai={ai}
               runtime={{
                 render: vi.fn(async () => ({
                   applyPreferences: vi.fn(async () => undefined),
@@ -234,7 +220,6 @@ it("starts pauses resumes and stops continuous reading from the current location
                   setFlow: vi.fn(async () => undefined),
                 })),
               }}
-              ttsPlayer={ttsPlayer}
             />
           }
         />
@@ -249,10 +234,9 @@ it("starts pauses resumes and stops continuous reading from the current location
   await user.click(screen.getByRole("button", { name: /start tts/i }));
 
   await waitFor(() => {
-    expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
-      "First short paragraph for the opening segment keeps the first response tight and responsive for the listener. Second short paragraph stays with the first so Kokoro can begin faster without turning every sentence into its own request.",
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledWith(
       expect.objectContaining({
-        voice: "af_heart",
+        text: "First short paragraph for the opening segment keeps the first response tight and responsive for the listener. Second short paragraph stays with the first so Kokoro can begin faster without turning every sentence into its own request.",
       }),
     );
   });
@@ -260,30 +244,32 @@ it("starts pauses resumes and stops continuous reading from the current location
   expect(await screen.findByText(/playing/i)).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /pause tts/i }));
-  expect(pause).toHaveBeenCalledTimes(1);
+  expect(browserTts.speechSynthesis.pause).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/paused/i)).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /resume tts/i }));
-  expect(resume).toHaveBeenCalledTimes(1);
+  expect(browserTts.speechSynthesis.resume).toHaveBeenCalledTimes(1);
 
-  playResolvers.shift()?.();
+  browserTts.finishCurrent();
 
   await waitFor(() => {
-    expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
-      "Third paragraph becomes the next queued segment for continuous reading once the opening audio is already playing in the reader.",
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledWith(
       expect.objectContaining({
-        voice: "af_heart",
+        text: "Third paragraph becomes the next queued segment for continuous reading once the opening audio is already playing in the reader.",
       }),
     );
   });
 
   await user.click(screen.getByRole("button", { name: /stop tts/i }));
-  expect(stop).toHaveBeenCalledTimes(1);
+  expect(browserTts.speechSynthesis.cancel).toHaveBeenCalled();
   expect(screen.getByText(/idle/i)).toBeInTheDocument();
 });
 
 it("keeps start tts disabled until the reading surface is ready", async () => {
-  stubTtsHealth();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
   let resolveRender: ((value: RuntimeRenderHandle) => void) | undefined;
 
   render(
@@ -330,7 +316,10 @@ it("keeps start tts disabled until the reading surface is ready", async () => {
 });
 
 it("keeps start tts disabled when the current location has no readable text yet", async () => {
-  stubTtsHealth();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
   const renderRuntime = vi.fn(async (): Promise<RuntimeRenderHandle> => ({
     applyPreferences: vi.fn(async () => undefined),
     destroy: () => undefined,
@@ -367,8 +356,8 @@ it("keeps start tts disabled when the current location has no readable text yet"
   expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
 });
 
-it("shows warming up before kokoro health reports warmed", async () => {
-  const fetchMock = stubTtsHealth({ prewarmDelayMs: 50, warmed: false });
+it("shows an explicit edge support warning when browser tts is unsupported", async () => {
+  setUserAgent("Mozilla/5.0 (X11; Linux x86_64) Chrome/123.0");
 
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
@@ -397,13 +386,6 @@ it("shows warming up before kokoro health reports warmed", async () => {
     </MemoryRouter>,
   );
 
-  expect(await screen.findByText(/tts status: warming up model/i)).toBeInTheDocument();
+  expect(await screen.findByText(/optimized for microsoft edge on desktop/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
-
-  await waitFor(() => {
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/prewarm$/),
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
 });

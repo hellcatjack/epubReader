@@ -4,15 +4,15 @@ import { describe, expect, it } from "vitest";
 import { TtsStatusPanel } from "./TtsStatusPanel";
 
 describe("TtsStatusPanel", () => {
-  it("shows a warmup label before the first segment is ready", () => {
-    render(<TtsStatusPanel status="warming_up" currentText="First chunk." />);
+  it("shows an edge support warning when browser tts is unsupported", () => {
+    render(<TtsStatusPanel error="TTS is optimized for Microsoft Edge on desktop." status="error" />);
 
-    expect(screen.getByText(/tts status: warming up model/i)).toBeInTheDocument();
+    expect(screen.getByText(/optimized for microsoft edge on desktop/i)).toBeInTheDocument();
   });
 
-  it("shows a clearer label while audio is being generated", () => {
+  it("shows a simpler loading label while the browser starts speaking", () => {
     render(<TtsStatusPanel status="loading" currentText="First chunk." />);
 
-    expect(screen.getByText(/tts status: generating next segment/i)).toBeInTheDocument();
+    expect(screen.getByText(/tts status: loading/i)).toBeInTheDocument();
   });
 });

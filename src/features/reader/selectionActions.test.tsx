@@ -6,7 +6,6 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { db, resetDb } from "../../lib/db/appDb";
 import { saveSettings } from "../settings/settingsRepository";
-import { resolveDefaultTtsHelperUrl } from "../tts/localTtsClient";
 import { ReaderPage } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
 
@@ -14,6 +13,47 @@ afterEach(async () => {
   selectionBridge.publish(null);
   await resetDb();
 });
+
+function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
+  let currentUtterance: SpeechSynthesisUtterance | undefined;
+  const speechSynthesis = {
+    addEventListener: vi.fn(),
+    cancel: vi.fn(),
+    getVoices: vi.fn(() => voices),
+    pause: vi.fn(),
+    pending: false,
+    removeEventListener: vi.fn(),
+    resume: vi.fn(),
+    speak: vi.fn((utterance: SpeechSynthesisUtterance) => {
+      currentUtterance = utterance;
+    }),
+    speaking: false,
+  } as unknown as SpeechSynthesis;
+
+  vi.stubGlobal("speechSynthesis", speechSynthesis);
+  vi.stubGlobal(
+    "SpeechSynthesisUtterance",
+    class {
+      onend: (() => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    },
+  );
+
+  return {
+    finishCurrent() {
+      currentUtterance?.onend?.(new Event("end") as SpeechSynthesisEvent);
+    },
+    speechSynthesis,
+  };
+}
 
 it("automatically translates a new selection while keeping explain and note actions available", async () => {
   const user = userEvent.setup();
@@ -50,24 +90,19 @@ it("automatically translates a new selection while keeping explain and note acti
   expect(screen.getByRole("button", { name: /read aloud/i })).toBeInTheDocument();
 });
 
-it("reads aloud the selected text through the local helper-backed speech path", async () => {
+it("reads aloud the selected text through browser speech synthesis", async () => {
   const user = userEvent.setup();
-  const ai = {
-    translateSelection: vi.fn(async () => "你好，世界"),
-    explainSelection: vi.fn(async () => "A short contextual explanation"),
-    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
-  };
-  const ttsPlayer = {
-    destroy: vi.fn(),
-    load: vi.fn(async () => "blob:mock-audio"),
-    pause: vi.fn(),
-    play: vi.fn(async () => undefined),
-    playUntilEnded: vi.fn(async () => undefined),
-    resume: vi.fn(async () => undefined),
-    stop: vi.fn(),
-  };
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
 
-  render(<ReaderPage ai={ai} ttsPlayer={ttsPlayer} />);
+  render(<ReaderPage />);
 
   act(() => {
     selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
@@ -76,19 +111,14 @@ it("reads aloud the selected text through the local helper-backed speech path", 
   await user.click(screen.getByRole("button", { name: /read aloud/i }));
 
   await waitFor(() => {
-    expect(ai.synthesizeSpeech).toHaveBeenCalledWith(
-      "Hello world",
-      expect.objectContaining({
-        helperUrl: resolveDefaultTtsHelperUrl("localhost"),
-        rate: 1,
-        voice: "af_heart",
-        volume: 1,
-      }),
-    );
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(1);
   });
 
-  expect(ttsPlayer.load).toHaveBeenCalledTimes(1);
-  expect(ttsPlayer.playUntilEnded).toHaveBeenCalledTimes(1);
+  browserTts.finishCurrent();
+
+  await waitFor(() => {
+    expect(screen.getByText(/tts status: idle/i)).toBeInTheDocument();
+  });
 });
 
 it("does not auto-translate the same selection twice until the selection is cleared", async () => {

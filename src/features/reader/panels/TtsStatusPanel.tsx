@@ -6,7 +6,7 @@ type TtsStatusPanelProps = {
   onStart?: () => void;
   onStop?: () => void;
   startDisabled?: boolean;
-  status?: "idle" | "warming_up" | "loading" | "playing" | "paused" | "error";
+  status?: "idle" | "loading" | "playing" | "paused" | "error";
 };
 
 export function TtsStatusPanel({
@@ -19,17 +19,10 @@ export function TtsStatusPanel({
   startDisabled = false,
   status = "idle",
 }: TtsStatusPanelProps) {
-  const statusLabel =
-    status === "warming_up"
-      ? "Warming up model"
-      : status === "loading"
-        ? "Generating next segment"
-        : status;
-
   return (
     <section className="reader-panel" aria-label="TTS queue">
       <h2>TTS queue</h2>
-      <p>TTS status: {statusLabel}</p>
+      <p>TTS status: {status}</p>
       {currentText ? <p>Current: {currentText}</p> : <p>Ready to read the current selection or chapter.</p>}
       {error ? <p>{error}</p> : null}
       <div className="reader-tts-actions" role="group" aria-label="TTS controls">
