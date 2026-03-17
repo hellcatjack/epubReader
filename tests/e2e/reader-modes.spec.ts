@@ -117,3 +117,20 @@ test("paginated mode always renders as a single page column even after refresh",
   expect(before).toBe("1");
   expect(after).toBe("1");
 });
+
+test("paginated mode narrows the visible book page width to about half of scrolled mode", async ({ page }) => {
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  const scrolledWidth = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().width);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  const paginatedWidth = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().width);
+
+  expect(paginatedWidth).toBeLessThan(scrolledWidth * 0.55);
+  expect(paginatedWidth).toBeGreaterThan(scrolledWidth * 0.45);
+});
