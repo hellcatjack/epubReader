@@ -17,7 +17,7 @@ describe("TtsStatusPanel", () => {
   });
 
   it("renders quick rate controls in the tts panel", () => {
-    render(<TtsStatusPanel {...({ status: "idle", rate: 1 } as never)} />);
+    render(<TtsStatusPanel status="idle" rate={1} />);
 
     expect(screen.getByRole("button", { name: /0.8x/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /1.0x/i })).toBeInTheDocument();
