@@ -138,3 +138,40 @@ it("destroys stale runtime handles that resolve after the viewport unmounts", as
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 });
+
+it("forwards active tts segments to the runtime handle", async () => {
+  const setActiveTtsSegment = vi.fn(async () => undefined);
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
+      destroy() {
+        return undefined;
+      },
+      findCfiFromTextQuote: vi.fn(async () => null),
+      getTextFromCurrentLocation: vi.fn(async () => ""),
+      goTo: vi.fn(async () => undefined),
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setActiveTtsSegment,
+      setFlow: vi.fn(async () => undefined),
+    })),
+  };
+
+  const { rerender } = render(<EpubViewport bookId="book-1" runtime={runtime} />);
+  expect(await screen.findByText(/opened from chapter start/i)).toBeInTheDocument();
+
+  rerender(
+    <EpubViewport
+      activeTtsSegment={{ spineItemId: "chap-1", text: "Second paragraph should stay highlighted." }}
+      bookId="book-1"
+      runtime={runtime}
+    />,
+  );
+
+  await vi.waitFor(() => {
+    expect(setActiveTtsSegment).toHaveBeenLastCalledWith({
+      spineItemId: "chap-1",
+      text: "Second paragraph should stay highlighted.",
+    });
+  });
+});

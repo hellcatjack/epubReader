@@ -42,6 +42,12 @@ describe("readerPreferences", () => {
       "p:first-child": {
         "text-indent": "0",
       },
+      ".reader-tts-active-segment": {
+        "background": "rgba(214, 144, 58, 0.14)",
+        "border-left": "0.28rem solid rgba(186, 106, 47, 0.72)",
+        "box-shadow": "inset 0 0 0 1px rgba(186, 106, 47, 0.08)",
+        "transition": "none",
+      },
     });
   });
 });

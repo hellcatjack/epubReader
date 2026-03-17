@@ -124,10 +124,20 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
       nextElement.classList.add("reader-tts-active-segment");
       activeTtsElement = nextElement;
-      nextElement.scrollIntoView?.({
-        block: "center",
-        inline: "nearest",
-      });
+      const view = currentContents.window;
+      const rect = nextElement.getBoundingClientRect();
+      const viewportHeight = view.innerHeight || nextElement.ownerDocument.documentElement.clientHeight || 0;
+      const topThreshold = viewportHeight * 0.18;
+      const bottomThreshold = viewportHeight * 0.82;
+      const needsScroll = rect.top < topThreshold || rect.bottom > bottomThreshold;
+
+      if (needsScroll) {
+        nextElement.scrollIntoView?.({
+          behavior: "auto",
+          block: "nearest",
+          inline: "nearest",
+        });
+      }
     };
 
     const getLocationTextQuote = async (cfi: string) => {
