@@ -1054,6 +1054,159 @@ it("applies live appearance changes through the active rendition handle", async 
   });
 });
 
+it("does not reapply reader preferences when only the reading location changes", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
+
+  let emitRelocated:
+    | ((location: {
+        cfi: string;
+        pageIndex?: number;
+        pageOffset?: number;
+        progress: number;
+        spineItemId: string;
+        textQuote: string;
+      }) => void)
+    | undefined;
+  const applyPreferences = vi.fn(async () => undefined);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  emitRelocated = onRelocated;
+                  return {
+                    applyPreferences,
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph.\n\nSecond paragraph."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(applyPreferences).toHaveBeenCalled();
+    expect(emitRelocated).toBeTypeOf("function");
+  });
+  const initialApplyCount = applyPreferences.mock.calls.length;
+
+  await act(async () => {
+    emitRelocated?.({
+      cfi: "epubcfi(/6/14!/4/2/8:24)",
+      pageIndex: 1,
+      pageOffset: 913,
+      progress: 0.63,
+      spineItemId: "chapter-one.xhtml",
+      textQuote: "Morgan’s head was pressed against her pillow.",
+    });
+  });
+
+  await waitFor(() => {
+    expect(saveProgressMock).toHaveBeenCalledWith(
+      "book-1",
+      expect.objectContaining({
+        cfi: "epubcfi(/6/14!/4/2/8:24)",
+        pageIndex: 1,
+        pageOffset: 913,
+      }),
+    );
+  });
+
+  expect(applyPreferences).toHaveBeenCalledTimes(initialApplyCount);
+});
+
+it("keeps pagehide and beforeunload listeners stable when the reader location changes", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
+
+  let emitRelocated:
+    | ((location: {
+        cfi: string;
+        pageIndex?: number;
+        pageOffset?: number;
+        progress: number;
+        spineItemId: string;
+        textQuote: string;
+      }) => void)
+    | undefined;
+  const addEventListenerSpy = vi.spyOn(window, "addEventListener");
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  emitRelocated = onRelocated;
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph.\n\nSecond paragraph."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(emitRelocated).toBeTypeOf("function");
+  });
+
+  const initialPagehideCount = addEventListenerSpy.mock.calls.filter(([type]) => type === "pagehide").length;
+  const initialBeforeUnloadCount = addEventListenerSpy.mock.calls.filter(([type]) => type === "beforeunload").length;
+
+  await act(async () => {
+    emitRelocated?.({
+      cfi: "epubcfi(/6/14!/4/2/8:24)",
+      pageIndex: 1,
+      pageOffset: 913,
+      progress: 0.63,
+      spineItemId: "chapter-one.xhtml",
+      textQuote: "Morgan’s head was pressed against her pillow.",
+    });
+  });
+
+  expect(addEventListenerSpy.mock.calls.filter(([type]) => type === "pagehide")).toHaveLength(initialPagehideCount);
+  expect(addEventListenerSpy.mock.calls.filter(([type]) => type === "beforeunload")).toHaveLength(initialBeforeUnloadCount);
+});
+
 it("starts pauses resumes and stops continuous reading from the current location", async () => {
   const user = userEvent.setup();
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");

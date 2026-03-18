@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import type { AnnotationRecord, BookmarkRecord } from "../../lib/types/annotations";
 import type { ProgressRecord, TocItem } from "../../lib/types/books";
@@ -175,6 +175,15 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   });
   const settingsDirtyRef = useRef(false);
   const settingsRef = useRef<SettingsInput>(defaultSettings);
+  const currentLocationRef = useRef<ReaderLocationState>({
+    cfi: "",
+    pageIndex: undefined,
+    pageOffset: undefined,
+    progress: 0,
+    spineItemId: "",
+    textQuote: "",
+  });
+  const runtimeHandleValueRef = useRef<RuntimeRenderHandle | null>(null);
   const aiRequestVersionRef = useRef(0);
   const lastAutoTranslatedSelectionKeyRef = useRef("");
   const activeSelectionSpeechRequestRef = useRef(0);
@@ -273,6 +282,14 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    currentLocationRef.current = currentLocation;
+  }, [currentLocation]);
+
+  useEffect(() => {
+    runtimeHandleValueRef.current = runtimeHandle;
+  }, [runtimeHandle]);
 
   useEffect(() => {
     let cancelled = false;
@@ -523,6 +540,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         return;
       }
 
+      const runtimeHandle = runtimeHandleValueRef.current;
+      const currentLocation = currentLocationRef.current;
       const viewportSnapshot = runtimeHandle?.getViewportLocationSnapshot?.();
       const immediateLocation = currentLocation.cfi
         ? {
@@ -560,11 +579,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       window.removeEventListener("pagehide", flushReadingProgress);
       window.removeEventListener("beforeunload", flushReadingProgress);
     };
-  }, [bookId, currentLocation, runtimeHandle]);
+  }, [bookId]);
 
   useEffect(() => {
     function flushReaderSettings() {
-      writeRefreshSettingsSnapshot(settings);
+      writeRefreshSettingsSnapshot(settingsRef.current);
     }
 
     window.addEventListener("pagehide", flushReaderSettings);
@@ -573,7 +592,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       window.removeEventListener("pagehide", flushReaderSettings);
       window.removeEventListener("beforeunload", flushReaderSettings);
     };
-  }, [settings]);
+  }, []);
 
   useEffect(() => {
     if (
@@ -1033,10 +1052,16 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           text: ttsState.markerText,
         }
       : null;
-  const readerPreferences = getEffectiveReaderPreferences(toReaderPreferences(settings));
-  const readerStyle: CSSProperties & Record<"--reader-font-scale", string> = {
-    "--reader-font-scale": String(settings.fontScale),
-  };
+  const readerPreferences = useMemo(
+    () => getEffectiveReaderPreferences(toReaderPreferences(settings)),
+    [settings],
+  );
+  const readerStyle = useMemo<CSSProperties & Record<"--reader-font-scale", string>>(
+    () => ({
+      "--reader-font-scale": String(settings.fontScale),
+    }),
+    [settings.fontScale],
+  );
   const shouldRenderViewport = Boolean(bookId) && isProgressReady && isSettingsReady;
   const nextInitialCfi = locationTarget ?? initialCfi;
 
