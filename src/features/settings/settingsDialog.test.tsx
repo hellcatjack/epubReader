@@ -80,7 +80,16 @@ it("persists browser tts settings without rendering a helper url field", async (
   const targetLanguage = await screen.findByLabelText(/target language/i);
   const theme = screen.getByLabelText(/theme/i);
   const readingMode = screen.getByLabelText(/reading mode/i);
-  const fontScale = screen.getByLabelText(/font scale/i);
+  const ttsVoice = await screen.findByRole("combobox", { name: /tts voice/i });
+  const ttsRate = screen.getByLabelText(/tts rate/i);
+  const ttsVolume = screen.getByLabelText(/tts volume/i);
+
+  expect(screen.queryByLabelText(/tts helper url/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/font scale/i)).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /advanced typography/i }));
+
+  const fontScale = await screen.findByLabelText(/font scale/i);
   const lineHeight = screen.getByLabelText(/line height/i);
   const letterSpacing = screen.getByLabelText(/letter spacing/i);
   const paragraphSpacing = screen.getByLabelText(/paragraph spacing/i);
@@ -89,11 +98,6 @@ it("persists browser tts settings without rendering a helper url field", async (
   const maxLineWidth = screen.getByLabelText(/max line width/i);
   const columnCount = screen.getByLabelText(/column count/i);
   const fontFamily = screen.getByLabelText(/font family/i);
-  const ttsVoice = await screen.findByRole("combobox", { name: /tts voice/i });
-  const ttsRate = screen.getByLabelText(/tts rate/i);
-  const ttsVolume = screen.getByLabelText(/tts volume/i);
-
-  expect(screen.queryByLabelText(/tts helper url/i)).not.toBeInTheDocument();
 
   await user.selectOptions(targetLanguage, "zh-CN");
   await user.selectOptions(theme, "dark");
@@ -141,6 +145,21 @@ it("persists browser tts settings without rendering a helper url field", async (
   });
 });
 
+it("shows common settings first and reveals advanced typography on demand", async () => {
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+
+  render(<SettingsDialog />);
+
+  expect(await screen.findByLabelText(/target language/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/tts voice/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/paragraph spacing/i)).not.toBeInTheDocument();
+
+  await userEvent.setup().click(screen.getByRole("button", { name: /advanced typography/i }));
+
+  expect(await screen.findByLabelText(/paragraph spacing/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/max line width/i)).toBeInTheDocument();
+});
+
 it("shows single-column paginated mode in the settings UI without deleting the saved scrolled preference", async () => {
   installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
   await db.settings.put({
@@ -166,6 +185,7 @@ it("shows single-column paginated mode in the settings UI without deleting the s
 
   render(<SettingsDialog />);
 
+  await userEvent.setup().click(await screen.findByRole("button", { name: /advanced typography/i }));
   const columnCount = await screen.findByLabelText(/column count/i);
   expect(columnCount).toBeDisabled();
   expect(columnCount).toHaveValue("1");
