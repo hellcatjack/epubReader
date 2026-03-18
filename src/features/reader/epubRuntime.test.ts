@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   findTtsBlockElementByText,
+  getPagePresentationKind,
   getNearestTtsBlockElement,
   readPaginatedPageIndex,
   restorePaginatedPageOffset,
@@ -89,5 +90,37 @@ describe("epubRuntime tts targeting helpers", () => {
     restorePaginatedPagePosition("paginated", container, 1412, 2);
 
     expect(container.scrollLeft).toBe(3652);
+  });
+
+  it("classifies image-dominant map pages as image presentation", () => {
+    const doc = document.implementation.createHTMLDocument("map");
+    doc.body.innerHTML = `
+      <div class="figure_nomargin figure_fullpage">
+        <div class="squeeze squeeze100">
+          <img alt="" class="image" src="map-left.jpg" />
+        </div>
+      </div>
+      <figure class="figure figure_fullpage_caption">
+        <div class="squeeze squeeze90">
+          <img alt="" class="image" src="map-right.jpg" />
+        </div>
+        <figcaption class="figcaption dynamic_box">
+          <p class="figcaption_para">Detail right</p>
+        </figcaption>
+      </figure>
+    `;
+
+    expect(getPagePresentationKind(doc)).toBe("image");
+  });
+
+  it("keeps chapter prose pages in prose presentation mode", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <h1>ONE</h1>
+      <p>Morgan’s head was pressed against her pillow. The alarm on her phone had just been snoozed again, and her plan to leave early for school was slipping away with every minute she stayed put.</p>
+      <p>Escaping was the plan this morning, just not into another world. Rather, Morgan intended to get out of the house and on her way to school solo.</p>
+    `;
+
+    expect(getPagePresentationKind(doc)).toBe("prose");
   });
 });

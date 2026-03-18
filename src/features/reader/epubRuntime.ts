@@ -13,6 +13,7 @@ export type RuntimeRenderArgs = {
   initialPageOffset?: number;
   initialPreferences?: Partial<ReaderPreferences>;
   onRelocated?: (location: { cfi: string; pageIndex?: number; pageOffset?: number; progress: number; spineItemId: string; textQuote: string }) => void;
+  onPagePresentationChange?: (pageKind: "image" | "prose") => void;
   onSelectionChange?: (selection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string }) => void;
   onTocChange?: (toc: TocItem[]) => void;
 };
@@ -43,6 +44,7 @@ export type EpubViewportRuntime = {
 };
 
 const ttsBlockSelector = "p, li, blockquote";
+const readerImagePageClassName = "reader-image-page";
 
 function hasDisplayedLocationShape(
   value: unknown,
@@ -73,6 +75,26 @@ function flattenTocItems(items: NavItem[]): TocItem[] {
 
 function normalizeSegmentText(text: string) {
   return text.replace(/\s+/g, " ").trim();
+}
+
+export function getPagePresentationKind(document: Document) {
+  const body = document.body;
+  if (!body) {
+    return "prose" as const;
+  }
+
+  const bodyText = normalizeSegmentText(body.innerText || body.textContent || "");
+  const mediaCount = body.querySelectorAll("img, svg, picture").length;
+  const proseBlocks = Array.from(body.querySelectorAll("p, li, blockquote")).filter((block) => {
+    const text = normalizeSegmentText(block.textContent || "");
+    return text.length >= 80;
+  }).length;
+
+  if (mediaCount > 0 && (proseBlocks === 0 || bodyText.length < 240)) {
+    return "image" as const;
+  }
+
+  return "prose" as const;
 }
 
 function getPaginatedContainer(root: ParentNode | null) {
@@ -217,6 +239,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     initialPageOffset,
     initialPreferences,
     onRelocated,
+    onPagePresentationChange,
     onSelectionChange,
     onTocChange,
   }) {
@@ -264,8 +287,16 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       if (nextContents) {
         currentContents = nextContents;
         attachSelectionLifecycle(nextContents);
+        syncPagePresentation(nextContents);
         void applyActiveTtsSegment(activeTtsSegment);
       }
+    };
+
+    const syncPagePresentation = (contents: Contents) => {
+      const pageKind = getPagePresentationKind(contents.document);
+      element.dataset.pageKind = pageKind;
+      onPagePresentationChange?.(pageKind);
+      contents.document.body.classList.toggle(readerImagePageClassName, pageKind === "image");
     };
 
     const clearActiveTtsSegment = () => {
@@ -580,6 +611,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     const handleRendered = (_section: unknown, contents: Contents) => {
       currentContents = contents;
       attachSelectionLifecycle(contents);
+      syncPagePresentation(contents);
       void applyActiveTtsSegment(activeTtsSegment);
     };
 
@@ -609,6 +641,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       },
       destroy() {
         clearActiveTtsSegment();
+        delete element.dataset.pageKind;
+        onPagePresentationChange?.("prose");
         selectionDocumentCleanups.forEach((cleanup) => cleanup());
         selectionDocumentCleanups.clear();
         rendition.off("selected", handleSelection);

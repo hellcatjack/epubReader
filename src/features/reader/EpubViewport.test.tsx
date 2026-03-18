@@ -62,6 +62,33 @@ it("uses the runtime renderer for persisted books when no test controller is pro
   );
 });
 
+it("persists image-page presentation state on the viewport root", async () => {
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async ({ onPagePresentationChange }) => {
+      onPagePresentationChange?.("image");
+      return {
+        applyPreferences: vi.fn(async () => undefined),
+        destroy() {
+          return undefined;
+        },
+        findCfiFromTextQuote: vi.fn(async () => null),
+        getTextFromCurrentLocation: vi.fn(async () => ""),
+        goTo: vi.fn(async () => undefined),
+        next: vi.fn(async () => undefined),
+        prev: vi.fn(async () => undefined),
+        setActiveTtsSegment: vi.fn(async () => undefined),
+        setFlow: vi.fn(async () => undefined),
+      };
+    }),
+  };
+
+  const { container } = render(<EpubViewport bookId="book-1" runtime={runtime} />);
+
+  await vi.waitFor(() => {
+    expect(container.querySelector(".epub-root")).toHaveAttribute("data-page-kind", "image");
+  });
+});
+
 it("falls back to a saved chapter and quote when the saved cfi cannot be reopened", async () => {
   const onStatusChange = vi.fn();
   const findCfiFromTextQuote = vi.fn(async () => "epubcfi(/6/8!/4/1:12)");

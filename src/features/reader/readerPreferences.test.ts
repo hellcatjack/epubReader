@@ -42,6 +42,22 @@ describe("readerPreferences", () => {
       "p:first-child": {
         "text-indent": "0",
       },
+      "body.reader-image-page": {
+        "max-width": "none !important",
+        "padding": "16px !important",
+      },
+      "body.reader-image-page .figure_nomargin, body.reader-image-page .figure, body.reader-image-page .figure_cover, body.reader-image-page .figure_fullpage, body.reader-image-page .figure_fullpage_caption, body.reader-image-page .squeeze, body.reader-image-page .squeeze100, body.reader-image-page .squeeze90": {
+        "margin": "0 auto !important",
+        "max-width": "100% !important",
+        "width": "100% !important",
+      },
+      "body.reader-image-page img, body.reader-image-page svg": {
+        "display": "block",
+        "height": "auto !important",
+        "margin": "0 auto !important",
+        "max-width": "100% !important",
+        "width": "100% !important",
+      },
       ".reader-tts-active-segment": {
         "background": "linear-gradient(90deg, rgba(186, 106, 47, 0.16) 0, rgba(186, 106, 47, 0.16) 100%)",
         "background-repeat": "no-repeat",

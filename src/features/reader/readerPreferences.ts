@@ -56,6 +56,7 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
   const effectivePreferences = getEffectiveReaderPreferences(preferences);
   const columnGap = Math.max(effectivePreferences.contentPadding, 32);
   const fontSize = `${Math.round(effectivePreferences.fontScale * 100)}%`;
+  const imagePagePadding = `${Math.min(effectivePreferences.contentPadding, 16)}px`;
 
   return {
     html: {
@@ -72,6 +73,22 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
       "margin": "0 auto",
       "max-width": `${effectivePreferences.maxLineWidth}px`,
       "padding": `${effectivePreferences.contentPadding}px`,
+    },
+    "body.reader-image-page": {
+      "max-width": "none !important",
+      "padding": `${imagePagePadding} !important`,
+    },
+    "body.reader-image-page .figure_nomargin, body.reader-image-page .figure, body.reader-image-page .figure_cover, body.reader-image-page .figure_fullpage, body.reader-image-page .figure_fullpage_caption, body.reader-image-page .squeeze, body.reader-image-page .squeeze100, body.reader-image-page .squeeze90": {
+      "margin": "0 auto !important",
+      "max-width": "100% !important",
+      "width": "100% !important",
+    },
+    "body.reader-image-page img, body.reader-image-page svg": {
+      "display": "block",
+      "height": "auto !important",
+      "margin": "0 auto !important",
+      "max-width": "100% !important",
+      "width": "100% !important",
     },
     p: {
       "margin-bottom": `${effectivePreferences.paragraphSpacing}em`,

@@ -254,6 +254,11 @@
   justify-self: center;
 }
 
+.epub-root[data-reader-mode="paginated"][data-page-kind="image"] {
+  width: 100%;
+  max-width: 100%;
+}
+
 .epub-root[data-tts-active="true"] {
   box-shadow:
     0 0 0 0.18rem rgba(214, 144, 58, 0.18),

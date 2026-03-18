@@ -54,6 +54,7 @@ export function EpubViewport({
   visibleAnnotations = [],
 }: EpubViewportProps) {
   const [statusMessage, setStatusMessage] = useState("Open a book from the shelf to start reading.");
+  const [pageKind, setPageKind] = useState<"image" | "prose">("prose");
   const hostRef = useRef<HTMLDivElement | null>(null);
   const runtimeHandleRef = useRef<RuntimeRenderHandle | null>(null);
 
@@ -115,6 +116,7 @@ export function EpubViewport({
             void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
             onLocationChange?.({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
           },
+          onPagePresentationChange: setPageKind,
           onSelectionChange: ({ cfiRange, isReleased, spineItemId, text }) => {
             selectionBridge.publish(text ? { cfiRange, isReleased, spineItemId, text } : null);
           },
@@ -187,6 +189,7 @@ export function EpubViewport({
         cancelled = true;
         handle?.destroy();
         runtimeHandleRef.current = null;
+        setPageKind("prose");
         onReady?.(null);
         selectionBridge.publish(null);
       };
@@ -229,6 +232,7 @@ export function EpubViewport({
 
     return () => {
       cancelled = true;
+      setPageKind("prose");
       onReady?.(null);
       selectionBridge.publish(null);
     };
@@ -250,6 +254,7 @@ export function EpubViewport({
     <section className="epub-viewport" aria-label="Book content">
       <div
         className="epub-root"
+        data-page-kind={pageKind}
         data-reader-mode={controller?.mode ?? readingMode}
         data-tts-active={activeTtsSegment ? "true" : "false"}
         ref={hostRef}
