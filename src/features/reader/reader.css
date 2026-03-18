@@ -38,7 +38,8 @@
 .reader-layout.theme-dark .reader-status,
 .reader-layout.theme-dark .reader-selection-preview,
 .reader-layout.theme-dark .reader-tools-hint,
-.reader-layout.theme-dark .reader-copy {
+.reader-layout.theme-dark .reader-copy,
+.reader-layout.theme-dark .reader-ai-error {
   color: #d6c0ab;
 }
 
@@ -78,6 +79,81 @@
 .reader-list {
   margin: 0;
   color: #5c4635;
+}
+
+.reader-ai-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.reader-ai-meta {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(79, 49, 24, 0.1);
+  border-radius: 0.95rem;
+  background: rgba(246, 237, 225, 0.92);
+}
+
+.reader-ai-meta-row {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.reader-ai-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a6647;
+}
+
+.reader-ai-value {
+  color: #2f2118;
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.reader-ai-result {
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(79, 49, 24, 0.1);
+  border-radius: 1rem;
+  background: rgba(255, 253, 249, 0.97);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.reader-ai-result p {
+  line-height: 1.75;
+  white-space: pre-wrap;
+  color: #422f23;
+}
+
+.reader-ai-error {
+  font-size: 0.92rem;
+  color: #8b3f24;
+}
+
+.reader-layout.theme-dark .reader-ai-meta {
+  border-color: rgba(228, 191, 148, 0.14);
+  background: rgba(67, 47, 38, 0.94);
+}
+
+.reader-layout.theme-dark .reader-ai-label {
+  color: #cfa67d;
+}
+
+.reader-layout.theme-dark .reader-ai-value {
+  color: #f4e2d0;
+}
+
+.reader-layout.theme-dark .reader-ai-result {
+  border-color: rgba(228, 191, 148, 0.14);
+  background: rgba(59, 40, 31, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.reader-layout.theme-dark .reader-ai-result p {
+  color: #f2e6d6;
 }
 
 .reader-tts-field {
@@ -285,15 +361,16 @@
   box-shadow: 0 1.2rem 3rem rgba(77, 50, 28, 0.12);
 }
 
-.epub-root[data-reader-mode="paginated"] {
+.epub-root[data-page-kind="prose"] {
   width: 50%;
   max-width: 50%;
   justify-self: center;
 }
 
-.epub-root[data-reader-mode="paginated"][data-page-kind="image"] {
+.epub-root[data-page-kind="image"] {
   width: 100%;
   max-width: 100%;
+  justify-self: stretch;
 }
 
 .epub-root[data-tts-active="true"] {
@@ -409,7 +486,7 @@
     min-height: min(70dvh, 38rem);
   }
 
-  .epub-root[data-reader-mode="paginated"] {
+  .epub-root[data-page-kind="prose"] {
     width: 100%;
     max-width: none;
   }

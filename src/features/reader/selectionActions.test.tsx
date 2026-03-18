@@ -150,7 +150,7 @@ it("shows ipa for a released single-word selection", async () => {
   });
 
   expect(await screen.findByText("按压")).toBeInTheDocument();
-  expect(await screen.findByText("IPA: /prest/")).toBeInTheDocument();
+  expect(await screen.findByText("/prest/")).toBeInTheDocument();
 });
 
 it("does not show ipa for a multi-word selection", async () => {
@@ -187,7 +187,7 @@ it("does not show ipa for a multi-word selection", async () => {
   });
 
   expect(await screen.findByText("事情是这样的")).toBeInTheDocument();
-  expect(screen.queryByText(/IPA:/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^IPA$/i)).not.toBeInTheDocument();
   expect(fetchSpy).not.toHaveBeenCalled();
 });
 
@@ -243,8 +243,8 @@ it("ignores stale ipa responses after the selection changes", async () => {
   });
 
   expect(await screen.findByText("第二个")).toBeInTheDocument();
-  expect(await screen.findByText("IPA: /sekənd/")).toBeInTheDocument();
-  expect(screen.queryByText("IPA: /prest/")).not.toBeInTheDocument();
+  expect(await screen.findByText("/sekənd/")).toBeInTheDocument();
+  expect(screen.queryByText("/prest/")).not.toBeInTheDocument();
 });
 
 it("waits until the selection is released before auto-translating and auto-reading", async () => {

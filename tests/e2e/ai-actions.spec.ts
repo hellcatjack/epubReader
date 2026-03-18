@@ -84,19 +84,25 @@ test("ai actions translate explain and save a note for selected text", async ({ 
 
   const selectedWord = await selectWordCountInIframe(page, 1);
   expect(selectedWord.length).toBeGreaterThan(0);
-  await expect(page.getByLabel("AI result")).toContainText(`Selection: ${selectedWord}`);
-  await expect(page.getByLabel("AI result")).toContainText("IPA: /ipa/");
-  await expect(page.getByLabel("AI result")).toContainText("中文翻译");
+  const aiMeta = page.locator(".reader-ai-meta");
+  const aiResult = page.locator(".reader-ai-result");
+  await expect(aiMeta).toBeVisible();
+  await expect(aiResult).toBeVisible();
+  await expect(aiMeta).toContainText("Selection");
+  await expect(aiMeta).toContainText(selectedWord);
+  await expect(aiMeta).toContainText("IPA");
+  await expect(aiMeta).toContainText("/ipa/");
+  await expect(aiResult).toContainText("中文翻译");
 
   const selectedPhrase = await selectWordCountInIframe(page, 2);
   expect(selectedPhrase.split(/\s+/).length).toBe(2);
-  await expect(page.getByLabel("AI result")).toContainText(`Selection: ${selectedPhrase}`);
-  await expect(page.getByLabel("AI result")).not.toContainText("IPA: /ipa/");
+  await expect(aiMeta).toContainText(selectedPhrase);
+  await expect(aiMeta).not.toContainText("/ipa/");
 
   const selected = await selectTextInIframe(page);
   expect(selected.length).toBeGreaterThan(0);
 
-  await expect(page.getByLabel("AI result")).toContainText("中文翻译");
+  await expect(aiResult).toContainText("中文翻译");
 
   await page.getByRole("button", { name: "Explain" }).click();
   await expect(page.getByLabel("AI result")).toContainText("中文解释");
