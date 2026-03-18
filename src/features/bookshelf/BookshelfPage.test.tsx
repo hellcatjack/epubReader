@@ -219,3 +219,19 @@ it("shows a continue reading surface for the most recently read book", async () 
   expect(within(continueSection).getByText("Minimal Valid EPUB")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /continue minimal valid epub/i })).toBeInTheDocument();
 });
+
+it("opens the bookshelf settings panel from a header action", async () => {
+  const user = userEvent.setup();
+
+  render(
+    <MemoryRouter>
+      <BookshelfPage books={[]} />
+    </MemoryRouter>,
+  );
+
+  expect(screen.queryByLabelText(/reader settings panel/i)).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /settings/i }));
+
+  expect(await screen.findByLabelText(/reader settings panel/i)).toBeInTheDocument();
+});
