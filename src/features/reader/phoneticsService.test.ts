@@ -44,7 +44,7 @@ describe("createPhoneticsService", () => {
     const fetchImpl = vi.fn(async () => ({
       json: async () => [{ phonetics: [{ text: "/prest/" }] }],
       ok: true,
-    })) as typeof fetch;
+    })) as unknown as typeof fetch;
 
     const service = createPhoneticsService({ fetchImpl });
 
@@ -56,7 +56,7 @@ describe("createPhoneticsService", () => {
   it("returns null when the dictionary request fails", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("offline");
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const service = createPhoneticsService({ fetchImpl });
 

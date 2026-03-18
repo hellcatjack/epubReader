@@ -202,8 +202,9 @@ it("ignores stale ipa responses after the selection changes", async () => {
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
-  let resolveFirstLookup: ((value: { json: () => Promise<Array<{ phonetics: Array<{ text: string }> }>>; ok: boolean }) => void) | null =
-    null;
+  let resolveFirstLookup:
+    | ((value: { json: () => Promise<Array<{ phonetics: Array<{ text: string }> }>>; ok: boolean }) => void)
+    | undefined;
   const fetchSpy = vi
     .fn()
     .mockImplementationOnce(
