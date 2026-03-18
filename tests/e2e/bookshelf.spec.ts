@@ -4,6 +4,14 @@ const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
 
 test("bookshelf flow imports, reopens, and deletes a book", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /settings/i }).click();
+  await expect(page.getByLabel("Reader settings panel")).toBeVisible();
+  await expect(page.getByLabel("Target language")).toBeVisible();
+  await page.getByRole("button", { name: /advanced typography/i }).click();
+  await expect(page.getByLabel("Font scale")).toBeVisible();
+  await page.getByRole("button", { name: /close settings/i }).click();
+  await expect(page.getByLabel("Reader settings panel")).not.toBeVisible();
+
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
   await expect(page.getByRole("button", { name: /bookmark this location/i })).toBeVisible();
