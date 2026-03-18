@@ -68,7 +68,12 @@ export function createPhoneticsService({ fetchImpl = fetch }: PhoneticsServiceDe
 
       const pendingLookup = (async () => {
         try {
-          const response = await fetchImpl(
+          const resolvedFetch = fetchImpl ?? globalThis.fetch;
+          if (!resolvedFetch) {
+            return null;
+          }
+
+          const response = await resolvedFetch(
             `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`,
           );
 

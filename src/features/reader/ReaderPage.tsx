@@ -15,6 +15,7 @@ import {
 import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
 import { chunkTextSegments, chunkTextSegmentsFromBlocks, type ChunkSegment } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
+import { createPhoneticsService, getEligibleIpaWord } from "./phoneticsService";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
 import type { ActiveTtsSegment, EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
@@ -32,6 +33,7 @@ import { selectionBridge, type ReaderSelection } from "./selectionBridge";
 
 type ReaderPageProps = {
   ai?: Pick<AiService, "explainSelection" | "translateSelection">;
+  phonetics?: Pick<ReturnType<typeof createPhoneticsService>, "lookupIpa">;
   runtime?: EpubViewportRuntime;
 };
 
@@ -127,7 +129,7 @@ async function getContinuousTtsChunks(runtimeHandle: RuntimeRenderHandle) {
   }
 }
 
-export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
+export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const [initialCfi, setInitialCfi] = useState<string>();
   const [initialProgress, setInitialProgress] = useState<ProgressRecord | null>(null);
@@ -140,6 +142,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   );
   const [selectedSelection, setSelectedSelection] = useState<ReaderSelection | null>(null);
   const [aiError, setAiError] = useState("");
+  const [aiIpa, setAiIpa] = useState("");
   const [aiResult, setAiResult] = useState("");
   const [aiTitle, setAiTitle] = useState("AI result");
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
@@ -179,6 +182,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const lastAutoPagedCfiRef = useRef("");
   const ttsReadinessRequestRef = useRef(0);
   const browserTtsClientRef = useRef(createBrowserTtsClient());
+  const phoneticsServiceRef = useRef(phonetics ?? createPhoneticsService());
   const ttsQueueRef = useRef<ReturnType<typeof createTtsQueue> | null>(null);
 
   function ensureTtsQueue() {
@@ -620,18 +624,24 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     }
 
     const requestVersion = ++aiRequestVersionRef.current;
+    const ipaWord = getEligibleIpaWord(nextText);
     setAiTitle("Translation");
     setAiError("");
+    setAiIpa("");
     setAiResult("");
 
     try {
-      const result = await ai.translateSelection(nextText, {
-        targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
-      });
+      const [result, ipa] = await Promise.all([
+        ai.translateSelection(nextText, {
+          targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
+        }),
+        ipaWord ? phoneticsServiceRef.current.lookupIpa(ipaWord) : Promise.resolve(null),
+      ]);
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
       setAiResult(result);
+      setAiIpa(ipa ?? "");
     } catch (error) {
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
@@ -649,6 +659,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     const requestVersion = ++aiRequestVersionRef.current;
     setAiTitle("Explanation");
     setAiError("");
+    setAiIpa("");
     setAiResult("");
 
     try {
@@ -1106,6 +1117,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           </section>
           <RightPanel
             aiError={aiError}
+            aiIpa={aiIpa}
             aiResult={aiResult}
             aiTitle={aiTitle}
             annotationCount={visibleAnnotations.length}

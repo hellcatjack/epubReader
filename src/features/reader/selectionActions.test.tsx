@@ -119,6 +119,133 @@ it("automatically translates and auto-reads a new selection while keeping explai
   expect(screen.getByRole("button", { name: /read aloud/i })).toBeInTheDocument();
 });
 
+it("shows ipa for a released single-word selection", async () => {
+  installEdgeDesktopUserAgent();
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      json: async () => [{ phonetics: [{ text: "/prest/" }] }],
+      ok: true,
+    })),
+  );
+  const ai = {
+    translateSelection: vi.fn(async () => "按压"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", isReleased: true, spineItemId: "chap-1", text: "pressed" });
+  });
+
+  expect(await screen.findByText("按压")).toBeInTheDocument();
+  expect(await screen.findByText("IPA: /prest/")).toBeInTheDocument();
+});
+
+it("does not show ipa for a multi-word selection", async () => {
+  installEdgeDesktopUserAgent();
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const fetchSpy = vi.fn(async () => ({
+    json: async () => [{ phonetics: [{ text: "/ignored/" }] }],
+    ok: true,
+  }));
+  vi.stubGlobal("fetch", fetchSpy);
+  const ai = {
+    translateSelection: vi.fn(async () => "事情是这样的"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "The thing",
+    });
+  });
+
+  expect(await screen.findByText("事情是这样的")).toBeInTheDocument();
+  expect(screen.queryByText(/IPA:/i)).not.toBeInTheDocument();
+  expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+it("ignores stale ipa responses after the selection changes", async () => {
+  installEdgeDesktopUserAgent();
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  let resolveFirstLookup: ((value: { json: () => Promise<Array<{ phonetics: Array<{ text: string }> }>>; ok: boolean }) => void) | null =
+    null;
+  const fetchSpy = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirstLookup = resolve;
+        }),
+    )
+    .mockResolvedValueOnce({
+      json: async () => [{ phonetics: [{ text: "/sekənd/" }] }],
+      ok: true,
+    });
+  vi.stubGlobal("fetch", fetchSpy);
+  const ai = {
+    translateSelection: vi.fn(async (text: string) => (text === "pressed" ? "按压" : "第二个")),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", isReleased: true, spineItemId: "chap-1", text: "pressed" });
+  });
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:4)", isReleased: true, spineItemId: "chap-1", text: "second" });
+  });
+
+  await waitFor(() => {
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  resolveFirstLookup?.({
+    json: async () => [{ phonetics: [{ text: "/prest/" }] }],
+    ok: true,
+  });
+
+  expect(await screen.findByText("第二个")).toBeInTheDocument();
+  expect(await screen.findByText("IPA: /sekənd/")).toBeInTheDocument();
+  expect(screen.queryByText("IPA: /prest/")).not.toBeInTheDocument();
+});
+
 it("waits until the selection is released before auto-translating and auto-reading", async () => {
   installEdgeDesktopUserAgent();
   const browserTts = installSpeechSynthesis([

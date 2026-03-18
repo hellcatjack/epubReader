@@ -10,6 +10,7 @@ import type { BrowserTtsVoice } from "../tts/browserTtsClient";
 type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   annotationCount?: number;
   aiError?: string;
+  aiIpa?: string;
   aiResult?: string;
   aiTitle?: string;
   appearance?: ReaderPreferences;
@@ -40,6 +41,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
 export function RightPanel({
   annotationCount,
   aiError,
+  aiIpa,
   aiResult,
   aiTitle,
   appearance,
@@ -69,7 +71,7 @@ export function RightPanel({
 }: RightPanelProps) {
   return (
     <aside className="reader-tools" {...props}>
-      <AiResultPanel error={aiError} result={aiResult} selectedText={selectedText} title={aiTitle} />
+      <AiResultPanel error={aiError} ipa={aiIpa} result={aiResult} selectedText={selectedText} title={aiTitle} />
       <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
       <TtsStatusPanel
         currentText={ttsCurrentText}
