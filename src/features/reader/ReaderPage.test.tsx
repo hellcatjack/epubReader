@@ -99,6 +99,63 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
 });
 
+it("keeps tts queue above appearance and persists voice rate and volume changes from the reader rail", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+    { default: false, lang: "en-US", localService: false, name: "Microsoft Andrew Online (Natural)", voiceURI: "Microsoft Andrew Online (Natural)" },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  findCfiFromTextQuote: vi.fn(async () => null),
+                  getTextFromCurrentLocation: vi.fn(async () => "First paragraph.\n\nSecond paragraph."),
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const tools = await screen.findByRole("complementary", { name: /reader tools/i });
+  const ttsHeading = within(tools).getByRole("heading", { name: /tts queue/i });
+  const appearanceHeading = within(tools).getByRole("heading", { name: /appearance/i });
+  const ttsSettings = within(tools).getByRole("group", { name: /tts settings/i });
+  expect(ttsHeading.compareDocumentPosition(appearanceHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  await screen.findByRole("option", { name: /microsoft andrew online/i });
+  await user.selectOptions(within(ttsSettings).getByLabelText(/tts voice/i), "Microsoft Andrew Online (Natural)");
+  fireEvent.change(within(ttsSettings).getByLabelText(/^tts rate$/i), { target: { value: "1.15" } });
+  fireEvent.change(within(ttsSettings).getByLabelText(/tts volume/i), { target: { value: "0.85" } });
+
+  await waitFor(async () => {
+    expect(await getSettings()).toMatchObject({
+      ttsRate: 1.15,
+      ttsVoice: "Microsoft Andrew Online (Natural)",
+      ttsVolume: 0.85,
+    });
+  });
+});
+
 it("waits for persisted reader settings before mounting the viewport runtime", async () => {
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   installSpeechSynthesis([

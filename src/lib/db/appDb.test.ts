@@ -108,3 +108,19 @@ it("merges partial settings updates with existing persisted reader preferences",
     theme: "dark",
   });
 });
+
+it("serializes concurrent settings writes without dropping tts updates", async () => {
+  await Promise.all([
+    saveSettings({
+      ttsRate: 1.15,
+    }),
+    saveSettings({
+      ttsVolume: 0.85,
+    }),
+  ]);
+
+  await expect(getSettings()).resolves.toMatchObject({
+    ttsRate: 1.15,
+    ttsVolume: 0.85,
+  });
+});

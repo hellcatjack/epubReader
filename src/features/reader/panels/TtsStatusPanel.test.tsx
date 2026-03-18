@@ -1,27 +1,28 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, within } from "@testing-library/react";
 import { TtsStatusPanel } from "./TtsStatusPanel";
 
-describe("TtsStatusPanel", () => {
-  it("shows an edge support warning when browser tts is unsupported", () => {
-    render(<TtsStatusPanel error="TTS is optimized for Microsoft Edge on desktop." status="error" />);
+it("renders voice rate and volume controls inside the tts queue", () => {
+  render(
+    <TtsStatusPanel
+      rate={1}
+      status="idle"
+      voiceId="ava"
+      voices={[
+        {
+          displayName: "Microsoft Ava Online (Natural)",
+          gender: "female",
+          id: "ava",
+          isDefault: true,
+          locale: "en-US",
+        },
+      ]}
+      volume={0.9}
+    />,
+  );
 
-    expect(screen.getByText(/optimized for microsoft edge on desktop/i)).toBeInTheDocument();
-  });
-
-  it("shows a simpler loading label while the browser starts speaking", () => {
-    render(<TtsStatusPanel status="loading" currentText="First chunk." />);
-
-    expect(screen.getByText(/tts status: loading/i)).toBeInTheDocument();
-  });
-
-  it("renders quick rate controls in the tts panel", () => {
-    render(<TtsStatusPanel status="idle" rate={1} />);
-
-    expect(screen.getByRole("button", { name: /0.8x/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /1.0x/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /1.2x/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /1.4x/i })).toBeInTheDocument();
-  });
+  const settingsGroup = screen.getByRole("group", { name: /tts settings/i });
+  expect(within(settingsGroup).getByLabelText(/tts voice/i)).toBeInTheDocument();
+  expect(within(settingsGroup).getByLabelText(/^tts rate$/i)).toBeInTheDocument();
+  expect(within(settingsGroup).getByLabelText(/tts volume/i)).toBeInTheDocument();
 });

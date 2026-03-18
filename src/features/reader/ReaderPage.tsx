@@ -12,7 +12,7 @@ import {
   resolvePreferredSettingsSnapshot,
   writeRefreshSettingsSnapshot,
 } from "../settings/refreshSettingsSnapshot";
-import { createBrowserTtsClient } from "../tts/browserTtsClient";
+import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
 import { chunkTextSegments, chunkTextSegmentsFromBlocks, type ChunkSegment } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
 import "./reader.css";
@@ -157,6 +157,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
   const [isSettingsReady, setIsSettingsReady] = useState(false);
+  const [ttsVoices, setTtsVoices] = useState<BrowserTtsVoice[]>([]);
   const [ttsStartReady, setTtsStartReady] = useState(false);
   const [ttsState, setTtsState] = useState<ReaderTtsState>({
     chunkIndex: -1,
@@ -169,6 +170,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
     status: "idle",
   });
   const settingsDirtyRef = useRef(false);
+  const settingsRef = useRef<SettingsInput>(defaultSettings);
   const aiRequestVersionRef = useRef(0);
   const lastAutoTranslatedSelectionKeyRef = useRef("");
   const activeSelectionSpeechRequestRef = useRef(0);
@@ -264,6 +266,10 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   }, [bookId]);
 
   useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
     let cancelled = false;
     const refreshSnapshot = readRefreshSettingsSnapshot();
 
@@ -325,6 +331,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
 
     if (!runtimeHandle) {
       setTtsStartReady(false);
+      setTtsVoices([]);
       return;
     }
 
@@ -341,6 +348,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         mode: "idle",
         status: "error",
       });
+      setTtsVoices([]);
       return;
     }
 
@@ -349,6 +357,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         if (ttsReadinessRequestRef.current !== requestId) {
           return;
         }
+
+        setTtsVoices(voices);
 
         if (!voices.length) {
           setTtsStartReady(false);
@@ -399,6 +409,7 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
           return;
         }
 
+        setTtsVoices([]);
         setTtsStartReady(false);
         setTtsState((currentState) =>
           currentState.mode === "idle"
@@ -830,8 +841,9 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
   }
 
   async function updateSettings(patch: Partial<SettingsInput>) {
-    const nextSettings = { ...settings, ...patch };
+    const nextSettings = { ...settingsRef.current, ...patch };
     settingsDirtyRef.current = true;
+    settingsRef.current = nextSettings;
     setSettings(nextSettings);
     writeRefreshSettingsSnapshot(nextSettings);
     await saveSettings(patch);
@@ -879,6 +891,14 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
         volume: settings.ttsVolume,
       },
     });
+  }
+
+  async function handleTtsVoiceChange(voiceId: string) {
+    await updateSettings({ ttsVoice: voiceId });
+  }
+
+  async function handleTtsVolumeChange(volume: number) {
+    await updateSettings({ ttsVolume: volume });
   }
 
   async function handleStartTts() {
@@ -1101,6 +1121,8 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
             onTtsResume={handleResumeTts}
             onTtsStart={handleStartTts}
             onTtsStop={handleStopTts}
+            onTtsVoiceChange={handleTtsVoiceChange}
+            onTtsVolumeChange={handleTtsVolumeChange}
             readerStatus={readerStatus}
             selectedText={selectedText}
             ttsCurrentText={ttsState.currentText}
@@ -1108,6 +1130,9 @@ export function ReaderPage({ ai = aiService, runtime }: ReaderPageProps) {
             ttsRate={settings.ttsRate}
             ttsStartDisabled={!ttsStartReady}
             ttsStatus={ttsState.status}
+            ttsVoice={settings.ttsVoice}
+            ttsVoices={ttsVoices}
+            ttsVolume={settings.ttsVolume}
           />
         </div>
       </section>

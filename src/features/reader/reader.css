@@ -80,6 +80,41 @@
   color: #5c4635;
 }
 
+.reader-tts-field {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.reader-tts-field span {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a6647;
+}
+
+.reader-tts-field select,
+.reader-tts-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(79, 49, 24, 0.16);
+  border-radius: 0.85rem;
+  background: #fffdf9;
+  color: inherit;
+  font: inherit;
+}
+
+.reader-tts-voice {
+  flex: 1 1 12rem;
+  max-width: 14rem;
+}
+
+.reader-tts-number {
+  flex: 0 0 5.75rem;
+  width: 5.75rem;
+}
+
 .reader-list {
   padding-left: 1.1rem;
 }
@@ -144,7 +179,9 @@
 
 .reader-topbar-actions,
 .reader-mode-toggle,
-.reader-page-controls {
+.reader-page-controls,
+.reader-tts-actions,
+.reader-tts-settings {
   display: flex;
   gap: 0.75rem;
   align-items: center;

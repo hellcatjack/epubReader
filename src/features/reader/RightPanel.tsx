@@ -5,6 +5,7 @@ import { AppearancePanel } from "./panels/AppearancePanel";
 import { NoteEditorPanel } from "./panels/NoteEditorPanel";
 import { ReaderStatusPanel } from "./panels/ReaderStatusPanel";
 import { TtsStatusPanel } from "./panels/TtsStatusPanel";
+import type { BrowserTtsVoice } from "../tts/browserTtsClient";
 
 type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   annotationCount?: number;
@@ -22,6 +23,8 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onTtsResume?: () => void;
   onTtsStart?: () => void;
   onTtsStop?: () => void;
+  onTtsVoiceChange?: (voiceId: string) => void;
+  onTtsVolumeChange?: (volume: number) => void;
   readerStatus?: string;
   ttsRate?: number;
   selectedText?: string;
@@ -29,6 +32,9 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   ttsCurrentText?: string;
   ttsError?: string;
   ttsStatus?: "idle" | "loading" | "playing" | "paused" | "error";
+  ttsVoice?: string;
+  ttsVoices?: BrowserTtsVoice[];
+  ttsVolume?: number;
 };
 
 export function RightPanel({
@@ -47,6 +53,8 @@ export function RightPanel({
   onTtsResume,
   onTtsStart,
   onTtsStop,
+  onTtsVoiceChange,
+  onTtsVolumeChange,
   readerStatus,
   selectedText,
   ttsStartDisabled,
@@ -54,6 +62,9 @@ export function RightPanel({
   ttsError,
   ttsRate,
   ttsStatus,
+  ttsVoice,
+  ttsVoices,
+  ttsVolume,
   ...props
 }: RightPanelProps) {
   return (
@@ -71,6 +82,11 @@ export function RightPanel({
         rate={ttsRate}
         startDisabled={ttsStartDisabled}
         status={ttsStatus}
+        voiceId={ttsVoice}
+        voices={ttsVoices}
+        volume={ttsVolume}
+        onVoiceChange={onTtsVoiceChange}
+        onVolumeChange={onTtsVolumeChange}
       />
       {appearance ? <AppearancePanel onChange={onAppearanceChange} preferences={appearance} /> : null}
       <NoteEditorPanel

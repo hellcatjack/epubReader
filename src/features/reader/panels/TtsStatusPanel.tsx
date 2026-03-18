@@ -1,3 +1,5 @@
+import type { BrowserTtsVoice } from "../../tts/browserTtsClient";
+
 type TtsStatusPanelProps = {
   currentText?: string;
   error?: string;
@@ -6,9 +8,14 @@ type TtsStatusPanelProps = {
   onResume?: () => void;
   onStart?: () => void;
   onStop?: () => void;
+  onVoiceChange?: (voiceId: string) => void;
+  onVolumeChange?: (volume: number) => void;
   rate?: number;
   startDisabled?: boolean;
   status?: "idle" | "loading" | "playing" | "paused" | "error";
+  voiceId?: string;
+  voices?: BrowserTtsVoice[];
+  volume?: number;
 };
 
 const quickRates = [0.8, 1, 1.2, 1.4];
@@ -21,9 +28,14 @@ export function TtsStatusPanel({
   onResume,
   onStart,
   onStop,
+  onVoiceChange,
+  onVolumeChange,
   rate = 1,
   startDisabled = false,
   status = "idle",
+  voiceId = "",
+  voices = [],
+  volume = 1,
 }: TtsStatusPanelProps) {
   return (
     <section className="reader-panel" aria-label="TTS queue">
@@ -44,6 +56,47 @@ export function TtsStatusPanel({
         <button type="button" onClick={onStop}>
           Stop TTS
         </button>
+      </div>
+      <div className="reader-tts-settings" role="group" aria-label="TTS settings">
+        <label className="reader-tts-field reader-tts-voice">
+          <span>Voice</span>
+          <select
+            aria-label="TTS voice"
+            onChange={(event) => onVoiceChange?.(event.target.value)}
+            value={voiceId}
+          >
+            {voices.length ? null : <option value={voiceId}>{voiceId}</option>}
+            {voices.map((voice) => (
+              <option key={voice.id} value={voice.id}>
+                {voice.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="reader-tts-field reader-tts-number">
+          <span>Rate</span>
+          <input
+            aria-label="TTS rate"
+            inputMode="decimal"
+            onChange={(event) => onRateChange?.(Number.parseFloat(event.target.value || "1") || 1)}
+            step="0.05"
+            type="number"
+            value={rate}
+          />
+        </label>
+        <label className="reader-tts-field reader-tts-number">
+          <span>Volume</span>
+          <input
+            aria-label="TTS volume"
+            inputMode="decimal"
+            max="1"
+            min="0"
+            onChange={(event) => onVolumeChange?.(Number.parseFloat(event.target.value || "1") || 1)}
+            step="0.05"
+            type="number"
+            value={volume}
+          />
+        </label>
       </div>
       <div className="reader-tts-actions" role="group" aria-label="TTS rate presets">
         {quickRates.map((presetRate) => {

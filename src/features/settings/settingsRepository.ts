@@ -24,6 +24,7 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
 }
 
 export const defaultSettings: SettingsInput = createDefaultSettings();
+let settingsWriteQueue = Promise.resolve();
 
 function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | null) {
   if (!record) {
@@ -84,14 +85,20 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
 }
 
 export async function saveSettings(settings: SettingsPatch) {
-  const existingSettings = await db.settings.get("settings");
+  settingsWriteQueue = settingsWriteQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const existingSettings = await db.settings.get("settings");
 
-  await db.settings.put({
-    id: "settings",
-    ...defaultSettings,
-    ...existingSettings,
-    ...settings,
-  });
+      await db.settings.put({
+        id: "settings",
+        ...defaultSettings,
+        ...existingSettings,
+        ...settings,
+      });
+    });
+
+  await settingsWriteQueue;
 }
 
 export async function getSettings() {
