@@ -1,7 +1,53 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
+
+async function selectWordCountInIframe(page: Page, count: number) {
+  await page.waitForFunction((nextCount) => {
+    const frame = document.querySelector<HTMLIFrameElement>(".epub-root iframe");
+    const doc = frame?.contentDocument;
+    const paragraph = doc?.querySelector("p");
+    const text = paragraph?.textContent?.trim() ?? "";
+    const words = [...text.matchAll(/[A-Za-z]+(?:['-][A-Za-z]+)*/g)];
+    return words.length >= nextCount;
+  }, count);
+
+  return await page.locator(".epub-root iframe").evaluateAll((frames, nextCount) => {
+    const wordPattern = /[A-Za-z]+(?:['-][A-Za-z]+)*/g;
+
+    for (const frame of frames) {
+      const doc = frame.contentDocument;
+      const paragraph = doc?.querySelector("p");
+      const textNode = paragraph?.firstChild;
+      const text = textNode?.textContent ?? "";
+      const words = [...text.matchAll(wordPattern)];
+
+      if (!doc || !paragraph || !textNode || words.length < nextCount) {
+        continue;
+      }
+
+      const start = words[0]?.index ?? 0;
+      const endMatch = words[nextCount - 1];
+      if (endMatch?.index == null) {
+        continue;
+      }
+
+      const end = endMatch.index + endMatch[0].length;
+      const range = doc.createRange();
+      range.setStart(textNode, start);
+      range.setEnd(textNode, end);
+      const selection = frame.contentWindow?.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      doc.dispatchEvent(new Event("selectionchange"));
+      frame.contentWindow?.dispatchEvent(new Event("mouseup"));
+      return text.slice(start, end);
+    }
+
+    return "";
+  }, count);
+}
 
 test("ai actions translate explain and save a note for selected text", async ({ page }) => {
   const requestPrompts: string[] = [];
@@ -24,10 +70,28 @@ test("ai actions translate explain and save a note for selected text", async ({ 
       }),
     });
   });
+  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+    });
+  });
 
   await page.goto("/");
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
+
+  const selectedWord = await selectWordCountInIframe(page, 1);
+  expect(selectedWord.length).toBeGreaterThan(0);
+  await expect(page.getByLabel("AI result")).toContainText(`Selection: ${selectedWord}`);
+  await expect(page.getByLabel("AI result")).toContainText("IPA: /ipa/");
+  await expect(page.getByLabel("AI result")).toContainText("中文翻译");
+
+  const selectedPhrase = await selectWordCountInIframe(page, 2);
+  expect(selectedPhrase.split(/\s+/).length).toBe(2);
+  await expect(page.getByLabel("AI result")).toContainText(`Selection: ${selectedPhrase}`);
+  await expect(page.getByLabel("AI result")).not.toContainText("IPA: /ipa/");
 
   const selected = await selectTextInIframe(page);
   expect(selected.length).toBeGreaterThan(0);
@@ -37,9 +101,9 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   await page.getByRole("button", { name: "Explain" }).click();
   await expect(page.getByLabel("AI result")).toContainText("中文解释");
   await expect(page.getByLabel("AI result")).toContainText("English explanation");
-  expect(requestPrompts[0]).toContain("Simplified Chinese");
-  expect(requestPrompts[1]).toContain("Reply only in Simplified Chinese");
-  expect(requestPrompts[2]).toContain("Reply only in English");
+  expect(requestPrompts.some((prompt) => prompt.includes("Simplified Chinese"))).toBe(true);
+  expect(requestPrompts.some((prompt) => prompt.includes("Reply only in Simplified Chinese"))).toBe(true);
+  expect(requestPrompts.some((prompt) => prompt.includes("Reply only in English"))).toBe(true);
 
   await page.getByRole("button", { name: "Add note" }).click();
   await page.getByRole("textbox", { name: /note body/i }).fill("Remember this sentence");
