@@ -118,7 +118,7 @@ test("paginated mode always renders as a single page column even after refresh",
   expect(after).toBe("1");
 });
 
-test("scrolled and paginated prose pages use the same visible page width", async ({ page }) => {
+test("scrolled mode keeps a comfortably wider prose page than paginated mode", async ({ page }) => {
   await page.setViewportSize({ width: 2560, height: 1440 });
   await page.goto("/");
   await page.setInputFiles("input[type=file]", fixturePath);
@@ -131,5 +131,6 @@ test("scrolled and paginated prose pages use the same visible page width", async
 
   const paginatedWidth = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().width);
 
-  expect(Math.abs(scrolledWidth - paginatedWidth)).toBeLessThan(8);
+  expect(scrolledWidth).toBeGreaterThan(520);
+  expect(scrolledWidth).toBeGreaterThan(paginatedWidth * 1.8);
 });

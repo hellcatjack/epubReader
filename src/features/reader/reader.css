@@ -361,13 +361,13 @@
   box-shadow: 0 1.2rem 3rem rgba(77, 50, 28, 0.12);
 }
 
-.epub-root[data-page-kind="prose"] {
+.epub-root[data-reader-mode="paginated"][data-page-kind="prose"] {
   width: 50%;
   max-width: 50%;
   justify-self: center;
 }
 
-.epub-root[data-page-kind="image"] {
+.epub-root[data-reader-mode="paginated"][data-page-kind="image"] {
   width: 100%;
   max-width: 100%;
   justify-self: stretch;
@@ -486,7 +486,7 @@
     min-height: min(70dvh, 38rem);
   }
 
-  .epub-root[data-page-kind="prose"] {
+  .epub-root[data-reader-mode="paginated"][data-page-kind="prose"] {
     width: 100%;
     max-width: none;
   }
