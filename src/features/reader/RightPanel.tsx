@@ -9,11 +9,10 @@ import type { BrowserTtsVoice } from "../tts/browserTtsClient";
 
 type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   annotationCount?: number;
-  aiError?: string;
   aiIpa?: string;
-  aiResult?: string;
-  aiTitle?: string;
   appearance?: ReaderPreferences;
+  explanation?: string;
+  explanationError?: string;
   noteDraft?: string;
   noteOpen?: boolean;
   onAppearanceChange?: (patch: Partial<ReaderPreferences>) => void;
@@ -29,6 +28,8 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   readerStatus?: string;
   ttsRate?: number;
   selectedText?: string;
+  translation?: string;
+  translationError?: string;
   ttsStartDisabled?: boolean;
   ttsCurrentText?: string;
   ttsError?: string;
@@ -40,11 +41,10 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
 
 export function RightPanel({
   annotationCount,
-  aiError,
   aiIpa,
-  aiResult,
-  aiTitle,
   appearance,
+  explanation,
+  explanationError,
   noteDraft,
   noteOpen,
   onAppearanceChange,
@@ -59,6 +59,8 @@ export function RightPanel({
   onTtsVolumeChange,
   readerStatus,
   selectedText,
+  translation,
+  translationError,
   ttsStartDisabled,
   ttsCurrentText,
   ttsError,
@@ -71,7 +73,14 @@ export function RightPanel({
 }: RightPanelProps) {
   return (
     <aside className="reader-tools" {...props}>
-      <AiResultPanel error={aiError} ipa={aiIpa} result={aiResult} selectedText={selectedText} title={aiTitle} />
+      <AiResultPanel
+        explanation={explanation}
+        explanationError={explanationError}
+        ipa={aiIpa}
+        selectedText={selectedText}
+        translation={translation}
+        translationError={translationError}
+      />
       <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
       <TtsStatusPanel
         currentText={ttsCurrentText}

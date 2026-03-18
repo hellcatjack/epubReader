@@ -141,10 +141,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     bookId ? "Restoring reading position..." : "Open a book from the shelf to start reading.",
   );
   const [selectedSelection, setSelectedSelection] = useState<ReaderSelection | null>(null);
-  const [aiError, setAiError] = useState("");
   const [aiIpa, setAiIpa] = useState("");
-  const [aiResult, setAiResult] = useState("");
-  const [aiTitle, setAiTitle] = useState("AI result");
+  const [translation, setTranslation] = useState("");
+  const [translationError, setTranslationError] = useState("");
+  const [explanation, setExplanation] = useState("");
+  const [explanationError, setExplanationError] = useState("");
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [currentLocation, setCurrentLocation] = useState<ReaderLocationState>({
     cfi: "",
@@ -435,7 +436,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   useEffect(() => {
     const unsubscribe = selectionBridge.subscribe((selection) => {
       setSelectedSelection(selection);
-      setAiError("");
 
       if (!selection?.text.trim()) {
         lastAutoTranslatedSelectionKeyRef.current = "";
@@ -625,10 +625,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     const requestVersion = ++aiRequestVersionRef.current;
     const ipaWord = getEligibleIpaWord(nextText);
-    setAiTitle("Translation");
-    setAiError("");
+    setTranslationError("");
+    setExplanation("");
+    setExplanationError("");
     setAiIpa("");
-    setAiResult("");
+    setTranslation("");
 
     try {
       const [result, ipa] = await Promise.all([
@@ -640,13 +641,13 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
-      setAiResult(result);
+      setTranslation(result);
       setAiIpa(ipa ?? "");
     } catch (error) {
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
-      setAiError(`Translate failed: ${String(error)}`);
+      setTranslationError(`Translate failed: ${String(error)}`);
     }
   }
 
@@ -657,10 +658,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
 
     const requestVersion = ++aiRequestVersionRef.current;
-    setAiTitle("Explanation");
-    setAiError("");
-    setAiIpa("");
-    setAiResult("");
+    setExplanation("");
+    setExplanationError("");
 
     try {
       const result = await ai.explainSelection(nextText, {
@@ -669,12 +668,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
-      setAiResult(result);
+      setExplanation(result);
     } catch (error) {
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
-      setAiError(`Explain failed: ${String(error)}`);
+      setExplanationError(`Explain failed: ${String(error)}`);
     }
   }
 
@@ -1116,13 +1115,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             />
           </section>
           <RightPanel
-            aiError={aiError}
             aiIpa={aiIpa}
-            aiResult={aiResult}
-            aiTitle={aiTitle}
             annotationCount={visibleAnnotations.length}
             appearance={readerPreferences}
             aria-label="Reader tools"
+            explanation={explanation}
+            explanationError={explanationError}
             noteDraft={noteDraft}
             noteOpen={noteOpen}
             onAppearanceChange={handleAppearanceChange}
@@ -1137,6 +1135,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             onTtsVolumeChange={handleTtsVolumeChange}
             readerStatus={readerStatus}
             selectedText={selectedText}
+            translation={translation}
+            translationError={translationError}
             ttsCurrentText={ttsState.currentText}
             ttsError={ttsState.error}
             ttsRate={settings.ttsRate}

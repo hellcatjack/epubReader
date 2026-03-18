@@ -85,14 +85,17 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   const selectedWord = await selectWordCountInIframe(page, 1);
   expect(selectedWord.length).toBeGreaterThan(0);
   const aiMeta = page.locator(".reader-ai-meta");
-  const aiResult = page.locator(".reader-ai-result");
+  const translationSurface = page.locator(".reader-ai-surface-primary");
+  const explanationSurface = page.locator(".reader-ai-surface-secondary");
   await expect(aiMeta).toBeVisible();
-  await expect(aiResult).toBeVisible();
+  await expect(translationSurface).toBeVisible();
+  await expect(explanationSurface).toBeVisible();
   await expect(aiMeta).toContainText("Selection");
   await expect(aiMeta).toContainText(selectedWord);
   await expect(aiMeta).toContainText("IPA");
   await expect(aiMeta).toContainText("/ipa/");
-  await expect(aiResult).toContainText("中文翻译");
+  await expect(translationSurface).toContainText("中文翻译");
+  await expect(explanationSurface).toContainText("Click Explain for deeper context.");
 
   const selectedPhrase = await selectWordCountInIframe(page, 2);
   expect(selectedPhrase.split(/\s+/).length).toBe(2);
@@ -102,11 +105,13 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   const selected = await selectTextInIframe(page);
   expect(selected.length).toBeGreaterThan(0);
 
-  await expect(aiResult).toContainText("中文翻译");
+  await expect(translationSurface).toContainText("中文翻译");
 
   await page.getByRole("button", { name: "Explain" }).click();
-  await expect(page.getByLabel("AI result")).toContainText("中文解释");
-  await expect(page.getByLabel("AI result")).toContainText("English explanation");
+  await expect(translationSurface).toContainText("中文翻译");
+  await expect(explanationSurface).toContainText("中文解释");
+  await expect(explanationSurface).toContainText("English explanation");
+  await expect(explanationSurface).not.toContainText("Click Explain for deeper context.");
   expect(requestPrompts.some((prompt) => prompt.includes("Simplified Chinese"))).toBe(true);
   expect(requestPrompts.some((prompt) => prompt.includes("Reply only in Simplified Chinese"))).toBe(true);
   expect(requestPrompts.some((prompt) => prompt.includes("Reply only in English"))).toBe(true);

@@ -133,6 +133,45 @@
   color: #8b3f24;
 }
 
+.reader-ai-surface {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(79, 49, 24, 0.1);
+  border-radius: 1rem;
+}
+
+.reader-ai-surface h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a6647;
+}
+
+.reader-ai-surface p {
+  line-height: 1.75;
+  white-space: pre-wrap;
+  color: #422f23;
+}
+
+.reader-ai-surface-primary {
+  background: rgba(255, 253, 249, 0.97);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.reader-ai-surface-secondary {
+  background: rgba(249, 243, 235, 0.92);
+}
+
+.reader-ai-placeholder {
+  color: #745c48;
+}
+
+.reader-ai-section-error {
+  color: #8b3f24;
+}
+
 .reader-layout.theme-dark .reader-ai-meta {
   border-color: rgba(228, 191, 148, 0.14);
   background: rgba(67, 47, 38, 0.94);
@@ -154,6 +193,32 @@
 
 .reader-layout.theme-dark .reader-ai-result p {
   color: #f2e6d6;
+}
+
+.reader-layout.theme-dark .reader-ai-surface {
+  border-color: rgba(228, 191, 148, 0.14);
+}
+
+.reader-layout.theme-dark .reader-ai-surface h3 {
+  color: #cfa67d;
+}
+
+.reader-layout.theme-dark .reader-ai-surface p {
+  color: #f2e6d6;
+}
+
+.reader-layout.theme-dark .reader-ai-surface-primary {
+  background: rgba(59, 40, 31, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.reader-layout.theme-dark .reader-ai-surface-secondary {
+  background: rgba(53, 37, 29, 0.92);
+}
+
+.reader-layout.theme-dark .reader-ai-placeholder,
+.reader-layout.theme-dark .reader-ai-section-error {
+  color: #d6c0ab;
 }
 
 .reader-tts-field {

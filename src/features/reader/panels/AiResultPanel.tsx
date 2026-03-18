@@ -1,24 +1,27 @@
 type AiResultPanelProps = {
-  error?: string;
+  explanation?: string;
+  explanationError?: string;
   ipa?: string;
-  result?: string;
   selectedText?: string;
-  title?: string;
+  translation?: string;
+  translationError?: string;
 };
 
 export function AiResultPanel({
-  error,
+  explanation,
+  explanationError,
   ipa,
-  result,
   selectedText,
-  title = "AI result",
+  translation,
+  translationError,
 }: AiResultPanelProps) {
-  const isTranslation = title === "Translation";
-  const showMeta = Boolean(selectedText || (isTranslation && ipa));
+  const showMeta = Boolean(selectedText || ipa);
+  const translationText = translation || "Select text to translate or explain it in context.";
+  const explanationText = explanation || "Click Explain for deeper context.";
 
   return (
     <section className="reader-panel reader-ai-panel" aria-label="AI result">
-      <h2>{title}</h2>
+      <h2>Reading assistant</h2>
       {showMeta ? (
         <div className="reader-ai-meta">
           {selectedText ? (
@@ -27,7 +30,7 @@ export function AiResultPanel({
               <span className="reader-ai-value">{selectedText}</span>
             </div>
           ) : null}
-          {isTranslation && ipa ? (
+          {ipa ? (
             <div className="reader-ai-meta-row">
               <span className="reader-ai-label">IPA</span>
               <span className="reader-ai-value">{ipa}</span>
@@ -35,10 +38,22 @@ export function AiResultPanel({
           ) : null}
         </div>
       ) : null}
-      <div className="reader-ai-result">
-        <p>{result ? result : "Select text to translate or explain it in context."}</p>
-      </div>
-      {error ? <p className="reader-ai-error">{error}</p> : null}
+      <section className="reader-ai-surface reader-ai-surface-primary" aria-label="Translation result">
+        <h3>Translation</h3>
+        {translationError ? (
+          <p className="reader-ai-section-error">{translationError}</p>
+        ) : (
+          <p className={translation ? undefined : "reader-ai-placeholder"}>{translationText}</p>
+        )}
+      </section>
+      <section className="reader-ai-surface reader-ai-surface-secondary" aria-label="Explanation result">
+        <h3>Explanation</h3>
+        {explanationError ? (
+          <p className="reader-ai-section-error">{explanationError}</p>
+        ) : (
+          <p className={explanation ? undefined : "reader-ai-placeholder"}>{explanationText}</p>
+        )}
+      </section>
     </section>
   );
 }

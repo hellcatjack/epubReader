@@ -105,6 +105,8 @@ it("automatically translates and auto-reads a new selection while keeping explai
     expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(1);
   });
   expect(await screen.findByText("你好，世界")).toBeInTheDocument();
+  expect(screen.getByLabelText("Translation result")).toHaveTextContent("你好，世界");
+  expect(screen.getByLabelText("Explanation result")).toHaveTextContent("Click Explain for deeper context.");
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
   expect(ai.explainSelection).toHaveBeenCalledWith(
@@ -112,6 +114,8 @@ it("automatically translates and auto-reads a new selection while keeping explai
     expect.objectContaining({ targetLanguage: "zh-CN" }),
   );
   expect(await screen.findByText("A short contextual explanation")).toBeInTheDocument();
+  expect(screen.getByLabelText("Translation result")).toHaveTextContent("你好，世界");
+  expect(screen.getByLabelText("Explanation result")).not.toHaveTextContent("Click Explain for deeper context.");
 
   await user.click(screen.getByRole("button", { name: /add note/i }));
   expect(screen.getByRole("textbox", { name: /note body/i })).toBeInTheDocument();
@@ -245,6 +249,40 @@ it("ignores stale ipa responses after the selection changes", async () => {
   expect(await screen.findByText("第二个")).toBeInTheDocument();
   expect(await screen.findByText("/sekənd/")).toBeInTheDocument();
   expect(screen.queryByText("/prest/")).not.toBeInTheDocument();
+});
+
+it("keeps translation visible when explain fails", async () => {
+  const user = userEvent.setup();
+  installEdgeDesktopUserAgent();
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    translateSelection: vi.fn(async () => "按压"),
+    explainSelection: vi.fn(async () => {
+      throw new Error("provider unavailable");
+    }),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", isReleased: true, spineItemId: "chap-1", text: "pressed" });
+  });
+
+  expect(await screen.findByText("按压")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /explain/i }));
+
+  expect(await screen.findByText(/Explain failed:/)).toBeInTheDocument();
+  expect(screen.getByLabelText("Translation result")).toHaveTextContent("按压");
 });
 
 it("waits until the selection is released before auto-translating and auto-reading", async () => {
