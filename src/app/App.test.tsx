@@ -11,11 +11,11 @@ it("renders the shared app shell on the bookshelf route", () => {
     </MemoryRouter>,
   );
 
-  const banner = screen.getByRole("banner", { name: /reader app navigation/i });
-  expect(banner).toBeInTheDocument();
-  expect(within(banner).getByRole("button", { name: /library/i })).toBeInTheDocument();
-  expect(within(banner).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
-  expect(within(banner).getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  const navigation = screen.getByRole("navigation", { name: /reader app navigation/i });
+  expect(navigation).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: /library/i })).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: /settings/i })).toBeInTheDocument();
 });
 
 it("renders the shared app shell on the reader route", () => {
@@ -25,9 +25,9 @@ it("renders the shared app shell on the reader route", () => {
     </MemoryRouter>,
   );
 
-  const banner = screen.getByRole("banner", { name: /reader app navigation/i });
-  expect(banner).toBeInTheDocument();
-  expect(within(banner).getByRole("button", { name: /library/i })).toBeInTheDocument();
-  expect(within(banner).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
-  expect(within(banner).getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  const navigation = screen.getByRole("navigation", { name: /reader app navigation/i });
+  expect(navigation).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: /library/i })).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: /settings/i })).toBeInTheDocument();
 });

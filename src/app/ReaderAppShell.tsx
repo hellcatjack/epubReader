@@ -6,11 +6,11 @@ const shellContext: ReaderAppShellContext = {};
 export function ReaderAppShell() {
   return (
     <>
-      <header aria-label="Reader app navigation" role="banner">
+      <nav aria-label="Reader app navigation">
         <button type="button">Library</button>
         <button type="button">Import EPUB</button>
         <button type="button">Settings</button>
-      </header>
+      </nav>
       <Outlet context={shellContext} />
     </>
   );
