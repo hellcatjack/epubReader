@@ -5,7 +5,7 @@ const shellContext: ReaderAppShellContext = {};
 
 export function ReaderAppShell() {
   return (
-    <div className="reader-app-shell" data-testid="reader-app-shell">
+    <div className="reader-app-shell">
       <nav aria-label="Reader app navigation">
         <button type="button">Library</button>
         <button type="button">Import EPUB</button>
