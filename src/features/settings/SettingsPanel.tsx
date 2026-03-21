@@ -19,7 +19,7 @@ export function SettingsPanel({ children, onClose, open }: SettingsPanelProps) {
       >
         <div className="settings-panel-topbar">
           <div>
-            <p className="settings-dialog-eyebrow">Library controls</p>
+            <p className="settings-dialog-eyebrow">Reader preferences</p>
             <h2>Reader settings</h2>
           </div>
           <button type="button" className="settings-toggle" onClick={onClose}>
