@@ -9,17 +9,17 @@ import { LibraryPanel } from "./LibraryPanel";
 const books: BookshelfListItem[] = [
   {
     id: "book-1",
-    title: "Minimal Valid EPUB",
+    title: "Second Book",
     author: "Author",
-    progressLabel: "42% read",
-    lastReadAt: 200,
+    progressLabel: "10% read",
+    lastReadAt: 100,
   },
   {
     id: "book-2",
-    title: "Second Book",
+    title: "Minimal Valid EPUB",
     author: "Writer",
-    progressLabel: "Unread",
-    lastReadAt: 100,
+    progressLabel: "42% read",
+    lastReadAt: 200,
   },
 ];
 
@@ -33,6 +33,7 @@ it("renders the continue-reading card and local books list", () => {
   const continueReading = screen.getByRole("region", { name: /continue reading/i });
   expect(within(continueReading).getByRole("heading", { name: /continue reading/i })).toBeInTheDocument();
   expect(within(continueReading).getByText("Minimal Valid EPUB")).toBeInTheDocument();
+  expect(within(continueReading).getByRole("button", { name: /continue minimal valid epub/i })).toBeInTheDocument();
   expect(within(screen.getByRole("region", { name: /local books/i })).getByText("Second Book")).toBeInTheDocument();
 });
 
@@ -48,7 +49,7 @@ it("calls onOpenBook from the continue-reading action", async () => {
 
   await user.click(screen.getByRole("button", { name: /continue minimal valid epub/i }));
 
-  expect(onOpenBook).toHaveBeenCalledWith("book-1");
+  expect(onOpenBook).toHaveBeenCalledWith("book-2");
 });
 
 it("calls onDeleteBook from a local book card", async () => {
@@ -63,7 +64,7 @@ it("calls onDeleteBook from a local book card", async () => {
 
   await user.click(screen.getByRole("button", { name: /delete book second book/i }));
 
-  expect(onDeleteBook).toHaveBeenCalledWith("book-2");
+  expect(onDeleteBook).toHaveBeenCalledWith("book-1");
 });
 
 it("shows empty-state copy when there are no local books", () => {

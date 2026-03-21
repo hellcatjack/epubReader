@@ -65,6 +65,6 @@ it("does not own import or settings actions anymore", async () => {
     </MemoryRouter>,
   );
 
-  expect(screen.queryByRole("button", { name: /import epub/i })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/import epub/i)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /settings/i })).not.toBeInTheDocument();
 });
