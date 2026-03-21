@@ -16,6 +16,7 @@ it("renders the shared app shell on the bookshelf route", () => {
   expect(within(navigation).getByRole("button", { name: /library/i })).toBeInTheDocument();
   expect(within(navigation).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
   expect(within(navigation).getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /bookshelf/i })).toBeInTheDocument();
 });
 
 it("renders the shared app shell on the reader route", () => {
@@ -30,4 +31,5 @@ it("renders the shared app shell on the reader route", () => {
   expect(within(navigation).getByRole("button", { name: /library/i })).toBeInTheDocument();
   expect(within(navigation).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
   expect(within(navigation).getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /preparing your book/i })).toBeInTheDocument();
 });
