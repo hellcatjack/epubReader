@@ -18,6 +18,7 @@ it("renders the shared shell navigation and outlet content", () => {
     </MemoryRouter>,
   );
 
+  expect(screen.getByTestId("reader-app-shell")).toBeInTheDocument();
   const navigation = screen.getByRole("navigation", { name: /reader app navigation/i });
   expect(navigation).toBeInTheDocument();
   expect(within(navigation).getByRole("button", { name: /library/i })).toBeInTheDocument();
@@ -25,4 +26,3 @@ it("renders the shared shell navigation and outlet content", () => {
   expect(within(navigation).getByRole("button", { name: /settings/i })).toBeInTheDocument();
   expect(screen.getByText("Shell outlet content")).toBeInTheDocument();
 });
-
