@@ -52,6 +52,21 @@ it("calls onOpenBook from the continue-reading action", async () => {
   expect(onOpenBook).toHaveBeenCalledWith("book-2");
 });
 
+it("calls onOpenBook from a local book card", async () => {
+  const user = userEvent.setup();
+  const onOpenBook = vi.fn();
+
+  render(
+    <MemoryRouter>
+      <LibraryPanel books={books} onDeleteBook={vi.fn()} onOpenBook={onOpenBook} />
+    </MemoryRouter>,
+  );
+
+  await user.click(screen.getByRole("button", { name: /open book second book/i }));
+
+  expect(onOpenBook).toHaveBeenCalledWith("book-1");
+});
+
 it("calls onDeleteBook from a local book card", async () => {
   const user = userEvent.setup();
   const onDeleteBook = vi.fn();
