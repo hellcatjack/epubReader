@@ -1,7 +1,4 @@
 .bookshelf-page {
-  display: grid;
-  align-content: start;
-  gap: 1.5rem;
   width: 100%;
   min-height: 100vh;
   padding: 1.5rem;
@@ -10,7 +7,7 @@
     linear-gradient(180deg, #f5ecde 0%, #efe2cb 100%);
 }
 
-.bookshelf-hero,
+.bookshelf-panel,
 .continue-reading-card,
 .bookshelf-section,
 .book-card {
@@ -20,27 +17,31 @@
   box-shadow: 0 1rem 2.4rem rgba(73, 44, 22, 0.08);
 }
 
-.bookshelf-hero,
+.bookshelf-panel,
 .continue-reading-card,
 .bookshelf-section {
   padding: 1.4rem;
 }
 
-.bookshelf-hero {
+.bookshelf-panel {
+  display: grid;
+  align-content: start;
+  gap: 1.5rem;
+}
+
+.continue-reading-card {
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: 1.25rem;
 }
 
-.bookshelf-hero-copy,
 .continue-reading-copy,
 .bookshelf-section-heading {
   display: grid;
   gap: 0.35rem;
 }
 
-.bookshelf-hero-copy h1,
 .continue-reading-copy h2,
 .continue-reading-copy h3,
 .bookshelf-section-heading h2,
@@ -57,7 +58,6 @@
   color: #8a6647;
 }
 
-.bookshelf-hero-description,
 .continue-reading-copy p,
 .book-card-author,
 .book-card-progress {
@@ -65,7 +65,6 @@
   color: #5f4b3b;
 }
 
-.bookshelf-hero-actions,
 .book-card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -98,21 +97,6 @@
   color: #4f3118;
 }
 
-.bookshelf-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.continue-reading-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
 .bookshelf-section {
   display: grid;
   gap: 1rem;
@@ -140,12 +124,16 @@
   text-decoration: none;
 }
 
+.bookshelf-empty-state {
+  margin: 0;
+  color: #5f4b3b;
+}
+
 @media (max-width: 720px) {
   .bookshelf-page {
     padding: 1rem;
   }
 
-  .bookshelf-hero,
   .continue-reading-card {
     flex-direction: column;
     align-items: stretch;
