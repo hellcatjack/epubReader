@@ -491,6 +491,13 @@
   background: linear-gradient(90deg, #ba6a2f 0%, #e1a144 100%);
 }
 
+.reader-progress-value {
+  margin: 0.35rem 0 0;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  color: #5d4129;
+}
+
 .reader-bookmark-button,
 .reader-mode-button,
 .reader-page-button,

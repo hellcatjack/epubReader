@@ -241,21 +241,11 @@ export function EpubViewport({
       onReady?.(null);
       selectionBridge.publish(null);
     };
-  }, [bookId, controller, initialCfi, initialProgress]);
+  }, [bookId, controller, initialCfi, initialProgress, readingMode]);
 
   useEffect(() => {
     activeTtsSegmentRef.current = activeTtsSegment;
   }, [activeTtsSegment]);
-
-  useEffect(() => {
-    if (!controller && runtimeHandleRef.current) {
-      const activeHandle = runtimeHandleRef.current;
-      void (async () => {
-        await activeHandle.setFlow(readingMode);
-        await activeHandle.setActiveTtsSegment(activeTtsSegmentRef.current);
-      })();
-    }
-  }, [controller, readingMode]);
 
   useEffect(() => {
     if (!controller && runtimeHandleRef.current) {

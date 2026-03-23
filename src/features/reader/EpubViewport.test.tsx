@@ -337,22 +337,33 @@ it("forwards active tts segments to the runtime handle", async () => {
 });
 
 it("reapplies the active tts segment after a reading-mode flow change settles", async () => {
-  const setActiveTtsSegment = vi.fn(async () => undefined);
-  const setFlow = vi.fn(async () => undefined);
+  const firstHandle = {
+    applyPreferences: vi.fn(async () => undefined),
+    destroy: vi.fn(() => undefined),
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  };
+  const secondHandle = {
+    applyPreferences: vi.fn(async () => undefined),
+    destroy: vi.fn(() => undefined),
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  };
   const runtime: EpubViewportRuntime = {
-    render: vi.fn(async () => ({
-      applyPreferences: vi.fn(async () => undefined),
-      destroy() {
-        return undefined;
-      },
-      findCfiFromTextQuote: vi.fn(async () => null),
-      getTextFromCurrentLocation: vi.fn(async () => ""),
-      goTo: vi.fn(async () => undefined),
-      next: vi.fn(async () => undefined),
-      prev: vi.fn(async () => undefined),
-      setActiveTtsSegment,
-      setFlow,
-    })),
+    render: vi
+      .fn<() => Promise<typeof firstHandle>>()
+      .mockResolvedValueOnce(firstHandle)
+      .mockResolvedValueOnce(secondHandle),
   };
 
   const activeSegment = {
@@ -365,17 +376,16 @@ it("reapplies the active tts segment after a reading-mode flow change settles", 
   );
 
   await vi.waitFor(() => {
-    expect(setActiveTtsSegment).toHaveBeenCalledWith(activeSegment);
+    expect(firstHandle.setActiveTtsSegment).toHaveBeenCalledWith(activeSegment);
   });
-
-  setActiveTtsSegment.mockClear();
 
   rerender(
     <EpubViewport activeTtsSegment={activeSegment} bookId="book-1" readingMode="paginated" runtime={runtime} />,
   );
 
   await vi.waitFor(() => {
-    expect(setFlow).toHaveBeenCalledWith("paginated");
-    expect(setActiveTtsSegment).toHaveBeenCalledWith(activeSegment);
+    expect(runtime.render).toHaveBeenCalledTimes(2);
+    expect(firstHandle.destroy).toHaveBeenCalledTimes(1);
+    expect(secondHandle.setActiveTtsSegment).toHaveBeenCalledWith(activeSegment);
   });
 });

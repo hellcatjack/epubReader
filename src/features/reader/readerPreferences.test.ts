@@ -26,7 +26,6 @@ describe("readerPreferences", () => {
     ).toMatchObject({
       body: {
         "background-color": "#c0ffee",
-        "column-count": "1",
         "column-gap": "40px",
         "font-family": '"Iowan Old Style", Georgia, serif',
         "font-size": "115%",
@@ -68,6 +67,25 @@ describe("readerPreferences", () => {
         "transition": "none",
       },
     });
+  });
+
+  it("does not override epub pagination columns with a body column-count rule", () => {
+    expect(
+      buildReaderTheme({
+        columnCount: 2,
+        contentPadding: 40,
+        contentBackgroundColor: "#c0ffee",
+        fontFamily: "book",
+        fontScale: 1.15,
+        letterSpacing: 0.03,
+        lineHeight: 1.9,
+        maxLineWidth: 780,
+        paragraphIndent: 2,
+        paragraphSpacing: 1.1,
+        readingMode: "paginated",
+        theme: "sepia",
+      }).body,
+    ).not.toHaveProperty("column-count");
   });
 
   it("forces a single rendered column in paginated mode", () => {

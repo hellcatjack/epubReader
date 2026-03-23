@@ -62,6 +62,7 @@ export function TopBar({
         >
           <span className="reader-progress-fill" style={{ width: `${progressPercent}%` }} />
         </div>
+        <p className="reader-progress-value">{progressPercent}%</p>
         <p className="reader-topbar-label">Local annotations enabled</p>
       </div>
       <div className="reader-topbar-actions">

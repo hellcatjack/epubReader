@@ -55,4 +55,34 @@ describe("chunkText", () => {
       text: "beta gamma",
     });
   });
+
+  it("preserves the original block offsets when a chunk starts from a mid-paragraph selection", () => {
+    const originalBlock = "Alpha beta gamma delta";
+    const selectedStart = "Alpha ".length;
+    const selectedText = originalBlock.slice(selectedStart);
+    const segments = chunkTextSegmentsFromBlocks(
+      [
+        {
+          cfi: "epubcfi(/6/2!/4/2/1:0)",
+          locatorText: originalBlock,
+          sourceEnd: originalBlock.length,
+          sourceStart: selectedStart,
+          text: selectedText,
+        } as never,
+      ],
+      { firstSegmentMax: 10, segmentMax: 10 },
+    );
+
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.markers[0]).toMatchObject({
+      sourceStart: selectedStart,
+      sourceEnd: "Alpha beta gamma".length,
+      text: "beta gamma",
+    });
+    expect(segments[1]?.markers[0]).toMatchObject({
+      sourceStart: "Alpha beta gamma ".length,
+      sourceEnd: originalBlock.length,
+      text: "delta",
+    });
+  });
 });

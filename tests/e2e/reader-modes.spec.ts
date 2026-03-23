@@ -95,9 +95,11 @@ test("paginated mode restores the same page slice after refresh", async ({ page 
   expect(after.text).toBe(before.text);
 });
 
-test("paginated mode always renders as a single page column even after refresh", async ({ page }) => {
+test("paginated mode ignores typography column-count overrides while keeping long chapters horizontally paged", async ({
+  page,
+}) => {
   await page.goto("/");
-  await page.setInputFiles("input[type=file]", fixturePath);
+  await page.setInputFiles("input[type=file]", paginatedFixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
   await page.getByRole("button", { name: /paginated mode/i }).click();
@@ -106,18 +108,30 @@ test("paginated mode always renders as a single page column even after refresh",
   await page.getByLabel("Column count").selectOption("2");
   await page.waitForTimeout(400);
 
-  const before = await page.locator(".epub-root iframe").evaluate((node) =>
-    node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).columnCount : "",
-  );
+  const before = await page.locator(".epub-root iframe").evaluate((node) => {
+    const container = node.closest(".epub-root")?.querySelector<HTMLElement>(".epub-container");
+    return {
+      columnCount: node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).columnCount : "",
+      clientWidth: container?.clientWidth ?? 0,
+      scrollWidth: container?.scrollWidth ?? 0,
+    };
+  });
 
   await page.reload({ waitUntil: "networkidle" });
 
-  const after = await page.locator(".epub-root iframe").evaluate((node) =>
-    node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).columnCount : "",
-  );
+  const after = await page.locator(".epub-root iframe").evaluate((node) => {
+    const container = node.closest(".epub-root")?.querySelector<HTMLElement>(".epub-container");
+    return {
+      columnCount: node.contentDocument?.body ? getComputedStyle(node.contentDocument.body).columnCount : "",
+      clientWidth: container?.clientWidth ?? 0,
+      scrollWidth: container?.scrollWidth ?? 0,
+    };
+  });
 
-  expect(before).toBe("1");
-  expect(after).toBe("1");
+  expect(before.columnCount).not.toBe("2");
+  expect(after.columnCount).not.toBe("2");
+  expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
+  expect(after.scrollWidth).toBeGreaterThan(after.clientWidth);
 });
 
 test("scrolled mode keeps a comfortably wider prose page than paginated mode", async ({ page }) => {
@@ -263,6 +277,16 @@ test("paginated mode turns pages with the mouse wheel when the pointer is over t
   await page.getByRole("button", { name: /paginated mode/i }).click();
   await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
   await expect(page.getByRole("button", { name: /next page/i })).toBeEnabled();
+  await expect
+    .poll(async () =>
+      page.locator(".epub-root iframe").evaluate((node) => {
+        const container = node.closest(".epub-root")?.querySelector<HTMLElement>(".epub-container");
+        const clientWidth = container?.clientWidth ?? 0;
+        const scrollWidth = container?.scrollWidth ?? 0;
+        return scrollWidth > clientWidth && clientWidth > 0;
+      }),
+    )
+    .toBe(true);
 
   const initialScrollLeft = await page.locator(".epub-root iframe").evaluate((node) => {
     const container = node.closest(".epub-root")?.querySelector<HTMLElement>(".epub-container");

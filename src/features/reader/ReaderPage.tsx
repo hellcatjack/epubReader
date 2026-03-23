@@ -141,6 +141,32 @@ async function getContinuousTtsChunks(runtimeHandle: RuntimeRenderHandle, readin
   }
 }
 
+async function getContinuousTtsChunksFromSelection(
+  runtimeHandle: RuntimeRenderHandle,
+  readingMode: ReadingMode,
+  selection: ReaderSelection | null,
+) {
+  const cfiRange = selection?.cfiRange?.trim() ?? "";
+  if (!cfiRange) {
+    return [];
+  }
+
+  try {
+    const ttsBlocks = await runtimeHandle.getTtsBlocksFromSelectionStart?.(cfiRange);
+    if (ttsBlocks?.length) {
+      if (readingMode === "paginated") {
+        return ttsBlocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
+      }
+
+      return chunkTextSegmentsFromBlocks(ttsBlocks, continuousTtsChunkOptions);
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
+}
+
 export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const shellContext = useOutletContext<ReaderAppShellContext | null>() ?? null;
@@ -1008,6 +1034,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
   async function handleChangeReadingMode(mode: ReadingMode) {
     setTtsStartReady(false);
+    const modeSwitchLocation =
+      (await runtimeHandle?.getCurrentLocation?.())?.cfi ??
+      currentLocationRef.current.cfi ??
+      currentLocationRef.current.spineItemId;
+    setLocationTarget(modeSwitchLocation || undefined);
     await updateSettings({ readingMode: mode });
   }
 
@@ -1068,7 +1099,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       return;
     }
 
-    const chunks = await getContinuousTtsChunks(runtimeHandle, settings.readingMode);
+    const liveRuntimeSelection = await runtimeHandle.getCurrentSelection?.();
+    const latestSelection = liveRuntimeSelection ?? selectionBridge.read() ?? selectedSelection;
+    const selectionDrivenChunks = await getContinuousTtsChunksFromSelection(runtimeHandle, settings.readingMode, latestSelection);
+    const chunks = selectionDrivenChunks.length
+      ? selectionDrivenChunks
+      : await getContinuousTtsChunks(runtimeHandle, settings.readingMode);
 
     if (!chunks.length) {
       setTtsState({
@@ -1082,6 +1118,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         status: "error",
       });
       return;
+    }
+
+    if (selectionDrivenChunks.length && latestSelection?.text.trim()) {
+      await runtimeHandle.clearSelection?.();
+      selectionBridge.publish(null);
+      setSelectedSelection(null);
     }
 
     activeSelectionSpeechRequestRef.current += 1;

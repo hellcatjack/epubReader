@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
+const paginatedChapterHeadingFixturePath = "tests/fixtures/epub/paginated-chapter-heading.epub";
 const paginatedFixturePath = "tests/fixtures/epub/paginated-long.epub";
 const paginatedChunkedSentenceFixturePath = "tests/fixtures/epub/paginated-chunked-sentence.epub";
+const paginatedPageStartFixturePath = "tests/fixtures/epub/paginated-page-start.epub";
 const paginatedMultiChapterFixturePath = "tests/fixtures/epub/paginated-multi-chapter.epub";
 
 test("browser tts supports selection playback and continuous reader controls", async ({ page }) => {
@@ -330,22 +332,999 @@ test("paginated mode keeps continuous tts aligned to one paragraph at a time", a
     )
     .toBe(1);
 
+  const [firstCallText, activeParagraphText] = await Promise.all([
+    page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? ""),
+    page.evaluate(() => {
+      const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
+      const active = iframe?.contentDocument?.querySelector(".reader-tts-active-segment");
+      const paragraph = active?.closest("p");
+      return paragraph?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    }),
+  ]);
+
+  expect(firstCallText).toBe(activeParagraphText);
+});
+
+test("paginated mode starts continuous tts from the current page's first visible paragraph after a real page turn", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ text: string }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          text: utterance.text,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedMultiChapterFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  const readVisibleFrameState = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(".epub-root");
+      const iframes = Array.from(root?.querySelectorAll<HTMLIFrameElement>("iframe") ?? []);
+      const rootRect = root?.getBoundingClientRect();
+      let bestFrame: HTMLIFrameElement | null = null;
+      let bestFrameIndex = -1;
+      let bestArea = -1;
+
+      for (const [index, frame] of iframes.entries()) {
+        const rect = frame.getBoundingClientRect();
+        const visibleLeft = Math.max(rootRect?.left ?? 0, rect.left);
+        const visibleRight = Math.min(rootRect?.right ?? 0, rect.right);
+        const visibleTop = Math.max(rootRect?.top ?? 0, rect.top);
+        const visibleBottom = Math.min(rootRect?.bottom ?? 0, rect.bottom);
+        const area = Math.max(0, visibleRight - visibleLeft) * Math.max(0, visibleBottom - visibleTop);
+
+        if (area > bestArea) {
+          bestArea = area;
+          bestFrame = frame;
+          bestFrameIndex = index;
+        }
+      }
+
+      const container = root?.querySelector<HTMLElement>(".epub-container");
+      const doc = bestFrame?.contentDocument ?? null;
+      const win = bestFrame?.contentWindow ?? null;
+      const paragraphs = Array.from(doc?.querySelectorAll<HTMLElement>("p") ?? []);
+      const viewportWidth = win?.innerWidth || doc?.documentElement.clientWidth || doc?.body.clientWidth || 0;
+      const viewportHeight = win?.innerHeight || doc?.documentElement.clientHeight || doc?.body.clientHeight || 0;
+      let firstVisibleParagraph = "";
+      let bestTop = Number.POSITIVE_INFINITY;
+      let bestLeft = Number.POSITIVE_INFINITY;
+
+      for (const paragraph of paragraphs) {
+        const rect = paragraph.getBoundingClientRect();
+        const visibleLeft = Math.max(0, rect.left);
+        const visibleRight = Math.min(viewportWidth, rect.right);
+        const visibleTop = Math.max(0, rect.top);
+        const visibleBottom = Math.min(viewportHeight, rect.bottom);
+        const visibleWidth = visibleRight - visibleLeft;
+        const visibleHeight = visibleBottom - visibleTop;
+
+        if (visibleWidth <= 1 || visibleHeight <= 1) {
+          continue;
+        }
+
+        if (visibleTop < bestTop || (visibleTop === bestTop && visibleLeft < bestLeft)) {
+          bestTop = visibleTop;
+          bestLeft = visibleLeft;
+          firstVisibleParagraph = paragraph.textContent?.replace(/\s+/g, " ").trim() ?? "";
+        }
+      }
+
+      return {
+        frameIndex: bestFrameIndex,
+        firstVisibleParagraph,
+        scrollLeft: container?.scrollLeft ?? 0,
+      };
+    });
+
+  await expect
+    .poll(async () => (await readVisibleFrameState()).frameIndex)
+    .toBeGreaterThanOrEqual(0);
+  const initialFrameState = await readVisibleFrameState();
+  const initialScrollLeft = initialFrameState.scrollLeft;
+  expect(initialFrameState.frameIndex).toBeGreaterThanOrEqual(0);
+
+  await page.locator(".epub-root iframe").nth(initialFrameState.frameIndex).contentFrame().locator("body").click({
+    position: {
+      x: 10,
+      y: 10,
+    },
+  });
   await expect
     .poll(async () =>
-      page.evaluate(
-        () =>
-          (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
-      ),
+      page.evaluate(() => ({
+        activeTag: document.activeElement?.tagName ?? null,
+        activeTopbar: document.activeElement instanceof Element ? Boolean(document.activeElement.closest(".reader-topbar")) : false,
+      })),
     )
-    .toContain("Paginated keyboard navigation needs a chapter that genuinely spans multiple screens");
+    .toEqual({
+      activeTag: "IFRAME",
+      activeTopbar: false,
+    });
+  await page.keyboard.press("ArrowRight");
   await expect
     .poll(async () =>
-      page.evaluate(
-        () =>
-          (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
-      ),
+      readVisibleFrameState().then((state) => state.scrollLeft),
     )
-    .not.toContain("The hallway light hummed above the stairwell");
+    .toBeGreaterThan(initialScrollLeft);
+
+  const firstVisibleParagraph = (await readVisibleFrameState()).firstVisibleParagraph;
+
+  expect(firstVisibleParagraph.length).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  const firstCallText = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
+  );
+
+  expect(firstCallText).toBe(firstVisibleParagraph);
+});
+
+test("paginated mode starts continuous tts from the actual first visible text on the current page", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ text: string }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          text: utterance.text,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedPageStartFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const root = document.querySelector(".epub-root");
+        const container = root?.querySelector<HTMLElement>(".epub-container");
+        return (
+          root?.getAttribute("data-page-kind") === "prose" &&
+          (container?.scrollWidth ?? 0) > (container?.clientWidth ?? 0)
+        );
+      }),
+    )
+    .toBe(true);
+
+  await page.getByRole("button", { name: /next page/i }).click();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const container = document.querySelector<HTMLElement>(".epub-root .epub-container");
+        return container?.scrollLeft ?? 0;
+      }),
+    )
+    .toBeGreaterThan(0);
+
+  const pageStartSnippet = await page.evaluate(() => {
+    const root = document.querySelector(".epub-root");
+    const container = root?.querySelector<HTMLElement>(".epub-container");
+    const frame = root?.querySelector<HTMLIFrameElement>("iframe");
+    const doc = frame?.contentDocument;
+    if (!root || !container || !frame || !doc) {
+      return "";
+    }
+
+    const pageLeft = container.scrollLeft;
+    const pageRight = pageLeft + container.clientWidth;
+    const viewportHeight = Math.round(root.getBoundingClientRect().height);
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const range = doc.createRange();
+
+    const normalizeSlice = (textNode: Node, offset: number) => {
+      if (textNode.nodeType !== Node.TEXT_NODE) {
+        return "";
+      }
+
+      const text = textNode.textContent ?? "";
+      let cursor = Math.max(0, Math.min(offset, text.length));
+      while (cursor > 0 && /\S/.test(text[cursor - 1] ?? "")) {
+        cursor -= 1;
+      }
+      while (cursor < text.length && /\s/.test(text[cursor] ?? "")) {
+        cursor += 1;
+      }
+
+      return text.slice(cursor, cursor + 42).replace(/\s+/g, " ").trim();
+    };
+
+    while (true) {
+      const nextNode = walker.nextNode();
+      if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
+        break;
+      }
+
+      const text = nextNode.textContent ?? "";
+      for (let offset = 0; offset < text.length; offset += 1) {
+        if (/\s/.test(text[offset] ?? "")) {
+          continue;
+        }
+
+        range.setStart(nextNode, offset);
+        range.setEnd(nextNode, Math.min(text.length, offset + 1));
+        const rects = Array.from(range.getClientRects());
+        const isVisibleOnCurrentPage = rects.some(
+          (rect) =>
+            rect.left >= pageLeft &&
+            rect.right <= pageRight + 1 &&
+            rect.top >= 0 &&
+            rect.bottom <= viewportHeight + 1,
+        );
+        if (!isVisibleOnCurrentPage) {
+          continue;
+        }
+
+        const snippet = normalizeSlice(nextNode, offset);
+        if (snippet.length > 0) {
+          return snippet;
+        }
+      }
+    }
+
+    return "";
+  });
+
+  expect(pageStartSnippet.length).toBeGreaterThan(6);
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  const firstCallText = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
+  );
+
+  expect(firstCallText.startsWith(pageStartSnippet)).toBe(true);
+});
+
+test("paginated mode starts continuous tts from heading text on a chapter's first page", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ text: string }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          text: utterance.text,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedChapterHeadingFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  const readPageStartSnippet = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(".epub-root");
+      const container = root?.querySelector<HTMLElement>(".epub-container");
+      const frame = root?.querySelector<HTMLIFrameElement>("iframe");
+      const doc = frame?.contentDocument;
+      if (!root || !container || !frame || !doc) {
+        return "";
+      }
+
+      const pageLeft = container.scrollLeft;
+      const pageRight = pageLeft + container.clientWidth;
+      const viewportHeight = Math.round(root.getBoundingClientRect().height);
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+      const range = doc.createRange();
+
+      while (true) {
+        const nextNode = walker.nextNode();
+        if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
+          break;
+        }
+
+        const text = nextNode.textContent ?? "";
+        for (let offset = 0; offset < text.length; offset += 1) {
+          if (/\s/.test(text[offset] ?? "")) {
+            continue;
+          }
+
+          range.setStart(nextNode, offset);
+          range.setEnd(nextNode, Math.min(text.length, offset + 1));
+          const rects = Array.from(range.getClientRects());
+          const isVisibleOnCurrentPage = rects.some(
+            (rect) =>
+              rect.left >= pageLeft &&
+              rect.right <= pageRight + 1 &&
+              rect.top >= 0 &&
+              rect.bottom <= viewportHeight + 1,
+          );
+          if (!isVisibleOnCurrentPage) {
+            continue;
+          }
+
+          let cursor = offset;
+          while (cursor > 0 && /\S/.test(text[cursor - 1] ?? "")) {
+            cursor -= 1;
+          }
+          while (cursor < text.length && /\s/.test(text[cursor] ?? "")) {
+            cursor += 1;
+          }
+
+          return text.slice(cursor, cursor + 42).replace(/\s+/g, " ").trim();
+        }
+      }
+
+      return "";
+    });
+
+  await expect.poll(readPageStartSnippet).toBe("Chapter Seven");
+  const pageStartSnippet = await readPageStartSnippet();
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  const firstCallText = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
+  );
+
+  expect(firstCallText).toBe(pageStartSnippet);
+});
+
+test("paginated mode starts continuous tts from the current long chapter page's first visible paragraph", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ text: string }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          text: utterance.text,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  const readVisiblePageState = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(".epub-root");
+      const container = root?.querySelector<HTMLElement>(".epub-container");
+      const frame = root?.querySelector<HTMLIFrameElement>("iframe");
+      const doc = frame?.contentDocument ?? null;
+      const hostRect = root?.getBoundingClientRect();
+      const paragraphs = Array.from(doc?.querySelectorAll<HTMLElement>("p") ?? []);
+      let firstVisibleParagraph = "";
+      let bestLeft = Number.POSITIVE_INFINITY;
+      let bestTop = Number.POSITIVE_INFINITY;
+
+      for (const paragraph of paragraphs) {
+        const rect = paragraph.getBoundingClientRect();
+        const visibleLeft = Math.max(0, rect.left);
+        const visibleRight = Math.min(hostRect?.width ?? 0, rect.right);
+        const visibleTop = Math.max(0, rect.top);
+        const visibleBottom = Math.min(hostRect?.height ?? 0, rect.bottom);
+        const visibleWidth = visibleRight - visibleLeft;
+        const visibleHeight = visibleBottom - visibleTop;
+
+        if (visibleWidth <= 1 || visibleHeight <= 1) {
+          continue;
+        }
+
+        if (visibleLeft < bestLeft || (visibleLeft === bestLeft && visibleTop < bestTop)) {
+          bestLeft = visibleLeft;
+          bestTop = visibleTop;
+          firstVisibleParagraph = paragraph.textContent?.replace(/\s+/g, " ").trim() ?? "";
+        }
+      }
+
+      return {
+        clientWidth: container?.clientWidth ?? 0,
+        firstVisibleParagraph,
+        scrollWidth: container?.scrollWidth ?? 0,
+        scrollLeft: container?.scrollLeft ?? 0,
+      };
+    });
+
+  await expect
+    .poll(async () => {
+      const state = await readVisiblePageState();
+      return state.scrollWidth > state.clientWidth && state.clientWidth > 0;
+    })
+    .toBe(true);
+  const initialScrollLeft = (await readVisiblePageState()).scrollLeft;
+
+  await page.frameLocator(".epub-root iframe").locator("body").click({
+    position: {
+      x: 10,
+      y: 10,
+    },
+  });
+  await expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        activeTag: document.activeElement?.tagName ?? null,
+        activeTopbar: document.activeElement instanceof Element ? Boolean(document.activeElement.closest(".reader-topbar")) : false,
+      })),
+    )
+    .toEqual({
+      activeTag: "IFRAME",
+      activeTopbar: false,
+    });
+  await page.keyboard.press("ArrowRight");
+  await expect
+    .poll(async () => (await readVisiblePageState()).scrollLeft)
+    .toBeGreaterThan(initialScrollLeft);
+
+  const firstVisibleParagraph = (await readVisiblePageState()).firstVisibleParagraph;
+  expect(firstVisibleParagraph.length).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  const firstCallText = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
+  );
+
+  expect(firstCallText).toBe(firstVisibleParagraph);
+});
+
+test("paginated mode clears the current selection and starts continuous tts from that selection start", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ text: string }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          text: utterance.text,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  const readVisibleFrameState = () =>
+    page.evaluate(() => {
+      const root = document.querySelector(".epub-root");
+      const iframes = Array.from(root?.querySelectorAll<HTMLIFrameElement>("iframe") ?? []);
+      const rootRect = root?.getBoundingClientRect();
+      let bestFrame: HTMLIFrameElement | null = null;
+      let bestFrameIndex = -1;
+      let bestArea = -1;
+
+      for (const [index, frame] of iframes.entries()) {
+        const rect = frame.getBoundingClientRect();
+        const visibleLeft = Math.max(rootRect?.left ?? 0, rect.left);
+        const visibleRight = Math.min(rootRect?.right ?? 0, rect.right);
+        const visibleTop = Math.max(rootRect?.top ?? 0, rect.top);
+        const visibleBottom = Math.min(rootRect?.bottom ?? 0, rect.bottom);
+        const area = Math.max(0, visibleRight - visibleLeft) * Math.max(0, visibleBottom - visibleTop);
+
+        if (area > bestArea) {
+          bestArea = area;
+          bestFrame = frame;
+          bestFrameIndex = index;
+        }
+      }
+
+      const container = root?.querySelector<HTMLElement>(".epub-container");
+      const doc = bestFrame?.contentDocument ?? null;
+      const win = bestFrame?.contentWindow ?? null;
+      const paragraphs = Array.from(doc?.querySelectorAll<HTMLElement>("p") ?? []);
+      const viewportWidth = win?.innerWidth || doc?.documentElement.clientWidth || doc?.body.clientWidth || 0;
+      const viewportHeight = win?.innerHeight || doc?.documentElement.clientHeight || doc?.body.clientHeight || 0;
+      let firstVisibleParagraph = "";
+      let bestTop = Number.POSITIVE_INFINITY;
+      let bestLeft = Number.POSITIVE_INFINITY;
+
+      for (const paragraph of paragraphs) {
+        const rect = paragraph.getBoundingClientRect();
+        const visibleLeft = Math.max(0, rect.left);
+        const visibleRight = Math.min(viewportWidth, rect.right);
+        const visibleTop = Math.max(0, rect.top);
+        const visibleBottom = Math.min(viewportHeight, rect.bottom);
+        const visibleWidth = visibleRight - visibleLeft;
+        const visibleHeight = visibleBottom - visibleTop;
+
+        if (visibleWidth <= 1 || visibleHeight <= 1) {
+          continue;
+        }
+
+        if (visibleTop < bestTop || (visibleTop === bestTop && visibleLeft < bestLeft)) {
+          bestTop = visibleTop;
+          bestLeft = visibleLeft;
+          firstVisibleParagraph = paragraph.textContent?.replace(/\s+/g, " ").trim() ?? "";
+        }
+      }
+
+      return {
+        firstVisibleParagraph,
+        frameIndex: bestFrameIndex,
+        scrollLeft: container?.scrollLeft ?? 0,
+      };
+    });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedMultiChapterFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+  await expect
+    .poll(async () => (await readVisibleFrameState()).frameIndex)
+    .toBeGreaterThanOrEqual(0);
+
+  const frameState = await readVisibleFrameState();
+  const selectionText = await page.locator(".epub-root iframe").nth(frameState.frameIndex).evaluate((node) => {
+    const doc = node.contentDocument;
+    const win = node.contentWindow;
+    if (!doc || !win) {
+      return "";
+    }
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const viewportWidth = win.innerWidth || doc.documentElement.clientWidth || doc.body.clientWidth;
+    const viewportHeight = win.innerHeight || doc.documentElement.clientHeight || doc.body.clientHeight;
+    let selectedText = "";
+
+    for (const paragraph of paragraphs) {
+      const rect = paragraph.getBoundingClientRect();
+      const visibleLeft = Math.max(0, rect.left);
+      const visibleRight = Math.min(viewportWidth, rect.right);
+      const visibleTop = Math.max(0, rect.top);
+      const visibleBottom = Math.min(viewportHeight, rect.bottom);
+      const visibleWidth = visibleRight - visibleLeft;
+      const visibleHeight = visibleBottom - visibleTop;
+
+      if (visibleWidth <= 1 || visibleHeight <= 1) {
+        continue;
+      }
+
+      const textNode = paragraph.firstChild;
+      const text = textNode?.textContent ?? "";
+      if (!textNode || text.length < 24) {
+        continue;
+      }
+
+      let wordIndex = Math.min(24, text.length - 1);
+      while (wordIndex > 0 && /\S/.test(text[wordIndex - 1] ?? "")) {
+        wordIndex -= 1;
+      }
+      while (wordIndex < text.length && /\s/.test(text[wordIndex] ?? "")) {
+        wordIndex += 1;
+      }
+
+      const selectionLength = Math.min(42, Math.max(12, text.length - wordIndex));
+
+      const range = doc.createRange();
+      range.setStart(textNode, wordIndex);
+      range.setEnd(textNode, Math.min(text.length, wordIndex + selectionLength));
+      const selection = win.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      doc.dispatchEvent(new Event("selectionchange"));
+      selectedText = range.toString().replace(/\s+/g, " ").trim();
+      break;
+    }
+
+    return selectedText;
+  });
+
+  expect(selectionText.length).toBeGreaterThan(8);
+  const firstSelectedWord = selectionText.split(/\s+/)[0] ?? "";
+  expect(firstSelectedWord.length).toBeGreaterThan(0);
+  const ttsCallCountBeforeStart = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length,
+  );
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(ttsCallCountBeforeStart);
+
+  const latestCallText = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.at(-1)?.text ?? "",
+  );
+
+  await expect
+    .poll(async () =>
+      page.locator(".epub-root iframe").nth(frameState.frameIndex).evaluate((node) => {
+        const selection = node.contentWindow?.getSelection?.();
+        return selection?.toString().trim() ?? "";
+      }),
+    )
+    .toBe("");
+  await expect(page.frameLocator(".epub-root iframe").locator(".reader-tts-active-segment")).toHaveText(firstSelectedWord);
+
+  expect(latestCallText.startsWith(selectionText)).toBe(true);
+  expect(latestCallText.length).toBeGreaterThan(selectionText.length);
 });
 
 test("paginated mode starts an oversized paragraph by highlighting the first spoken word", async ({ page }) => {
@@ -867,12 +1846,6 @@ test("paginated mode keeps second-utterance highlighting stable when Edge only e
 });
 
 test("paginated mode keeps later paragraph word boundaries anchored to their own paragraph", async ({ page }) => {
-  const expectedParagraphs = [
-    "Chapter One opens in the archive stairwell where Mara keeps climbing because the envelopes in her coat feel heavier each time the neon light flickers.",
-    "Every floor smells faintly different, and she measures the climb by those shifts instead of counting steps because numbers make the building feel more final than she wants it to be tonight.",
-    "A brass rail follows her hand upward, cold enough to sting, while the concrete walls hold old rain and dust in the same pale streaks they have worn for years.",
-  ];
-
   await page.addInitScript(() => {
     const calls: Array<{ text: string }> = [];
     const boundaryUtteranceIndexes: number[] = [];
@@ -979,36 +1952,36 @@ test("paginated mode keeps later paragraph word boundaries anchored to their own
   await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
   await page.getByRole("button", { name: /start tts/i }).click();
 
-  await page.waitForFunction(
-    () => (window as typeof window & { __ttsBoundaryUtteranceIndexes: number[] }).__ttsBoundaryUtteranceIndexes.length >= 1,
-  );
-  const firstParagraph = await page.evaluate(() => {
-    const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
-    const active = iframe?.contentDocument?.querySelector(".reader-tts-active-segment");
-    const paragraph = active?.closest("p");
-    return paragraph?.textContent?.replace(/\s+/g, " ").trim() ?? "";
-  });
-  expect(firstParagraph).toBe(expectedParagraphs[0]);
+  const highlightedParagraphs: string[] = [];
 
-  await page.waitForFunction(
-    () => (window as typeof window & { __ttsBoundaryUtteranceIndexes: number[] }).__ttsBoundaryUtteranceIndexes.length >= 2,
-  );
-  const secondParagraph = await page.evaluate(() => {
-    const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
-    const active = iframe?.contentDocument?.querySelector(".reader-tts-active-segment");
-    const paragraph = active?.closest("p");
-    return paragraph?.textContent?.replace(/\s+/g, " ").trim() ?? "";
-  });
-  expect(secondParagraph).toBe(expectedParagraphs[1]);
+  for (const expectedBoundaryCount of [1, 2, 3]) {
+    await page.waitForFunction(
+      (count) => (window as typeof window & { __ttsBoundaryUtteranceIndexes: number[] }).__ttsBoundaryUtteranceIndexes.length >= count,
+      expectedBoundaryCount,
+    );
 
-  await page.waitForFunction(
-    () => (window as typeof window & { __ttsBoundaryUtteranceIndexes: number[] }).__ttsBoundaryUtteranceIndexes.length >= 3,
-  );
-  const thirdParagraph = await page.evaluate(() => {
-    const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
-    const active = iframe?.contentDocument?.querySelector(".reader-tts-active-segment");
-    const paragraph = active?.closest("p");
-    return paragraph?.textContent?.replace(/\s+/g, " ").trim() ?? "";
-  });
-  expect(thirdParagraph).toBe(expectedParagraphs[2]);
+    const { activeParagraph, utteranceText } = await page.evaluate((boundaryCount) => {
+      const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
+      const active = iframe?.contentDocument?.querySelector(".reader-tts-active-segment");
+      const paragraph = active?.closest("p");
+      const activeParagraph = paragraph?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      const runtimeWindow = window as typeof window & {
+        __ttsBoundaryUtteranceIndexes: number[];
+        __ttsCalls: Array<{ text: string }>;
+      };
+      const utteranceIndex = runtimeWindow.__ttsBoundaryUtteranceIndexes[boundaryCount - 1] ?? -1;
+      const utteranceText = runtimeWindow.__ttsCalls[utteranceIndex]?.text ?? "";
+      return {
+        activeParagraph,
+        utteranceText,
+      };
+    }, expectedBoundaryCount);
+
+    const activeLead = activeParagraph.split(/\s+/).slice(0, 8).join(" ");
+    expect(activeParagraph).not.toBe("");
+    expect(utteranceText).toContain(activeLead);
+    highlightedParagraphs.push(activeParagraph);
+  }
+
+  expect(new Set(highlightedParagraphs).size).toBe(3);
 });

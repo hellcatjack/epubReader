@@ -672,6 +672,7 @@ it("updates reading progress and toggles a bookmark for the current location", a
   await waitFor(() => {
     expect(screen.getByRole("progressbar", { name: /reading progress/i })).toHaveAttribute("aria-valuenow", "42");
   });
+  expect(screen.getByText("42%")).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /bookmark this location/i }));
 

@@ -36,6 +36,8 @@ type ChunkOptions = {
 export type ChunkBlock = {
   cfi?: string;
   locatorText?: string;
+  sourceEnd?: number;
+  sourceStart?: number;
   spineItemId?: string;
   text: string;
 };
@@ -84,8 +86,11 @@ function normalizeBlocks(blocks: Array<string | ChunkBlock>): ChunkUnit[] {
     .map((block) => ({
       ...block,
       locatorText: block.locatorText ?? block.text,
-      sourceEnd: block.text.length,
-      sourceStart: 0,
+      sourceEnd:
+        typeof block.sourceEnd === "number"
+          ? block.sourceEnd
+          : (typeof block.sourceStart === "number" ? block.sourceStart : 0) + block.text.length,
+      sourceStart: typeof block.sourceStart === "number" ? block.sourceStart : 0,
     }));
 }
 
@@ -107,8 +112,8 @@ function splitBlockIntoUnits(block: ChunkUnit, maxCharacters: number): ChunkUnit
       return [
         {
           ...block,
-          sourceEnd: sentenceEnd,
-          sourceStart: resolvedSentenceStart,
+          sourceEnd: block.sourceStart + sentenceEnd,
+          sourceStart: block.sourceStart + resolvedSentenceStart,
           text: sentence,
         },
       ];
@@ -125,8 +130,8 @@ function splitBlockIntoUnits(block: ChunkUnit, maxCharacters: number): ChunkUnit
 
       return {
         ...block,
-        sourceEnd: unitEnd,
-        sourceStart: resolvedUnitStart,
+        sourceEnd: block.sourceStart + unitEnd,
+        sourceStart: block.sourceStart + resolvedUnitStart,
         text: unitText,
       };
     });

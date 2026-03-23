@@ -11,6 +11,7 @@ import { getSettings } from "../settings/settingsRepository";
 import { writeRefreshSettingsSnapshot } from "../settings/refreshSettingsSnapshot";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
+import { selectionBridge } from "./selectionBridge";
 
 const getProgressMock = vi.fn().mockResolvedValue(null);
 const saveProgressMock = vi.fn().mockResolvedValue(undefined);
@@ -35,6 +36,7 @@ afterEach(async () => {
   saveProgressMock.mockReset();
   saveProgressMock.mockResolvedValue(undefined);
   sessionStorage.clear();
+  selectionBridge.publish(null);
   await resetDb();
 });
 
@@ -2283,6 +2285,305 @@ it("prefers paragraph tts blocks over flattened chapter text when choosing the i
     }),
   );
   expect(firstMarker?.text.startsWith("ONE")).toBe(false);
+});
+
+it("starts continuous reading from the first word of the current selection when the visible page has a selection", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "First paragraph on the current page.\n\nSecond paragraph keeps the queue running after the selected opening words.\n\nThird paragraph keeps the queue alive after the selected block.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph keeps the queue running after the selected opening words.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/6/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Third paragraph keeps the queue alive after the selected block.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & {
+                    getTtsBlocksFromSelectionStart: (cfiRange: string) => Promise<Array<{ cfi?: string; spineItemId: string; text: string }>>;
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "Second paragraph",
+    });
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+});
+
+it("uses the live runtime selection when start tts is pressed before selection state settles", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => ({
+                      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+                      isReleased: true,
+                      spineItemId: "chap-1",
+                      text: "Second paragraph",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph on the current page."),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph keeps the queue running after the selected opening words.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Second paragraph keeps the queue running after the selected opening words.",
+      }),
+    );
+  });
+});
+
+it("clears the active selection after start tts while continuing from the selection start", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const clearSelection = vi.fn(async () => undefined);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection,
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => ({
+                      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+                      isReleased: true,
+                      spineItemId: "chap-1",
+                      text: "Second paragraph",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "First paragraph on the current page.\n\nSecond paragraph keeps the queue running after the selected opening words.\n\nThird paragraph keeps the queue alive after the selected block.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph keeps the queue running after the selected opening words.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/6/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Third paragraph keeps the queue alive after the selected block.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & { clearSelection: () => Promise<void> };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "Second paragraph",
+    });
+  });
+
+  expect(selectionBridge.read()).toEqual(
+    expect.objectContaining({
+      text: "Second paragraph",
+    }),
+  );
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+
+  expect(clearSelection).toHaveBeenCalledTimes(1);
+  expect(selectionBridge.read()).toBeNull();
 });
 
 it("persistently updates tts rate from the quick control", async () => {

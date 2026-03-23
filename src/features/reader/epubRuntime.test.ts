@@ -2,11 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildTocItems,
   extractSentenceContextFromRange,
+  findFirstVisibleTextOffset,
+  findMostVisibleContentsIndex,
+  findFirstVisiblePaginatedTtsBlockIndex,
+  findFirstVisibleTtsBlockIndex,
   findTtsSegmentTextRange,
   findTtsBlockElementByText,
   getPagePresentationKind,
   getNearestTtsBlockElement,
   readPaginatedPageIndex,
+  resolveLocationProgress,
   restorePaginatedPageOffset,
   restorePaginatedPagePosition,
   shouldAutoScrollTtsSegment,
@@ -14,6 +19,348 @@ import {
 } from "./epubRuntime";
 
 describe("epubRuntime tts targeting helpers", () => {
+  it("chooses the most visible rendition contents instead of always taking the first iframe", () => {
+    const host = document.createElement("div");
+    host.getBoundingClientRect = () =>
+      ({
+        bottom: 720,
+        height: 720,
+        left: 0,
+        right: 960,
+        top: 0,
+        width: 960,
+        x: 0,
+        y: 0,
+      }) as DOMRect;
+
+    const firstFrame = document.createElement("iframe");
+    firstFrame.getBoundingClientRect = () =>
+      ({
+        bottom: 720,
+        height: 720,
+        left: -920,
+        right: 40,
+        top: 0,
+        width: 960,
+        x: -920,
+        y: 0,
+      }) as DOMRect;
+
+    const secondFrame = document.createElement("iframe");
+    secondFrame.getBoundingClientRect = () =>
+      ({
+        bottom: 720,
+        height: 720,
+        left: 0,
+        right: 960,
+        top: 0,
+        width: 960,
+        x: 0,
+        y: 0,
+      }) as DOMRect;
+
+    const contents = [
+      { window: { frameElement: firstFrame } },
+      { window: { frameElement: secondFrame } },
+    ] as never;
+
+    expect(findMostVisibleContentsIndex(contents, host)).toBe(1);
+  });
+
+  it("falls back to the first rendition contents when visibility cannot be measured", () => {
+    const host = document.createElement("div");
+    host.getBoundingClientRect = () =>
+      ({
+        bottom: 720,
+        height: 720,
+        left: 0,
+        right: 960,
+        top: 0,
+        width: 960,
+        x: 0,
+        y: 0,
+      }) as DOMRect;
+
+    const contents = [
+      { window: { frameElement: null } },
+      { window: { frameElement: null } },
+    ] as never;
+
+    expect(findMostVisibleContentsIndex(contents, host)).toBe(0);
+  });
+
+  it("picks the first visible paragraph on the current page as the tts start anchor", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>Top sliver paragraph</p>
+      <p>Current reading anchor paragraph</p>
+      <p>Later paragraph</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const rects = [
+      { bottom: 18, left: 0, right: 640, top: -82 },
+      { bottom: 176, left: 0, right: 640, top: 72 },
+      { bottom: 338, left: 0, right: 640, top: 234 },
+    ];
+
+    paragraphs.forEach((paragraph, index) => {
+      paragraph.getBoundingClientRect = () => rects[index] as DOMRect;
+    });
+
+    expect(findFirstVisibleTtsBlockIndex(paragraphs, 640, 360)).toBe(0);
+  });
+
+  it("ignores offscreen paginated columns when picking the reading anchor paragraph", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>Previous page paragraph</p>
+      <p>Current page paragraph</p>
+      <p>Next page paragraph</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const rects = [
+      { bottom: 160, left: -700, right: -60, top: 40 },
+      { bottom: 160, left: 0, right: 640, top: 40 },
+      { bottom: 160, left: 700, right: 1340, top: 40 },
+    ];
+
+    paragraphs.forEach((paragraph, index) => {
+      paragraph.getBoundingClientRect = () => rects[index] as DOMRect;
+    });
+
+    expect(findFirstVisibleTtsBlockIndex(paragraphs, 640, 360)).toBe(1);
+  });
+
+  it("uses column-major reading order when picking the first visible paginated paragraph", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>Left column first paragraph</p>
+      <p>Right column top paragraph</p>
+      <p>Left column later paragraph</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const rects = [
+      { bottom: 320, left: 0, right: 280, top: 180 },
+      { bottom: 140, left: 320, right: 600, top: 0 },
+      { bottom: 520, left: 0, right: 280, top: 380 },
+    ];
+
+    paragraphs.forEach((paragraph, index) => {
+      paragraph.getBoundingClientRect = () => rects[index] as DOMRect;
+    });
+
+    expect(findFirstVisiblePaginatedTtsBlockIndex(paragraphs, 640, 360)).toBe(0);
+  });
+
+  it("respects the current paginated page offset when choosing the first visible paragraph", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>First page paragraph</p>
+      <p>Second page paragraph</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const rects = [
+      { bottom: 160, left: 20, right: 620, top: 24 },
+      { bottom: 160, left: 700, right: 1300, top: 24 },
+    ];
+
+    paragraphs.forEach((paragraph, index) => {
+      paragraph.getBoundingClientRect = () => rects[index] as DOMRect;
+    });
+
+    expect(findFirstVisiblePaginatedTtsBlockIndex(paragraphs, 640, 360, 640)).toBe(1);
+  });
+
+  it("starts from the first visible word inside the current page block instead of the block beginning", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>alpha beta gamma</p>
+    `;
+
+    const paragraph = doc.querySelector("p");
+    const textNode = paragraph?.firstChild;
+    if (!paragraph || !textNode) {
+      throw new Error("missing paragraph text");
+    }
+
+    const originalCreateRange = doc.createRange.bind(doc);
+    const rangeState = {
+      startOffset: 0,
+    };
+
+    doc.createRange = (() =>
+      ({
+        getClientRects: () =>
+          rangeState.startOffset >= "alpha ".length
+            ? ([
+                {
+                  bottom: 24,
+                  height: 16,
+                  left: 0,
+                  right: 12,
+                  top: 8,
+                  width: 12,
+                  x: 0,
+                  y: 8,
+                },
+              ] as DOMRect[])
+            : [],
+        selectNodeContents: vi.fn(),
+        setEnd: vi.fn(),
+        setStart: vi.fn((_node: Node, offset: number) => {
+          rangeState.startOffset = offset;
+        }),
+      }) as unknown as Range) as typeof doc.createRange;
+
+    expect(findFirstVisibleTextOffset(paragraph, 640, 360)).toEqual({
+      node: textNode,
+      offset: "alpha ".length,
+    });
+
+    doc.createRange = originalCreateRange;
+  });
+
+  it("backs visible text offsets up to the start of the visible word", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>alpha beta gamma</p>
+    `;
+
+    const paragraph = doc.querySelector("p");
+    const textNode = paragraph?.firstChild;
+    if (!paragraph || !textNode) {
+      throw new Error("missing paragraph text");
+    }
+
+    const originalCreateRange = doc.createRange.bind(doc);
+    const rangeState = {
+      startOffset: 0,
+    };
+
+    doc.createRange = (() =>
+      ({
+        getClientRects: () =>
+          rangeState.startOffset >= "alpha be".length
+            ? ([
+                {
+                  bottom: 24,
+                  height: 16,
+                  left: 0,
+                  right: 12,
+                  top: 8,
+                  width: 12,
+                  x: 0,
+                  y: 8,
+                },
+              ] as DOMRect[])
+            : [],
+        selectNodeContents: vi.fn(),
+        setEnd: vi.fn(),
+        setStart: vi.fn((_node: Node, offset: number) => {
+          rangeState.startOffset = offset;
+        }),
+      }) as unknown as Range) as typeof doc.createRange;
+
+    expect(findFirstVisibleTextOffset(paragraph, 640, 360)).toEqual({
+      node: textNode,
+      offset: "alpha ".length,
+    });
+
+    doc.createRange = originalCreateRange;
+  });
+
+  it("finds the first visible word within the current paginated page band", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>alpha beta gamma delta</p>
+    `;
+
+    const paragraph = doc.querySelector("p");
+    const textNode = paragraph?.firstChild;
+    if (!paragraph || !textNode) {
+      throw new Error("missing paragraph text");
+    }
+
+    const originalCreateRange = doc.createRange.bind(doc);
+    const rangeState = {
+      startOffset: 0,
+    };
+
+    doc.createRange = (() =>
+      ({
+        getClientRects: () =>
+          rangeState.startOffset >= "alpha beta ".length
+            ? ([
+                {
+                  bottom: 24,
+                  height: 16,
+                  left: 690,
+                  right: 702,
+                  top: 8,
+                  width: 12,
+                  x: 690,
+                  y: 8,
+                },
+              ] as DOMRect[])
+            : ([
+                {
+                  bottom: 24,
+                  height: 16,
+                  left: 40,
+                  right: 52,
+                  top: 8,
+                  width: 12,
+                  x: 40,
+                  y: 8,
+                },
+              ] as DOMRect[]),
+        selectNodeContents: vi.fn(),
+        setEnd: vi.fn(),
+        setStart: vi.fn((_node: Node, offset: number) => {
+          rangeState.startOffset = offset;
+        }),
+      }) as unknown as Range) as typeof doc.createRange;
+
+    expect(findFirstVisibleTextOffset(paragraph, 640, 360, 640)).toEqual({
+      node: textNode,
+      offset: "alpha beta ".length,
+    });
+
+    doc.createRange = originalCreateRange;
+  });
+
+  it("falls back to generated epub locations when relocated progress is missing", async () => {
+    const generate = vi.fn(async () => ["loc-1", "loc-2"]);
+    const percentageFromCfi = vi.fn(() => 0.58);
+    const locations = {
+      generate,
+      length: () => 0,
+      percentageFromCfi,
+    };
+
+    await expect(resolveLocationProgress("epubcfi(/6/2!/4/1:0)", undefined, locations)).resolves.toBe(0.58);
+    expect(generate).toHaveBeenCalledWith(1600);
+    expect(percentageFromCfi).toHaveBeenCalledWith("epubcfi(/6/2!/4/1:0)");
+  });
+
+  it("keeps the relocated percentage when epub.js already provides one", async () => {
+    const generate = vi.fn(async () => ["loc-1", "loc-2"]);
+    const percentageFromCfi = vi.fn(() => 0.12);
+    const locations = {
+      generate,
+      length: () => 0,
+      percentageFromCfi,
+    };
+
+    await expect(resolveLocationProgress("epubcfi(/6/2!/4/1:0)", 0.42, locations)).resolves.toBe(0.42);
+    expect(generate).not.toHaveBeenCalled();
+    expect(percentageFromCfi).not.toHaveBeenCalled();
+  });
+
   it("prefers paragraph blocks over chapter headings or wrapper containers", () => {
     const doc = document.implementation.createHTMLDocument("chapter");
     doc.body.innerHTML = `

@@ -65,24 +65,28 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
     effectivePreferences.readingMode === "scrolled"
       ? effectivePreferences.maxLineWidth + SCROLLED_MODE_WIDTH_BOOST
       : effectivePreferences.maxLineWidth;
+  const bodyTheme: Record<string, string> = {
+    "background-color": effectivePreferences.contentBackgroundColor,
+    "box-sizing": "border-box",
+    "column-gap": `${columnGap}px`,
+    "font-family": resolveReaderFontFamily(effectivePreferences.fontFamily),
+    "font-size": fontSize,
+    "letter-spacing": `${effectivePreferences.letterSpacing}em`,
+    "line-height": String(effectivePreferences.lineHeight),
+    "margin": "0 auto",
+    "max-width": `${maxLineWidth}px`,
+    "padding": `${effectivePreferences.contentPadding}px`,
+  };
+
+  if (effectivePreferences.readingMode !== "paginated") {
+    bodyTheme["column-count"] = String(effectivePreferences.columnCount);
+  }
 
   return {
     html: {
       "font-size": fontSize,
     },
-    body: {
-      "background-color": effectivePreferences.contentBackgroundColor,
-      "box-sizing": "border-box",
-      "column-count": String(effectivePreferences.columnCount),
-      "column-gap": `${columnGap}px`,
-      "font-family": resolveReaderFontFamily(effectivePreferences.fontFamily),
-      "font-size": fontSize,
-      "letter-spacing": `${effectivePreferences.letterSpacing}em`,
-      "line-height": String(effectivePreferences.lineHeight),
-      "margin": "0 auto",
-      "max-width": `${maxLineWidth}px`,
-      "padding": `${effectivePreferences.contentPadding}px`,
-    },
+    body: bodyTheme,
     "body.reader-image-page": {
       "max-width": "none !important",
       "padding": `${imagePagePadding} !important`,
