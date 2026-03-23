@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { DEFAULT_LLM_API_URL } from "./aiEndpoints";
 import { createOpenAIAdapter, normalizeOpenAIError } from "./openaiAdapter";
 
 export function OpenAISpikePage() {
@@ -33,7 +34,10 @@ export function OpenAISpikePage() {
     <main>
       <section aria-label="OpenAI browser spike">
         <h1>Local Translation Spike</h1>
-        <p>Translation and explanation now default to the local OpenAI-compatible endpoint at `192.168.1.31:8001` without authentication.</p>
+        <p>
+          Translation and explanation now default to the local OpenAI-compatible endpoint at{" "}
+          <code>{DEFAULT_LLM_API_URL}</code> without authentication.
+        </p>
         <label>
           Selection text
           <textarea value={selectionText} onChange={(event) => setSelectionText(event.target.value)} />

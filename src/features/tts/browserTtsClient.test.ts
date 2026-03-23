@@ -94,4 +94,45 @@ describe("browserTtsClient", () => {
       }),
     });
   });
+
+  it("forwards utterance start events to the caller", async () => {
+    const voices = [buildVoice("Microsoft Ava Online (Natural)", "en-US", true)];
+    let utterance:
+      | (SpeechSynthesisUtterance & {
+          onstart?: (() => void) | null;
+        })
+      | undefined;
+    const onStart = vi.fn();
+
+    const client = createBrowserTtsClient({
+      speechSynthesis: {
+        addEventListener: vi.fn(),
+        cancel: vi.fn(),
+        getVoices: () => voices,
+        pause: vi.fn(),
+        pending: false,
+        removeEventListener: vi.fn(),
+        resume: vi.fn(),
+        speak: vi.fn((nextUtterance: SpeechSynthesisUtterance) => {
+          utterance = nextUtterance as SpeechSynthesisUtterance & {
+            onstart?: (() => void) | null;
+          };
+        }),
+        speaking: false,
+      } as unknown as SpeechSynthesis,
+      utteranceFactory: (text) => ({ text }) as SpeechSynthesisUtterance,
+    });
+
+    await client.speakSelection("Hello reader", {
+      onEnd: vi.fn(),
+      onError: vi.fn(),
+      onStart,
+      rate: 1,
+      voiceId: "Microsoft Ava Online (Natural)",
+      volume: 1,
+    });
+
+    utterance?.onstart?.();
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
 });

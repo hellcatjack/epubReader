@@ -201,6 +201,18 @@ export function SettingsDialog() {
                   ))}
                 </select>
               </label>
+              <label className="settings-field settings-field-wide">
+                <span>LLM API URL</span>
+                <input
+                  aria-label="LLM API URL"
+                  inputMode="url"
+                  onChange={(event) => setSettings((current) => ({ ...current, llmApiUrl: event.target.value }))}
+                  placeholder="http://localhost:1234/v1"
+                  type="url"
+                  value={settings.llmApiUrl}
+                />
+                <small>Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
+              </label>
               <label className="settings-field">
                 <span>TTS rate</span>
                 <input
@@ -327,6 +339,17 @@ export function SettingsDialog() {
                     value={contentPaddingInput}
                   />
                 </label>
+                <label className="settings-field settings-field-color">
+                  <span>Page background</span>
+                  <input
+                    aria-label="Page background"
+                    onChange={(event) =>
+                      setSettings((current) => ({ ...current, contentBackgroundColor: event.target.value }))
+                    }
+                    type="color"
+                    value={settings.contentBackgroundColor}
+                  />
+                </label>
                 <label className="settings-field">
                   <span>Max line width</span>
                   <input
@@ -364,7 +387,7 @@ export function SettingsDialog() {
       )}
       <div className="settings-footer">
         <p className="settings-disclosure">
-          Translation and explanation requests are sent directly from this browser to the local model endpoint.
+          Translation and explanation requests are sent directly from this browser to your configured model endpoint.
         </p>
         <div className="settings-actions">
           <button onClick={handleSave} type="button" className="settings-save-button">

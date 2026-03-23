@@ -1,11 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { db, resetDb } from "../../lib/db/appDb";
 import { createDefaultSettings, getSettings } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
+
+const DEFAULT_TEST_LLM_API_URL = "http://localhost:8001/v1/chat/completions";
 
 function buildVoice(name: string, lang = "en-US", defaultValue = false): SpeechSynthesisVoice {
   return {
@@ -57,18 +59,19 @@ afterEach(async () => {
   await resetDb();
 });
 
-it("does not include a localhost helper url in default settings", () => {
-  const keys = Object.keys(createDefaultSettings("192.168.1.31"));
+it("includes a configurable llm api url in default settings", () => {
+  const keys = Object.keys(createDefaultSettings("localhost"));
 
-  expect(createDefaultSettings("192.168.1.31")).toMatchObject({
+  expect(createDefaultSettings("localhost")).toMatchObject({
+    llmApiUrl: "http://localhost:8001/v1/chat/completions",
     ttsRate: 1,
     ttsVoice: "",
     ttsVolume: 1,
   });
-  expect(keys.some((key) => /helper/i.test(key))).toBe(false);
+  expect(keys.some((key) => /llmapiurl/i.test(key))).toBe(true);
 });
 
-it("persists browser tts settings without rendering a helper url field", async () => {
+it("persists browser tts settings and a custom llm api url", async () => {
   const user = userEvent.setup();
   installSpeechSynthesis([
     buildVoice("Microsoft Ava Online (Natural)", "en-US", true),
@@ -83,8 +86,8 @@ it("persists browser tts settings without rendering a helper url field", async (
   const ttsVoice = await screen.findByRole("combobox", { name: /tts voice/i });
   const ttsRate = screen.getByLabelText(/tts rate/i);
   const ttsVolume = screen.getByLabelText(/tts volume/i);
+  const llmApiUrl = screen.getByLabelText(/llm api url/i);
 
-  expect(screen.queryByLabelText(/tts helper url/i)).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/font scale/i)).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /advanced typography/i }));
@@ -98,6 +101,7 @@ it("persists browser tts settings without rendering a helper url field", async (
   const maxLineWidth = screen.getByLabelText(/max line width/i);
   const columnCount = screen.getByLabelText(/column count/i);
   const fontFamily = screen.getByLabelText(/font family/i);
+  const pageBackground = screen.getByLabelText(/page background/i);
 
   await user.selectOptions(targetLanguage, "zh-CN");
   await user.selectOptions(theme, "dark");
@@ -116,9 +120,12 @@ it("persists browser tts settings without rendering a helper url field", async (
   await user.type(contentPadding, "40");
   await user.clear(maxLineWidth);
   await user.type(maxLineWidth, "780");
+  fireEvent.change(pageBackground, { target: { value: "#c0ffee" } });
   await user.selectOptions(columnCount, "2");
   await user.selectOptions(fontFamily, "book");
   await user.selectOptions(ttsVoice, "Microsoft Andrew Online (Natural)");
+  await user.clear(llmApiUrl);
+  await user.type(llmApiUrl, "http://localhost:1234/v1");
   await user.clear(ttsRate);
   await user.type(ttsRate, "1.15");
   await user.clear(ttsVolume);
@@ -127,6 +134,7 @@ it("persists browser tts settings without rendering a helper url field", async (
 
   await expect(getSettings()).resolves.toMatchObject({
     apiKey: "",
+    llmApiUrl: "http://localhost:1234/v1",
     targetLanguage: "zh-CN",
     theme: "dark",
     readingMode: "paginated",
@@ -136,6 +144,7 @@ it("persists browser tts settings without rendering a helper url field", async (
     paragraphSpacing: 1.1,
     paragraphIndent: 2,
     contentPadding: 40,
+    contentBackgroundColor: "#c0ffee",
     maxLineWidth: 780,
     columnCount: 1,
     fontFamily: "book",
@@ -157,6 +166,7 @@ it("shows common settings first and reveals advanced typography on demand", asyn
   await userEvent.setup().click(screen.getByRole("button", { name: /advanced typography/i }));
 
   expect(await screen.findByLabelText(/paragraph spacing/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/page background/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/max line width/i)).toBeInTheDocument();
 });
 
@@ -178,9 +188,11 @@ it("shows single-column paginated mode in the settings UI without deleting the s
     paragraphSpacing: 0.85,
     paragraphIndent: 1.8,
     contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
     maxLineWidth: 760,
     columnCount: 2,
     fontFamily: "book",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
   });
 
   render(<SettingsDialog />);

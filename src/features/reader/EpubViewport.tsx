@@ -57,6 +57,7 @@ export function EpubViewport({
   const [pageKind, setPageKind] = useState<"image" | "prose">("prose");
   const hostRef = useRef<HTMLDivElement | null>(null);
   const runtimeHandleRef = useRef<RuntimeRenderHandle | null>(null);
+  const activeTtsSegmentRef = useRef<ActiveTtsSegment | null>(activeTtsSegment);
 
   useEffect(() => {
     annotationRenderer.clear();
@@ -88,7 +89,10 @@ export function EpubViewport({
       let handle: RuntimeRenderHandle | null = null;
 
       async function openPersistedBook(nextCfi?: string) {
-        const shouldRestorePaginatedFromChapter = readingMode === "paginated" && Boolean(initialProgress?.spineItemId);
+        const shouldRestorePaginatedFromChapter =
+          readingMode === "paginated" &&
+          Boolean(initialProgress?.spineItemId) &&
+          (!nextCfi || nextCfi === initialProgress?.cfi);
         const openTarget =
           shouldRestorePaginatedFromChapter && initialProgress?.spineItemId
             ? initialProgress.spineItemId
@@ -117,8 +121,8 @@ export function EpubViewport({
             onLocationChange?.({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
           },
           onPagePresentationChange: setPageKind,
-          onSelectionChange: ({ cfiRange, isReleased, spineItemId, text }) => {
-            selectionBridge.publish(text ? { cfiRange, isReleased, spineItemId, text } : null);
+          onSelectionChange: ({ cfiRange, isReleased, sentenceContext, spineItemId, text }) => {
+            selectionBridge.publish(text ? { cfiRange, isReleased, sentenceContext, spineItemId, text } : null);
           },
           onTocChange,
         });
@@ -130,6 +134,7 @@ export function EpubViewport({
         }
 
         runtimeHandleRef.current = handle;
+        await handle.setActiveTtsSegment(activeTtsSegmentRef.current);
         onReady?.(handle);
       }
 
@@ -239,8 +244,16 @@ export function EpubViewport({
   }, [bookId, controller, initialCfi, initialProgress]);
 
   useEffect(() => {
+    activeTtsSegmentRef.current = activeTtsSegment;
+  }, [activeTtsSegment]);
+
+  useEffect(() => {
     if (!controller && runtimeHandleRef.current) {
-      void runtimeHandleRef.current.setFlow(readingMode);
+      const activeHandle = runtimeHandleRef.current;
+      void (async () => {
+        await activeHandle.setFlow(readingMode);
+        await activeHandle.setActiveTtsSegment(activeTtsSegmentRef.current);
+      })();
     }
   }, [controller, readingMode]);
 

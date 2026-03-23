@@ -13,6 +13,7 @@ test("pwa registration and browser tts states behave correctly", async ({ page }
     });
 
     class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
       onend: ((event: Event) => void) | null = null;
       onerror: ((event: Event) => void) | null = null;
       rate = 1;
@@ -62,6 +63,7 @@ test("pwa registration and browser tts states behave correctly", async ({ page }
           paused = false;
         },
         speak(utterance: MockSpeechSynthesisUtterance) {
+          utterance.onstart?.(new Event("start"));
           activeTimer = window.setTimeout(() => {
             if (!paused) {
               utterance.onend?.(new Event("end"));
@@ -99,11 +101,14 @@ test("pwa registration and browser tts states behave correctly", async ({ page }
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
-  await expect(page.getByText(/tts status: idle/i)).toBeVisible();
+  const ttsQueue = page.getByRole("region", { name: /tts queue/i });
+  const ttsBadge = ttsQueue.locator(".reader-tts-badge");
+
+  await expect(ttsBadge).toHaveText(/ready/i);
   await expect(page.getByRole("button", { name: /start tts/i })).toBeEnabled();
 
   await page.getByRole("button", { name: /start tts/i }).click();
-  await expect(page.getByText(/tts status: playing/i)).toBeVisible();
+  await expect(ttsBadge).toHaveText(/playing/i);
 
   await expect(page.getByRole("button", { name: /read aloud/i })).toBeDisabled();
   await expect(page.locator(".epub-root iframe").first()).toHaveAttribute("sandbox", "allow-same-origin");

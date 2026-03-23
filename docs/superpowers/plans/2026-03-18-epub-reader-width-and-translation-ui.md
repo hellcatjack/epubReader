@@ -315,7 +315,7 @@ git commit -m "test: cover reader width and translation ui refresh"
 Run:
 
 ```bash
-curl --resolve ushome.amycat.com:18025:127.0.0.1 -I https://ushome.amycat.com:18025/
+curl -k -I https://localhost:18025/
 ```
 
 Expected: `HTTP/2 200`
@@ -325,7 +325,7 @@ Expected: `HTTP/2 200`
 Run:
 
 ```bash
-curl --resolve ushome.amycat.com:18025:127.0.0.1 -I https://ushome.amycat.com:18025/books/demo
+curl -k -I https://localhost:18025/books/demo
 ```
 
 Expected: `HTTP/2 200`

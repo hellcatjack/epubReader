@@ -1,7 +1,9 @@
 import type { ReaderPreferences } from "../readerPreferences";
 
 type AppearancePanelProps = {
+  llmApiUrl?: string;
   onChange?: (patch: Partial<ReaderPreferences>) => void;
+  onLlmApiUrlChange?: (value: string) => void;
   preferences: ReaderPreferences;
 };
 
@@ -17,7 +19,7 @@ function parseNumericPatch(
   }
 }
 
-export function AppearancePanel({ onChange, preferences }: AppearancePanelProps) {
+export function AppearancePanel({ llmApiUrl = "", onChange, onLlmApiUrlChange, preferences }: AppearancePanelProps) {
   return (
     <section className="reader-panel" aria-label="Appearance">
       <h2>Appearance</h2>
@@ -111,6 +113,27 @@ export function AppearancePanel({ onChange, preferences }: AppearancePanelProps)
             type="number"
             value={preferences.contentPadding}
           />
+        </label>
+        <label className="appearance-field appearance-field-color">
+          <span>Page background</span>
+          <input
+            aria-label="Page background"
+            onChange={(event) => onChange?.({ contentBackgroundColor: event.target.value })}
+            type="color"
+            value={preferences.contentBackgroundColor}
+          />
+        </label>
+        <label className="appearance-field appearance-field-wide">
+          <span>LLM API URL</span>
+          <input
+            aria-label="LLM API URL"
+            inputMode="url"
+            onChange={(event) => onLlmApiUrlChange?.(event.target.value)}
+            placeholder="http://localhost:1234/v1"
+            type="url"
+            value={llmApiUrl}
+          />
+          <small className="appearance-field-note">Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
         </label>
         <label className="appearance-field">
           <span>Max line width</span>

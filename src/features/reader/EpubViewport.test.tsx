@@ -142,6 +142,50 @@ it("falls back to a saved chapter and quote when the saved cfi cannot be reopene
   expect(goTo).toHaveBeenCalledWith("epubcfi(/6/8!/4/1:12)");
 });
 
+it("respects explicit navigation targets in paginated mode instead of reopening the saved chapter", async () => {
+  const runtime = {
+    render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
+      destroy() {
+        return undefined;
+      },
+      findCfiFromTextQuote: vi.fn(async () => null),
+      getTextFromCurrentLocation: vi.fn(async () => ""),
+      goTo: vi.fn(async () => undefined),
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setActiveTtsSegment: vi.fn(async () => undefined),
+      setFlow: vi.fn(async () => undefined),
+    })),
+  };
+
+  render(
+    <EpubViewport
+      bookId="book-1"
+      initialCfi="chapter-2.xhtml"
+      initialProgress={{
+        bookId: "book-1",
+        cfi: "epubcfi(/6/2!/4/1:0)",
+        pageIndex: 3,
+        progress: 0.42,
+        spineItemId: "chapter-1.xhtml",
+        textQuote: "A saved sentence from chapter one.",
+        updatedAt: Date.now(),
+      }}
+      readingMode="paginated"
+      runtime={runtime}
+    />,
+  );
+
+  await vi.waitFor(() => {
+    expect(runtime.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialCfi: "chapter-2.xhtml",
+      }),
+    );
+  });
+});
+
 it("destroys stale runtime handles that resolve after the viewport unmounts", async () => {
   let resolveRender: ((value: RuntimeRenderHandle) => void) | undefined;
   const destroy = vi.fn();
@@ -289,5 +333,49 @@ it("forwards active tts segments to the runtime handle", async () => {
       spineItemId: "chap-1",
       text: "Second paragraph should stay highlighted.",
     });
+  });
+});
+
+it("reapplies the active tts segment after a reading-mode flow change settles", async () => {
+  const setActiveTtsSegment = vi.fn(async () => undefined);
+  const setFlow = vi.fn(async () => undefined);
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
+      destroy() {
+        return undefined;
+      },
+      findCfiFromTextQuote: vi.fn(async () => null),
+      getTextFromCurrentLocation: vi.fn(async () => ""),
+      goTo: vi.fn(async () => undefined),
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setActiveTtsSegment,
+      setFlow,
+    })),
+  };
+
+  const activeSegment = {
+    spineItemId: "chap-1",
+    text: "Second paragraph should stay highlighted.",
+  };
+
+  const { rerender } = render(
+    <EpubViewport activeTtsSegment={activeSegment} bookId="book-1" readingMode="scrolled" runtime={runtime} />,
+  );
+
+  await vi.waitFor(() => {
+    expect(setActiveTtsSegment).toHaveBeenCalledWith(activeSegment);
+  });
+
+  setActiveTtsSegment.mockClear();
+
+  rerender(
+    <EpubViewport activeTtsSegment={activeSegment} bookId="book-1" readingMode="paginated" runtime={runtime} />,
+  );
+
+  await vi.waitFor(() => {
+    expect(setFlow).toHaveBeenCalledWith("paginated");
+    expect(setActiveTtsSegment).toHaveBeenCalledWith(activeSegment);
   });
 });

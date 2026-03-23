@@ -14,13 +14,22 @@ export type RuntimeRenderArgs = {
   initialPreferences?: Partial<ReaderPreferences>;
   onRelocated?: (location: { cfi: string; pageIndex?: number; pageOffset?: number; progress: number; spineItemId: string; textQuote: string }) => void;
   onPagePresentationChange?: (pageKind: "image" | "prose") => void;
-  onSelectionChange?: (selection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string }) => void;
+  onSelectionChange?: (selection: {
+    cfiRange: string;
+    isReleased?: boolean;
+    sentenceContext?: string;
+    spineItemId: string;
+    text: string;
+  }) => void;
   onTocChange?: (toc: TocItem[]) => void;
 };
 
 export type ActiveTtsSegment = {
   cfi?: string;
+  endOffset?: number;
+  locatorText?: string;
   spineItemId: string;
+  startOffset?: number;
   text: string;
 };
 
@@ -44,7 +53,12 @@ export type EpubViewportRuntime = {
 };
 
 const ttsBlockSelector = "p, li, blockquote";
+const sentenceContextSelector = `${ttsBlockSelector}, div, section, article, h1, h2, h3, h4, h5, h6`;
 const readerImagePageClassName = "reader-image-page";
+const sentenceTerminatorPattern = /[.!?。！？]/;
+const paginatedWheelThreshold = 80;
+const paginatedWheelCooldownMs = 420;
+const paginatedWheelResetMs = 180;
 
 function hasDisplayedLocationShape(
   value: unknown,
@@ -63,18 +77,171 @@ function hasDisplayedLocationShape(
   );
 }
 
-function flattenTocItems(items: NavItem[]): TocItem[] {
-  return items.flatMap((item) => [
-    {
-      id: item.href || item.id,
-      label: item.label,
-    },
-    ...(item.subitems ? flattenTocItems(item.subitems) : []),
-  ]);
+export function buildTocItems(items: NavItem[]): TocItem[] {
+  return items.map((item) => ({
+    children: item.subitems?.length ? buildTocItems(item.subitems) : [],
+    id: item.id || item.href || item.label,
+    label: item.label,
+    target: item.href || item.id,
+  }));
+}
+
+function sameActiveTtsSegment(left: ActiveTtsSegment | null, right: ActiveTtsSegment | null) {
+  return left?.cfi === right?.cfi && left?.spineItemId === right?.spineItemId && left?.text === right?.text;
 }
 
 function normalizeSegmentText(text: string) {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function clampOffset(value: number, max: number) {
+  return Math.max(0, Math.min(value, max));
+}
+
+function isNodeLike(value: unknown): value is Node {
+  return Boolean(value && typeof value === "object" && "nodeType" in value);
+}
+
+function isElementNode(node: unknown): node is Element {
+  return isNodeLike(node) && node.nodeType === Node.ELEMENT_NODE;
+}
+
+function isTextNode(node: unknown): node is Text {
+  return isNodeLike(node) && node.nodeType === Node.TEXT_NODE;
+}
+
+function getBlockCfi(contents: Contents, element: HTMLElement) {
+  const elementRange = element.ownerDocument.createRange();
+  elementRange.selectNodeContents(element);
+
+  try {
+    return contents.cfiFromRange(elementRange);
+  } catch {
+    // Fall back to node-based targeting below.
+  }
+
+  try {
+    return contents.cfiFromNode(element);
+  } catch {
+    const firstTextNode = findFirstTextNode(element);
+    if (firstTextNode) {
+      try {
+        return contents.cfiFromNode(firstTextNode);
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function findFirstTextNode(root: Node) {
+  const ownerDocument = root.nodeType === Node.DOCUMENT_NODE ? (root as Document) : root.ownerDocument;
+  if (!ownerDocument) {
+    return null;
+  }
+
+  const walker = ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nextNode = walker.nextNode();
+  return isTextNode(nextNode) ? nextNode : null;
+}
+
+function isContentEditableElement(node: Element | null) {
+  return Boolean(node && "isContentEditable" in node && (node as HTMLElement).isContentEditable);
+}
+
+function getSentenceContextElement(node: Node | null) {
+  const element = isElementNode(node) ? node : node?.parentElement ?? null;
+
+  return (
+    getNearestTtsBlockElement(node) ??
+    element?.closest<HTMLElement>(sentenceContextSelector) ??
+    element ??
+    null
+  );
+}
+
+function findSentenceStart(text: string, index: number) {
+  let cursor = clampOffset(index, text.length);
+
+  while (cursor > 0) {
+    if (sentenceTerminatorPattern.test(text[cursor - 1] ?? "")) {
+      break;
+    }
+
+    cursor -= 1;
+  }
+
+  while (cursor < text.length && /\s/.test(text[cursor] ?? "")) {
+    cursor += 1;
+  }
+
+  return cursor;
+}
+
+function findSentenceEnd(text: string, index: number) {
+  let cursor = clampOffset(index, text.length);
+  let boundaryCursor = cursor;
+
+  while (boundaryCursor > 0 && /["'”’)\]\s]/.test(text[boundaryCursor - 1] ?? "")) {
+    boundaryCursor -= 1;
+  }
+
+  if (boundaryCursor > 0 && sentenceTerminatorPattern.test(text[boundaryCursor - 1] ?? "")) {
+    return cursor;
+  }
+
+  while (cursor < text.length) {
+    if (sentenceTerminatorPattern.test(text[cursor] ?? "")) {
+      cursor += 1;
+
+      while (cursor < text.length && /["'”’)\]\s]/.test(text[cursor] ?? "")) {
+        cursor += 1;
+      }
+
+      return cursor;
+    }
+
+    cursor += 1;
+  }
+
+  return text.length;
+}
+
+export function extractSentenceContextFromRange(range: Range) {
+  const selectionText = normalizeSegmentText(range.toString());
+  if (!selectionText) {
+    return "";
+  }
+
+  const root = getSentenceContextElement(range.commonAncestorContainer ?? range.startContainer);
+  if (!root) {
+    return selectionText;
+  }
+
+  const rawText = root.textContent ?? "";
+  if (!rawText.trim()) {
+    return selectionText;
+  }
+
+  try {
+    const doc = root.ownerDocument;
+    const startRange = doc.createRange();
+    startRange.selectNodeContents(root);
+    startRange.setEnd(range.startContainer, range.startOffset);
+
+    const endRange = doc.createRange();
+    endRange.selectNodeContents(root);
+    endRange.setEnd(range.endContainer, range.endOffset);
+
+    const start = findSentenceStart(rawText, startRange.toString().length);
+    const end = findSentenceEnd(rawText, endRange.toString().length);
+
+    return normalizeSegmentText(rawText.slice(start, end)) || normalizeSegmentText(rawText) || selectionText;
+  } catch {
+    return normalizeSegmentText(rawText) || selectionText;
+  }
 }
 
 export function getPagePresentationKind(document: Document) {
@@ -99,6 +266,19 @@ export function getPagePresentationKind(document: Document) {
 
 function getPaginatedContainer(root: ParentNode | null) {
   return root?.querySelector<HTMLElement>(".epub-container") ?? null;
+}
+
+function getNavigationTargetFragment(target: string) {
+  const hashIndex = target.indexOf("#");
+  if (hashIndex < 0 || hashIndex === target.length - 1) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(target.slice(hashIndex + 1));
+  } catch {
+    return target.slice(hashIndex + 1);
+  }
 }
 
 function readPaginatedPageOffset(readingMode: ReadingMode, container: HTMLElement | null) {
@@ -154,9 +334,13 @@ export function restorePaginatedPagePosition(
   }
 }
 
-async function waitForLayoutFrame() {
+export async function waitForLayoutFrame(ownerDocument: Document | null = globalThis.document ?? null) {
   await new Promise<void>((resolve) => {
-    if (typeof requestAnimationFrame === "function") {
+    const isHidden =
+      ownerDocument?.visibilityState === "hidden" ||
+      ownerDocument?.hidden === true;
+
+    if (!isHidden && typeof requestAnimationFrame === "function") {
       requestAnimationFrame(() => resolve());
       return;
     }
@@ -172,10 +356,45 @@ async function waitForPaginatedContainerReady(root: ParentNode, maxFrames = 8) {
       return container;
     }
 
-    await waitForLayoutFrame();
+    await waitForLayoutFrame(root.ownerDocument);
   }
 
   return getPaginatedContainer(root);
+}
+
+async function waitForSettledPaginatedContainer(root: ParentNode, expectedClientWidth = 0, maxFrames = 16) {
+  let previousSignature = "";
+  let stableFrames = 0;
+  const minimumClientWidth = expectedClientWidth > 0 ? expectedClientWidth * 0.9 : 1;
+
+  for (let attempt = 0; attempt < maxFrames; attempt += 1) {
+    const container = getPaginatedContainer(root);
+    if (container && container.clientWidth >= minimumClientWidth) {
+      const signature = `${container.clientWidth}:${container.scrollWidth}`;
+      if (signature === previousSignature) {
+        stableFrames += 1;
+      } else {
+        previousSignature = signature;
+        stableFrames = 0;
+      }
+
+      if (stableFrames >= 1) {
+        return container;
+      }
+    }
+
+    await waitForLayoutFrame(root.ownerDocument);
+  }
+
+  return getPaginatedContainer(root);
+}
+
+function readPaginatedLastPageIndex(container: HTMLElement | null) {
+  if (!container || container.clientWidth <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.ceil(container.scrollWidth / container.clientWidth) - 1);
 }
 
 export function shouldAutoScrollTtsSegment(
@@ -197,7 +416,7 @@ export function getNearestTtsBlockElement(node: Node | null) {
     return null;
   }
 
-  const element = node instanceof Element ? node : node.parentElement;
+  const element = isElementNode(node) ? node : node.parentElement;
   return element?.closest<HTMLElement>(ttsBlockSelector) ?? null;
 }
 
@@ -227,6 +446,88 @@ export function findTtsBlockElementByText(root: ParentNode, text: string) {
   }
 
   return prefixMatch;
+}
+
+export function findTtsSegmentTextRange(root: HTMLElement, text: string, startOffset?: number, endOffset?: number) {
+  const normalizedSegment = normalizeSegmentText(text);
+  if (!normalizedSegment) {
+    return null;
+  }
+
+  const textNodes: Text[] = [];
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let currentNode = walker.nextNode();
+  while (currentNode) {
+    if (isTextNode(currentNode) && currentNode.nodeValue) {
+      textNodes.push(currentNode);
+    }
+    currentNode = walker.nextNode();
+  }
+
+  if (!textNodes.length) {
+    return null;
+  }
+
+  const positions: Array<{ endOffset: number; node: Text; startOffset: number }> = [];
+  let normalizedText = "";
+  let lastWasWhitespace = true;
+
+  for (const textNode of textNodes) {
+    const rawText = textNode.nodeValue ?? "";
+    for (let index = 0; index < rawText.length; index += 1) {
+      const character = rawText[index] ?? "";
+      if (/\s/u.test(character)) {
+        if (!lastWasWhitespace && normalizedText.length > 0) {
+          normalizedText += " ";
+          positions.push({
+            endOffset: index + 1,
+            node: textNode,
+            startOffset: index,
+          });
+          lastWasWhitespace = true;
+        }
+        continue;
+      }
+
+      normalizedText += character;
+      positions.push({
+        endOffset: index + 1,
+        node: textNode,
+        startOffset: index,
+      });
+      lastWasWhitespace = false;
+    }
+  }
+
+  let startIndex = -1;
+  let endIndex = -1;
+
+  if (typeof startOffset === "number" && typeof endOffset === "number" && endOffset > startOffset && positions.length) {
+    startIndex = clampOffset(startOffset, positions.length - 1);
+    endIndex = clampOffset(endOffset - 1, positions.length - 1);
+    endIndex = Math.max(startIndex, endIndex);
+  }
+
+  if (startIndex < 0 || endIndex < 0) {
+    const matchIndex = normalizedText.indexOf(normalizedSegment);
+    if (matchIndex < 0) {
+      return null;
+    }
+
+    startIndex = matchIndex;
+    endIndex = matchIndex + normalizedSegment.length - 1;
+  }
+
+  const start = positions[startIndex];
+  const end = positions[endIndex];
+  if (!start || !end) {
+    return null;
+  }
+
+  const range = root.ownerDocument.createRange();
+  range.setStart(start.node, start.startOffset);
+  range.setEnd(end.node, end.endOffset);
+  return range;
 }
 
 export const epubViewportRuntime: EpubViewportRuntime = {
@@ -276,8 +577,62 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     let activeTtsSegment: ActiveTtsSegment | null = null;
     let activeTtsElement: HTMLElement | null = null;
     let pointerSelecting = false;
-    let pendingSelection: { cfiRange: string; isReleased?: boolean; spineItemId: string; text: string } | null = null;
+    let restoreReadingSurfaceFocusOnRender = false;
+    let pendingSelection:
+      | {
+          cfiRange: string;
+          isReleased?: boolean;
+          sentenceContext?: string;
+          spineItemId: string;
+          text: string;
+        }
+      | null = null;
     const selectionDocumentCleanups = new Map<Document, () => void>();
+    let paginatedWheelDelta = 0;
+    let paginatedWheelTurnInFlight = false;
+    let lastPaginatedWheelTurnAt = 0;
+    let lastPaginatedWheelDirection = 0;
+    let paginatedWheelResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const resetPaginatedWheelDelta = () => {
+      paginatedWheelDelta = 0;
+      if (paginatedWheelResetTimer) {
+        clearTimeout(paginatedWheelResetTimer);
+        paginatedWheelResetTimer = null;
+      }
+    };
+
+    const queuePaginatedWheelTurn = (deltaY: number) => {
+      paginatedWheelDelta += deltaY;
+
+      if (paginatedWheelResetTimer) {
+        clearTimeout(paginatedWheelResetTimer);
+      }
+
+      paginatedWheelResetTimer = setTimeout(() => {
+        paginatedWheelDelta = 0;
+        paginatedWheelResetTimer = null;
+      }, paginatedWheelResetMs);
+
+      const nextDirection = paginatedWheelDelta > 0 ? 1 : -1;
+      const now = Date.now();
+      if (
+        paginatedWheelTurnInFlight ||
+        (now - lastPaginatedWheelTurnAt < paginatedWheelCooldownMs && nextDirection === lastPaginatedWheelDirection) ||
+        Math.abs(paginatedWheelDelta) < paginatedWheelThreshold
+      ) {
+        return;
+      }
+
+      resetPaginatedWheelDelta();
+      lastPaginatedWheelTurnAt = now;
+      lastPaginatedWheelDirection = nextDirection;
+      paginatedWheelTurnInFlight = true;
+
+      void (nextDirection > 0 ? goToNextRenditionLocation() : goToPreviousRenditionLocation()).finally(() => {
+        paginatedWheelTurnInFlight = false;
+      });
+    };
 
     const normalizeText = (text: string) => text.replace(/\s+/g, " ").trim();
     const syncCurrentContents = () => {
@@ -299,13 +654,67 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       contents.document.body.classList.toggle(readerImagePageClassName, pageKind === "image");
     };
 
+    const isReadingSurfaceKeyboardFocused = (contents: Contents | null) => {
+      if (!contents) {
+        return false;
+      }
+
+      const frameElement = contents.window.frameElement;
+      if (!(frameElement instanceof HTMLElement)) {
+        return false;
+      }
+
+      const ownerDocument = frameElement.ownerDocument;
+      const innerActiveElement = contents.document.activeElement;
+      return ownerDocument.activeElement === frameElement && innerActiveElement === contents.document.body;
+    };
+
+    const restoreReadingSurfaceFocus = async (contents: Contents) => {
+      await waitForLayoutFrame(contents.document);
+
+      const frameElement = contents.window.frameElement;
+      const body = contents.document.body;
+      if (!(frameElement instanceof HTMLElement) || !body.isConnected) {
+        return;
+      }
+
+      if (!body.hasAttribute("tabindex")) {
+        body.tabIndex = -1;
+      }
+
+      frameElement.focus();
+      contents.window.focus();
+      body.focus();
+    };
+
     const clearActiveTtsSegment = () => {
-      activeTtsElement?.classList.remove("reader-tts-active-segment");
+      const wrappedElement = activeTtsElement;
+      if (wrappedElement?.tagName === "SPAN" && wrappedElement.classList.contains("reader-tts-active-segment")) {
+        const parent = wrappedElement.parentNode;
+        if (parent) {
+          while (wrappedElement.firstChild) {
+            parent.insertBefore(wrappedElement.firstChild, wrappedElement);
+          }
+          parent.removeChild(wrappedElement);
+          parent.normalize?.();
+        }
+      }
+      wrappedElement?.classList.remove("reader-tts-active-segment");
       activeTtsElement = null;
     };
 
     const findSegmentElement = async (contents: Contents, segment: ActiveTtsSegment) => {
       if (segment.cfi) {
+        try {
+          const range = contents.range(segment.cfi);
+          const block = getNearestTtsBlockElement(range?.startContainer ?? null);
+          if (block && contents.document.body.contains(block)) {
+            return block;
+          }
+        } catch {
+          // Fall back to book-level text targeting when the stored CFI cannot be resolved in the active contents.
+        }
+
         try {
           const range = await book.getRange(segment.cfi);
           const block = getNearestTtsBlockElement(range?.startContainer ?? null);
@@ -317,13 +726,29 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         }
       }
 
+      if (segment.locatorText) {
+        const block = findTtsBlockElementByText(contents.document.body, segment.locatorText);
+        if (block) {
+          return block;
+        }
+      }
+
       return findTtsBlockElementByText(contents.document.body, segment.text);
     };
 
     let activeTtsLookupToken = 0;
+    let activeTtsRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const applyActiveTtsSegment = async (segment: ActiveTtsSegment | null) => {
+    const clearActiveTtsRetry = () => {
+      if (activeTtsRetryTimer) {
+        clearTimeout(activeTtsRetryTimer);
+        activeTtsRetryTimer = null;
+      }
+    };
+
+    const applyActiveTtsSegment = async (segment: ActiveTtsSegment | null, attempt = 0) => {
       activeTtsSegment = segment;
+      clearActiveTtsRetry();
       clearActiveTtsSegment();
 
       if (!segment || !currentContents) {
@@ -341,18 +766,44 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }
 
       if (!nextElement) {
+        if (attempt < 4 && sameActiveTtsSegment(activeTtsSegment, segment)) {
+          activeTtsRetryTimer = setTimeout(() => {
+            void applyActiveTtsSegment(segment, attempt + 1);
+          }, 120);
+        }
         return;
       }
 
-      nextElement.classList.add("reader-tts-active-segment");
-      activeTtsElement = nextElement;
       const view = currentContents.window;
-      const rect = nextElement.getBoundingClientRect();
-      const viewportHeight = view.innerHeight || nextElement.ownerDocument.documentElement.clientHeight || 0;
-      const needsScroll = shouldAutoScrollTtsSegment(activePreferences.readingMode, rect, viewportHeight);
+      const preciseRange = findTtsSegmentTextRange(nextElement, segment.text, segment.startOffset, segment.endOffset);
+      if (preciseRange) {
+        const wrapper = nextElement.ownerDocument.createElement("span");
+        wrapper.className = "reader-tts-active-segment";
+        const contents = preciseRange.extractContents();
+        wrapper.append(contents);
+        preciseRange.insertNode(wrapper);
+        activeTtsElement = wrapper;
+      } else {
+        nextElement.classList.add("reader-tts-active-segment");
+        activeTtsElement = nextElement;
+      }
 
-      if (needsScroll) {
-        nextElement.scrollIntoView?.({
+      const preciseRect = preciseRange
+        ? Array.from(preciseRange.getClientRects()).find((rect) => rect.width > 0 || rect.height > 0) ??
+          preciseRange.getBoundingClientRect()
+        : null;
+      const revealTarget = activeTtsElement ?? nextElement;
+      const rect = preciseRect ?? revealTarget.getBoundingClientRect();
+      const viewportHeight = view.innerHeight || revealTarget.ownerDocument.documentElement.clientHeight || 0;
+      const viewportWidth = view.innerWidth || revealTarget.ownerDocument.documentElement.clientWidth || 0;
+      const shouldRevealPaginatedTarget =
+        activePreferences.readingMode === "paginated" && viewportWidth > 0 && (rect.left < 0 || rect.right > viewportWidth);
+      const shouldRevealScrolledTarget =
+        activePreferences.readingMode !== "paginated" &&
+        shouldAutoScrollTtsSegment(activePreferences.readingMode, rect, viewportHeight);
+
+      if (shouldRevealPaginatedTarget || shouldRevealScrolledTarget) {
+        revealTarget.scrollIntoView?.({
           behavior: "auto",
           block: "nearest",
           inline: "nearest",
@@ -440,16 +891,62 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         flushPendingSelection();
       };
 
+      const handlePaginatedArrowKey = (event: KeyboardEvent) => {
+        if (activePreferences.readingMode !== "paginated") {
+          return;
+        }
+
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          void goToNextRenditionLocation();
+          return;
+        }
+
+        if (event.key !== "ArrowLeft") {
+          return;
+        }
+
+        event.preventDefault();
+        void goToPreviousRenditionLocation();
+      };
+
+      const handlePaginatedWheel = (event: WheelEvent) => {
+        if (activePreferences.readingMode !== "paginated") {
+          return;
+        }
+
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+          return;
+        }
+
+        const target = event.target;
+        const targetElement = isElementNode(target) ? target : null;
+        const tagName = targetElement?.tagName?.toLowerCase();
+        if (tagName === "input" || tagName === "textarea" || tagName === "select" || isContentEditableElement(targetElement)) {
+          return;
+        }
+
+        event.preventDefault();
+        queuePaginatedWheelTurn(event.deltaY);
+      };
+
       doc.addEventListener("mousedown", handlePointerDown, true);
       doc.addEventListener("mouseup", handlePointerUp, true);
       doc.addEventListener("touchstart", handlePointerDown, true);
       doc.addEventListener("touchend", handlePointerUp, true);
+      doc.addEventListener("keydown", handlePaginatedArrowKey, true);
+      doc.addEventListener("wheel", handlePaginatedWheel, {
+        capture: true,
+        passive: false,
+      });
 
       selectionDocumentCleanups.set(doc, () => {
         doc.removeEventListener("mousedown", handlePointerDown, true);
         doc.removeEventListener("mouseup", handlePointerUp, true);
         doc.removeEventListener("touchstart", handlePointerDown, true);
         doc.removeEventListener("touchend", handlePointerUp, true);
+        doc.removeEventListener("keydown", handlePaginatedArrowKey, true);
+        doc.removeEventListener("wheel", handlePaginatedWheel, true);
       });
     };
 
@@ -494,7 +991,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       return candidates
         .slice(startIndex)
         .map((candidate, index) => {
-          const cfi = contents.cfiFromNode(candidate);
+          const cfi = getBlockCfi(contents, candidate);
+
           if (!startNode || index > 0 || !candidate.contains(startNode)) {
             return {
               cfi,
@@ -521,6 +1019,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       const selection = {
         cfiRange,
         isReleased: !pointerSelecting,
+        sentenceContext: range ? extractSentenceContextFromRange(range) : text,
         spineItemId: currentSpineItemId,
         text,
       };
@@ -592,7 +1091,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     ) => {
       const initialContainer = await waitForPaginatedContainerReady(element);
       restorePaginatedPagePosition(readingMode, initialContainer, pageOffset, pageIndex);
-      await waitForLayoutFrame();
+      await waitForLayoutFrame(element.ownerDocument);
       const settledContainer = await waitForPaginatedContainerReady(element);
       restorePaginatedPagePosition(readingMode, settledContainer, pageOffset, pageIndex);
     };
@@ -608,11 +1107,114 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       restorePaginatedPagePosition(readingMode, container, displayedPageOffset, displayedPageIndex);
     };
 
+    const resolveNavigationTarget = async (target: string) => {
+      const fragment = getNavigationTargetFragment(target);
+      if (!fragment || !currentContents) {
+        return target;
+      }
+
+      await waitForLayoutFrame(currentContents.document);
+      const fragmentElement = currentContents.document.getElementById(fragment);
+      if (!fragmentElement) {
+        return target;
+      }
+
+      try {
+        return currentContents.cfiFromNode(fragmentElement);
+      } catch {
+        return target;
+      }
+    };
+
+    const settlePaginatedSectionBoundary = async (
+      readingMode: ReadingMode,
+      boundary: "start" | "end",
+      expectedClientWidth: number,
+    ) => {
+      if (readingMode !== "paginated") {
+        return;
+      }
+
+      const initialContainer = await waitForSettledPaginatedContainer(element, expectedClientWidth);
+      restorePaginatedPagePosition(
+        readingMode,
+        initialContainer,
+        boundary === "start" ? 0 : undefined,
+        boundary === "start" ? 0 : readPaginatedLastPageIndex(initialContainer),
+      );
+      await waitForLayoutFrame(element.ownerDocument);
+      const settledContainer = await waitForSettledPaginatedContainer(element, expectedClientWidth);
+      restorePaginatedPagePosition(
+        readingMode,
+        settledContainer,
+        boundary === "start" ? 0 : undefined,
+        boundary === "start" ? 0 : readPaginatedLastPageIndex(settledContainer),
+      );
+    };
+
+    const goToNextRenditionLocation = async () => {
+      const previousContents = currentContents;
+      const previousSpineItemId = currentSpineItemId;
+      const previousPaginatedClientWidth = getPaginatedContainer(element)?.clientWidth ?? 0;
+      restoreReadingSurfaceFocusOnRender = isReadingSurfaceKeyboardFocused(previousContents);
+      await rendition.next();
+      syncCurrentContents();
+      if (currentContents === previousContents) {
+        restoreReadingSurfaceFocusOnRender = false;
+      }
+      await syncDisplayedLocation();
+      const movedAcrossSpine =
+        activePreferences.readingMode === "paginated" &&
+        Boolean(previousSpineItemId) &&
+        Boolean(currentSpineItemId) &&
+        currentSpineItemId !== previousSpineItemId;
+
+      if (movedAcrossSpine) {
+        await settlePaginatedSectionBoundary(activePreferences.readingMode, "start", previousPaginatedClientWidth);
+        await syncDisplayedLocation();
+        return;
+      }
+
+      await settleDisplayedPaginatedLocation(activePreferences.readingMode);
+      await syncDisplayedLocation();
+    };
+
+    const goToPreviousRenditionLocation = async () => {
+      const previousContents = currentContents;
+      const previousSpineItemId = currentSpineItemId;
+      const previousPaginatedClientWidth = getPaginatedContainer(element)?.clientWidth ?? 0;
+      restoreReadingSurfaceFocusOnRender = isReadingSurfaceKeyboardFocused(previousContents);
+      await rendition.prev();
+      syncCurrentContents();
+      if (currentContents === previousContents) {
+        restoreReadingSurfaceFocusOnRender = false;
+      }
+      await syncDisplayedLocation();
+      const movedAcrossSpine =
+        activePreferences.readingMode === "paginated" &&
+        Boolean(previousSpineItemId) &&
+        Boolean(currentSpineItemId) &&
+        currentSpineItemId !== previousSpineItemId;
+
+      if (movedAcrossSpine) {
+        await settlePaginatedSectionBoundary(activePreferences.readingMode, "end", previousPaginatedClientWidth);
+        await syncDisplayedLocation();
+        return;
+      }
+
+      await settleDisplayedPaginatedLocation(activePreferences.readingMode);
+      await syncDisplayedLocation();
+    };
+
     const handleRendered = (_section: unknown, contents: Contents) => {
       currentContents = contents;
       attachSelectionLifecycle(contents);
       syncPagePresentation(contents);
       void applyActiveTtsSegment(activeTtsSegment);
+      if (restoreReadingSurfaceFocusOnRender) {
+        restoreReadingSurfaceFocusOnRender = false;
+        void restoreReadingSurfaceFocus(contents);
+      }
     };
 
     rendition.on("selected", handleSelection);
@@ -620,10 +1222,54 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     rendition.on("rendered", handleRendered);
     rendition.themes.default(buildReaderTheme(activePreferences));
 
+    const handleHostPaginatedWheel = (event: WheelEvent) => {
+      if (activePreferences.readingMode !== "paginated") {
+        return;
+      }
+
+      const target = event.target;
+      const targetElement = isElementNode(target) ? target : null;
+      if (!targetElement?.closest(".epub-container")) {
+        return;
+      }
+
+      const currentDocument = currentContents?.document ?? null;
+      if (currentDocument && targetElement.ownerDocument !== currentDocument) {
+        return;
+      }
+
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+        return;
+      }
+
+      event.preventDefault();
+      queuePaginatedWheelTurn(event.deltaY);
+    };
+
+    element.addEventListener("wheel", handleHostPaginatedWheel, {
+      capture: true,
+      passive: false,
+    });
+
     const navigation = await book.loaded.navigation;
-    onTocChange?.(flattenTocItems(navigation.toc));
+    onTocChange?.(buildTocItems(navigation.toc));
     await rendition.display(initialCfi);
     syncCurrentContents();
+    if (initialCfi) {
+      const resolvedInitialTarget = await resolveNavigationTarget(initialCfi);
+      if (resolvedInitialTarget !== initialCfi) {
+        currentTarget = resolvedInitialTarget;
+        if (flow === "paginated") {
+          preferredPaginatedRestore = {
+            cfi: resolvedInitialTarget,
+            pageIndex: initialPageIndex,
+            pageOffset: initialPageOffset,
+          };
+        }
+        await rendition.display(resolvedInitialTarget);
+        syncCurrentContents();
+      }
+    }
     await settlePaginatedPosition(flow, initialPageOffset, initialPageIndex);
     await syncDisplayedLocation();
 
@@ -640,11 +1286,14 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         await syncDisplayedLocation();
       },
       destroy() {
+        resetPaginatedWheelDelta();
+        clearActiveTtsRetry();
         clearActiveTtsSegment();
         delete element.dataset.pageKind;
         onPagePresentationChange?.("prose");
         selectionDocumentCleanups.forEach((cleanup) => cleanup());
         selectionDocumentCleanups.clear();
+        element.removeEventListener("wheel", handleHostPaginatedWheel, true);
         rendition.off("selected", handleSelection);
         rendition.off("relocated", handleRelocated);
         rendition.off("rendered", handleRendered);
@@ -744,20 +1393,26 @@ export const epubViewportRuntime: EpubViewportRuntime = {
             : null;
         await rendition.display(target);
         syncCurrentContents();
+        const resolvedTarget = await resolveNavigationTarget(target);
+        if (resolvedTarget !== target) {
+          currentTarget = resolvedTarget;
+          preferredPaginatedRestore =
+            activePreferences.readingMode === "paginated"
+              ? {
+                  cfi: resolvedTarget,
+                }
+              : null;
+          await rendition.display(resolvedTarget);
+          syncCurrentContents();
+        }
         await settleDisplayedPaginatedLocation(activePreferences.readingMode);
         await syncDisplayedLocation();
       },
       async next() {
-        await rendition.next();
-        syncCurrentContents();
-        await settleDisplayedPaginatedLocation(activePreferences.readingMode);
-        await syncDisplayedLocation();
+        await goToNextRenditionLocation();
       },
       async prev() {
-        await rendition.prev();
-        syncCurrentContents();
-        await settleDisplayedPaginatedLocation(activePreferences.readingMode);
-        await syncDisplayedLocation();
+        await goToPreviousRenditionLocation();
       },
       async setActiveTtsSegment(segment) {
         await applyActiveTtsSegment(segment);

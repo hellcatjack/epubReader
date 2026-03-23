@@ -23,8 +23,10 @@ export type ProgressRecord = {
 };
 
 export type TocItem = {
+  children?: TocItem[];
   id: string;
   label: string;
+  target?: string;
 };
 
 export type ChapterChange = {

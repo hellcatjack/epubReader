@@ -52,15 +52,24 @@ async function selectWordCountInIframe(page: Page, count: number) {
 test("ai actions translate explain and save a note for selected text", async ({ page }) => {
   const requestPrompts: string[] = [];
 
-  await page.route("http://192.168.1.31:8001/v1/chat/completions", async (route) => {
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    const body = route.request().postDataJSON();
+    const prompt = typeof body.prompt === "string" ? body.prompt : JSON.stringify(body);
+    requestPrompts.push(prompt);
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ text: "中文翻译" }],
+      }),
+    });
+  });
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
     const body = route.request().postDataJSON();
     const prompt = JSON.stringify(body);
     requestPrompts.push(prompt);
-    const content = prompt.includes("Reply only in English")
-      ? "English explanation"
-      : prompt.includes("Explain the following reading selection")
-        ? "中文解释"
-        : "中文翻译";
+    const content = prompt.includes("Reply only in English") ? "English explanation" : "中文解释";
 
     await route.fulfill({
       status: 200,
@@ -81,6 +90,12 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   await page.goto("/");
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
+  const topbar = page.getByRole("banner");
+  await expect(topbar.getByRole("button", { name: "Translate" })).toBeVisible();
+  await expect(topbar.getByRole("button", { name: "Explain" })).toBeVisible();
+  await expect(topbar.getByRole("button", { name: "Highlight" })).toBeVisible();
+  await expect(topbar.getByRole("button", { name: "Add note" })).toBeVisible();
+  await expect(topbar.getByRole("button", { name: "Read aloud" })).toBeVisible();
 
   const selectedWord = await selectWordCountInIframe(page, 1);
   expect(selectedWord.length).toBeGreaterThan(0);

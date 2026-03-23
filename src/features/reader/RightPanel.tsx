@@ -15,7 +15,9 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   explanationError?: string;
   noteDraft?: string;
   noteOpen?: boolean;
+  llmApiUrl?: string;
   onAppearanceChange?: (patch: Partial<ReaderPreferences>) => void;
+  onLlmApiUrlChange?: (value: string) => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
   onTtsPause?: () => void;
@@ -45,9 +47,11 @@ export function RightPanel({
   appearance,
   explanation,
   explanationError,
+  llmApiUrl,
   noteDraft,
   noteOpen,
   onAppearanceChange,
+  onLlmApiUrlChange,
   onNoteDraftChange,
   onNoteSave,
   onTtsPause,
@@ -73,41 +77,52 @@ export function RightPanel({
 }: RightPanelProps) {
   return (
     <aside className="reader-tools" {...props}>
-      <AiResultPanel
-        explanation={explanation}
-        explanationError={explanationError}
-        ipa={aiIpa}
-        selectedText={selectedText}
-        translation={translation}
-        translationError={translationError}
-      />
-      <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
-      <TtsStatusPanel
-        currentText={ttsCurrentText}
-        error={ttsError}
-        onPause={onTtsPause}
-        onRateChange={onTtsRateChange}
-        onResume={onTtsResume}
-        onStart={onTtsStart}
-        onStop={onTtsStop}
-        rate={ttsRate}
-        startDisabled={ttsStartDisabled}
-        status={ttsStatus}
-        voiceId={ttsVoice}
-        voices={ttsVoices}
-        volume={ttsVolume}
-        onVoiceChange={onTtsVoiceChange}
-        onVolumeChange={onTtsVolumeChange}
-      />
-      {appearance ? <AppearancePanel onChange={onAppearanceChange} preferences={appearance} /> : null}
-      <NoteEditorPanel
-        isOpen={noteOpen}
-        onChange={onNoteDraftChange}
-        onSave={onNoteSave}
-        selectedText={selectedText}
-        value={noteDraft}
-      />
-      <p className="reader-tools-hint">Bookmarks, highlights, and notes are stored only in this browser.</p>
+      <div className="reader-tools-primary">
+        <TtsStatusPanel
+          currentText={ttsCurrentText}
+          error={ttsError}
+          onPause={onTtsPause}
+          onRateChange={onTtsRateChange}
+          onResume={onTtsResume}
+          onStart={onTtsStart}
+          onStop={onTtsStop}
+          rate={ttsRate}
+          startDisabled={ttsStartDisabled}
+          status={ttsStatus}
+          voiceId={ttsVoice}
+          voices={ttsVoices}
+          volume={ttsVolume}
+          onVoiceChange={onTtsVoiceChange}
+          onVolumeChange={onTtsVolumeChange}
+        />
+      </div>
+      <div className="reader-tools-scroll" role="group" aria-label="Reader detail panels">
+        <AiResultPanel
+          explanation={explanation}
+          explanationError={explanationError}
+          ipa={aiIpa}
+          selectedText={selectedText}
+          translation={translation}
+          translationError={translationError}
+        />
+        <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
+        {appearance ? (
+          <AppearancePanel
+            llmApiUrl={llmApiUrl}
+            onChange={onAppearanceChange}
+            onLlmApiUrlChange={onLlmApiUrlChange}
+            preferences={appearance}
+          />
+        ) : null}
+        <NoteEditorPanel
+          isOpen={noteOpen}
+          onChange={onNoteDraftChange}
+          onSave={onNoteSave}
+          selectedText={selectedText}
+          value={noteDraft}
+        />
+        <p className="reader-tools-hint">Bookmarks, highlights, and notes are stored only in this browser.</p>
+      </div>
     </aside>
   );
 }

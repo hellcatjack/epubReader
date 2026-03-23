@@ -19,17 +19,17 @@ it("renders the shared app shell on the bookshelf route", () => {
   expect(screen.getByRole("heading", { name: /local books/i })).toBeInTheDocument();
 });
 
-it("renders the shared app shell on the reader route", () => {
+it("renders reader-route shell actions inside the top bar instead of a separate shell header", () => {
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
       <App />
     </MemoryRouter>,
   );
 
-  const navigation = screen.getByRole("navigation", { name: /reader app navigation/i });
-  expect(navigation).toBeInTheDocument();
-  expect(within(navigation).getByRole("button", { name: /library/i })).toBeInTheDocument();
-  expect(within(navigation).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
-  expect(within(navigation).getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: /reader app navigation/i })).not.toBeInTheDocument();
+  const topbar = screen.getByRole("banner");
+  expect(within(topbar).getByRole("button", { name: /library/i })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: /settings/i })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /preparing your book/i })).toBeInTheDocument();
 });

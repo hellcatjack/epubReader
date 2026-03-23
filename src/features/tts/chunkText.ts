@@ -35,6 +35,7 @@ type ChunkOptions = {
 
 export type ChunkBlock = {
   cfi?: string;
+  locatorText?: string;
   spineItemId?: string;
   text: string;
 };
@@ -42,14 +43,22 @@ export type ChunkBlock = {
 export type ChunkMarker = {
   cfi?: string;
   end: number;
+  locatorText?: string;
   spineItemId?: string;
   start: number;
+  sourceEnd?: number;
+  sourceStart?: number;
   text: string;
 };
 
 export type ChunkSegment = {
   markers: ChunkMarker[];
   text: string;
+};
+
+type ChunkUnit = ChunkBlock & {
+  sourceEnd: number;
+  sourceStart: number;
 };
 
 function normalizeParagraphs(text: string) {
@@ -59,7 +68,7 @@ function normalizeParagraphs(text: string) {
     .filter(Boolean);
 }
 
-function normalizeBlocks(blocks: Array<string | ChunkBlock>) {
+function normalizeBlocks(blocks: Array<string | ChunkBlock>): ChunkUnit[] {
   return blocks
     .map((block) =>
       typeof block === "string"
@@ -71,37 +80,67 @@ function normalizeBlocks(blocks: Array<string | ChunkBlock>) {
             text: block.text.replace(/\s+/g, " ").trim(),
           },
     )
-    .filter((block) => block.text);
+    .filter((block) => block.text)
+    .map((block) => ({
+      ...block,
+      locatorText: block.locatorText ?? block.text,
+      sourceEnd: block.text.length,
+      sourceStart: 0,
+    }));
 }
 
-function blocksToUnits(blocks: Array<string | ChunkBlock>, maxCharacters: number) {
-  return normalizeBlocks(blocks).flatMap((block) => {
-    if (block.text.length <= maxCharacters) {
-      return [block];
+function splitBlockIntoUnits(block: ChunkUnit, maxCharacters: number): ChunkUnit[] {
+  if (block.text.length <= maxCharacters) {
+    return [block];
+  }
+
+  const sentences = splitIntoSentences(block.text);
+  let blockCursor = 0;
+
+  return sentences.flatMap((sentence) => {
+    const sentenceStart = block.text.indexOf(sentence, blockCursor);
+    const resolvedSentenceStart = sentenceStart >= 0 ? sentenceStart : blockCursor;
+    const sentenceEnd = resolvedSentenceStart + sentence.length;
+    blockCursor = sentenceEnd;
+
+    if (sentence.length <= maxCharacters) {
+      return [
+        {
+          ...block,
+          sourceEnd: sentenceEnd,
+          sourceStart: resolvedSentenceStart,
+          text: sentence,
+        },
+      ];
     }
 
-    return splitIntoSentences(block.text).flatMap((sentence) => {
-      if (sentence.length <= maxCharacters) {
-        return [
-          {
-            ...block,
-            text: sentence,
-          },
-        ];
-      }
+    const oversizedUnits = splitOversizedSentence(sentence, maxCharacters);
+    let sentenceCursor = resolvedSentenceStart;
 
-      return splitOversizedSentence(sentence, maxCharacters).map((text) => ({
+    return oversizedUnits.map((unitText) => {
+      const unitStart = block.text.indexOf(unitText, sentenceCursor);
+      const resolvedUnitStart = unitStart >= 0 ? unitStart : sentenceCursor;
+      const unitEnd = resolvedUnitStart + unitText.length;
+      sentenceCursor = unitEnd;
+
+      return {
         ...block,
-        text,
-      }));
+        sourceEnd: unitEnd,
+        sourceStart: resolvedUnitStart,
+        text: unitText,
+      };
     });
   });
 }
 
-function joinUnits(units: ChunkBlock[], maxCharacters: number) {
+function blocksToUnits(blocks: Array<string | ChunkBlock>, maxCharacters: number) {
+  return normalizeBlocks(blocks).flatMap((block) => splitBlockIntoUnits(block, maxCharacters));
+}
+
+function joinUnits(units: ChunkUnit[], maxCharacters: number) {
   let current = "";
   let consumed = 0;
-  const segmentUnits: ChunkBlock[] = [];
+  const segmentUnits: ChunkUnit[] = [];
 
   for (const unit of units) {
     const candidate = current ? `${current} ${unit.text}` : unit.text;
@@ -151,8 +190,11 @@ export function chunkTextSegmentsFromBlocks(
       return {
         cfi: unit.cfi,
         end,
+        locatorText: unit.locatorText,
         spineItemId: unit.spineItemId,
         start,
+        sourceEnd: unit.sourceEnd,
+        sourceStart: unit.sourceStart,
         text: unit.text,
       };
     });

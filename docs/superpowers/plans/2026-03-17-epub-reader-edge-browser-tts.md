@@ -207,7 +207,7 @@ git commit -m "feat: adapt tts queue to browser utterances"
 
 ```ts
 it("does not persist ttsHelperUrl in default settings", () => {
-  const settings = buildDefaultSettings("192.168.1.31");
+  const settings = buildDefaultSettings("localhost");
   expect("ttsHelperUrl" in settings).toBe(false);
 });
 

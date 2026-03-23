@@ -4,6 +4,7 @@ export type ReaderPreferences = Pick<
   SettingsInput,
   | "columnCount"
   | "contentPadding"
+  | "contentBackgroundColor"
   | "fontFamily"
   | "fontScale"
   | "letterSpacing"
@@ -18,6 +19,7 @@ export type ReaderPreferences = Pick<
 export const defaultReaderPreferences: ReaderPreferences = {
   columnCount: 1,
   contentPadding: 32,
+  contentBackgroundColor: "#f6edde",
   fontFamily: "book",
   fontScale: 1,
   letterSpacing: 0,
@@ -28,6 +30,8 @@ export const defaultReaderPreferences: ReaderPreferences = {
   readingMode: "scrolled",
   theme: "sepia",
 };
+
+const SCROLLED_MODE_WIDTH_BOOST = 200;
 
 export function getEffectiveReaderPreferences(preferences: ReaderPreferences): ReaderPreferences {
   if (preferences.readingMode !== "paginated") {
@@ -57,12 +61,17 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
   const columnGap = Math.max(effectivePreferences.contentPadding, 32);
   const fontSize = `${Math.round(effectivePreferences.fontScale * 100)}%`;
   const imagePagePadding = `${Math.min(effectivePreferences.contentPadding, 16)}px`;
+  const maxLineWidth =
+    effectivePreferences.readingMode === "scrolled"
+      ? effectivePreferences.maxLineWidth + SCROLLED_MODE_WIDTH_BOOST
+      : effectivePreferences.maxLineWidth;
 
   return {
     html: {
       "font-size": fontSize,
     },
     body: {
+      "background-color": effectivePreferences.contentBackgroundColor,
       "box-sizing": "border-box",
       "column-count": String(effectivePreferences.columnCount),
       "column-gap": `${columnGap}px`,
@@ -71,7 +80,7 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
       "letter-spacing": `${effectivePreferences.letterSpacing}em`,
       "line-height": String(effectivePreferences.lineHeight),
       "margin": "0 auto",
-      "max-width": `${effectivePreferences.maxLineWidth}px`,
+      "max-width": `${maxLineWidth}px`,
       "padding": `${effectivePreferences.contentPadding}px`,
     },
     "body.reader-image-page": {

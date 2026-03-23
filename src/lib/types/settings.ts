@@ -5,6 +5,7 @@ export type ReaderFontFamily = "serif" | "sans" | "book";
 export type SettingsRecord = {
   id: "settings";
   apiKey: string;
+  llmApiUrl: string;
   targetLanguage: string;
   targetLanguageCustomized: boolean;
   theme: ThemeName;
@@ -18,6 +19,7 @@ export type SettingsRecord = {
   paragraphSpacing: number;
   paragraphIndent: number;
   contentPadding: number;
+  contentBackgroundColor: string;
   maxLineWidth: number;
   columnCount: 1 | 2;
   fontFamily: ReaderFontFamily;

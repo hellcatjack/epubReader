@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkText } from "./chunkText";
+import { chunkText, chunkTextSegmentsFromBlocks } from "./chunkText";
 
 describe("chunkText", () => {
   it("keeps short paragraphs together in the first segment", () => {
@@ -30,5 +30,29 @@ describe("chunkText", () => {
       "Second sentence.",
       "Third sentence.",
     ]);
+  });
+
+  it("preserves source offsets for oversized sentence markers inside the original block", () => {
+    const segments = chunkTextSegmentsFromBlocks(
+      [
+        {
+          cfi: "epubcfi(/6/2!/4/2/1:0)",
+          text: "Alpha beta beta gamma",
+        },
+      ],
+      { firstSegmentMax: 10, segmentMax: 10 },
+    );
+
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.markers[0]).toMatchObject({
+      sourceStart: 0,
+      sourceEnd: "Alpha beta".length,
+      text: "Alpha beta",
+    });
+    expect(segments[1]?.markers[0]).toMatchObject({
+      sourceStart: "Alpha beta ".length,
+      sourceEnd: "Alpha beta beta gamma".length,
+      text: "beta gamma",
+    });
   });
 });

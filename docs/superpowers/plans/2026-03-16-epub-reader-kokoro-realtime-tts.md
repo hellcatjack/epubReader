@@ -470,7 +470,7 @@ git commit -m "feat: add kokoro health fields to tts client"
 Update tests to expect:
 
 ```ts
-expect(createDefaultSettings("192.168.1.31")).toMatchObject({
+expect(createDefaultSettings("localhost")).toMatchObject({
   ttsVoice: "af_heart",
 });
 ```

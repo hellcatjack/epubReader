@@ -1,12 +1,28 @@
 import { db } from "../../lib/db/appDb";
-import type { SettingsInput, SettingsPatch } from "../../lib/types/settings";
+import type { SettingsInput, SettingsPatch, ThemeName } from "../../lib/types/settings";
+import { DEFAULT_LLM_API_URL } from "../ai/aiEndpoints";
+
+export function getDefaultContentBackgroundColor(theme: ThemeName) {
+  if (theme === "light") {
+    return "#fffdf8";
+  }
+
+  if (theme === "dark") {
+    return "#1f1b18";
+  }
+
+  return "#f6edde";
+}
 
 export function createDefaultSettings(_hostname?: string): SettingsInput {
+  const theme = "sepia";
+
   return {
     apiKey: "",
+    llmApiUrl: DEFAULT_LLM_API_URL,
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
-    theme: "sepia",
+    theme,
     ttsRate: 1,
     ttsVoice: "",
     ttsVolume: 1,
@@ -17,6 +33,7 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
     paragraphSpacing: 0.85,
     paragraphIndent: 1.8,
     contentPadding: 32,
+    contentBackgroundColor: getDefaultContentBackgroundColor(theme),
     maxLineWidth: 760,
     columnCount: 1,
     fontFamily: "book",
@@ -32,12 +49,14 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
   }
 
   return (
+    typeof record.llmApiUrl !== "string" ||
     typeof record.readingMode !== "string" ||
     typeof record.lineHeight !== "number" ||
     typeof record.letterSpacing !== "number" ||
     typeof record.paragraphSpacing !== "number" ||
     typeof record.paragraphIndent !== "number" ||
     typeof record.contentPadding !== "number" ||
+    typeof record.contentBackgroundColor !== "string" ||
     typeof record.maxLineWidth !== "number" ||
     typeof record.columnCount !== "number" ||
     typeof record.fontFamily !== "string" ||
@@ -54,6 +73,10 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
   const migratedSettings: SettingsInput = {
     ...defaultSettings,
     ...record,
+    contentBackgroundColor:
+      typeof record.contentBackgroundColor === "string" && record.contentBackgroundColor.trim()
+        ? record.contentBackgroundColor
+        : getDefaultContentBackgroundColor((record.theme as ThemeName | undefined) ?? defaultSettings.theme),
   };
 
   if (record.targetLanguageCustomized !== true && migratedSettings.targetLanguage === "en") {

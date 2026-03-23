@@ -26,13 +26,13 @@ public class HealthEndpointTests
         await using var application = new TestApplicationFactory();
         using var client = application.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Options, "/speak");
-        request.Headers.Add("Origin", "http://192.168.1.31:5173");
+        request.Headers.Add("Origin", "http://localhost:5173");
         request.Headers.Add("Access-Control-Request-Method", "POST");
         request.Headers.Add("Access-Control-Request-Headers", "content-type");
 
         using var response = await client.SendAsync(request);
 
         Assert.True(response.IsSuccessStatusCode);
-        Assert.Equal("http://192.168.1.31:5173", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+        Assert.Equal("http://localhost:5173", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
     }
 }

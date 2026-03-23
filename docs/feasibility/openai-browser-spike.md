@@ -4,7 +4,7 @@ Date: 2026-03-13
 
 ## Current Contract Notes
 
-- Translation and explanation now target `POST http://192.168.1.31:8001/v1/chat/completions`.
+- Translation and explanation now target `POST http://localhost:8001/v1/chat/completions`.
 - No authentication header is required for the current local model server.
 - TTS is intentionally out of scope for the current development pass and remains disabled in the UI and service layer.
 

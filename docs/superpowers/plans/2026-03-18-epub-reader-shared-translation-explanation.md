@@ -319,8 +319,8 @@ Expected: `/app/epubReader` contains the latest bundle.
 Run:
 
 ```bash
-curl --resolve ushome.amycat.com:18025:127.0.0.1 -I https://ushome.amycat.com:18025/
-curl --resolve ushome.amycat.com:18025:127.0.0.1 -I https://ushome.amycat.com:18025/books/demo
+curl -k -I https://localhost:18025/
+curl -k -I https://localhost:18025/books/demo
 ```
 
 Expected: both return `HTTP/2 200`

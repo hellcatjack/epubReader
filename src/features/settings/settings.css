@@ -94,6 +94,11 @@
   color: #4f3118;
 }
 
+.settings-field small {
+  color: #7d654f;
+  line-height: 1.4;
+}
+
 .settings-field select,
 .settings-field input {
   width: 100%;
@@ -104,6 +109,11 @@
   background: #fffdf9;
   color: inherit;
   font: inherit;
+}
+
+.settings-field-color input[type="color"] {
+  min-height: 3rem;
+  padding: 0.35rem;
 }
 
 .settings-field-wide {

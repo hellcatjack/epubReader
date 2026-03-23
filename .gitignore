@@ -11,3 +11,7 @@ worktrees/
 .venv/
 __pycache__/
 *.pyc
+.tmp/
+/tests/fixtures/local/
+/*.epub
+/column-highlight-test*.png

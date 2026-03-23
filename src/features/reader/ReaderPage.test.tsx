@@ -3,9 +3,10 @@ import "fake-indexeddb/auto";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { db, resetDb } from "../../lib/db/appDb";
+import type { ReaderAppShellContext } from "../../app/readerAppShellContext";
 import { getSettings } from "../settings/settingsRepository";
 import { writeRefreshSettingsSnapshot } from "../settings/refreshSettingsSnapshot";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
@@ -13,6 +14,7 @@ import { ReaderPage } from "./ReaderPage";
 
 const getProgressMock = vi.fn().mockResolvedValue(null);
 const saveProgressMock = vi.fn().mockResolvedValue(undefined);
+const DEFAULT_TEST_LLM_API_URL = "http://localhost:8001/v1/chat/completions";
 
 vi.mock("../bookshelf/progressRepository", async () => {
   const actual = await vi.importActual<typeof import("../bookshelf/progressRepository")>(
@@ -43,7 +45,8 @@ function setUserAgent(userAgent: string) {
   });
 }
 
-function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
+function installSpeechSynthesis(voices: SpeechSynthesisVoice[], options: { autoStart?: boolean } = {}) {
+  const { autoStart = true } = options;
   let currentUtterance: SpeechSynthesisUtterance | undefined;
   const speechSynthesis = {
     addEventListener: vi.fn(),
@@ -55,6 +58,9 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
     resume: vi.fn(),
     speak: vi.fn((utterance: SpeechSynthesisUtterance) => {
       currentUtterance = utterance;
+      if (autoStart) {
+        currentUtterance.onstart?.(new Event("start") as SpeechSynthesisEvent);
+      }
     }),
     speaking: false,
   } as unknown as SpeechSynthesis;
@@ -63,6 +69,7 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
   vi.stubGlobal(
     "SpeechSynthesisUtterance",
     class {
+      onstart: ((event: Event) => void) | null = null;
       onboundary: ((event: SpeechSynthesisEvent) => void) | null = null;
       onend: (() => void) | null = null;
       onerror: ((event: Event) => void) | null = null;
@@ -83,12 +90,128 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
       (currentUtterance as (SpeechSynthesisUtterance & { onboundary?: (event: SpeechSynthesisEvent) => void }) | undefined)
         ?.onboundary?.(boundaryEvent);
     },
+    startCurrent() {
+      currentUtterance?.onstart?.(new Event("start") as SpeechSynthesisEvent);
+    },
     finishCurrent() {
       currentUtterance?.onend?.(new Event("end") as SpeechSynthesisEvent);
     },
     speechSynthesis,
   };
 }
+
+it("does not expose paginated continuous tts markers before speech actually starts", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis(
+    [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ],
+    { autoStart: false },
+  );
+  await db.settings.put({
+    id: "settings",
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+    apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
+  });
+
+  const goTo = vi.fn(async () => undefined);
+  const setActiveTtsSegment = vi.fn<(segment: ActiveTtsSegment | null) => Promise<void>>(async () => undefined);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () => "First paragraph on the current page.\n\nSecond paragraph on the next page.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph on the next page.",
+                      },
+                    ]),
+                    getCurrentLocation: vi.fn(async () => ({
+                      cfi: "epubcfi(/6/2!/4/1:0)",
+                      progress: 0.2,
+                      spineItemId: "chap-1",
+                      textQuote: "First paragraph on the current page.",
+                    })),
+                    goTo,
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment,
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & {
+                    getCurrentLocation: NonNullable<RuntimeRenderHandle["getCurrentLocation"]>;
+                    getTtsBlocksFromCurrentLocation: NonNullable<RuntimeRenderHandle["getTtsBlocksFromCurrentLocation"]>;
+                    setActiveTtsSegment: typeof setActiveTtsSegment;
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  expect(goTo).not.toHaveBeenCalled();
+  expect(setActiveTtsSegment.mock.calls.some(([segment]) => Boolean(segment))).toBe(false);
+});
 
 it("shows toc, reading progress, bookmark toggle, and the reader tools surface", () => {
   render(<ReaderPage />);
@@ -97,6 +220,168 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
   expect(screen.getByRole("progressbar", { name: /reading progress/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
+});
+
+it("renders selection actions in the top bar instead of below the reader stage", () => {
+  render(<ReaderPage />);
+
+  const topbar = screen.getByRole("banner");
+  expect(within(topbar).getByRole("button", { name: "Translate" })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: "Explain" })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: "Highlight" })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: "Add note" })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: "Read aloud" })).toBeInTheDocument();
+  expect(document.querySelector(".reader-stage .selection-popover")).toBeNull();
+});
+
+it("renders library import and settings actions inside the reader top bar when shell context is available", async () => {
+  const shellContext: ReaderAppShellContext = {
+    currentBook: {
+      author: "Author",
+      progressLabel: "Unread",
+      title: "Minimal Valid EPUB",
+    },
+    isImporting: false,
+    isLibraryOpen: false,
+    isSettingsOpen: false,
+    onImportClick: vi.fn(),
+    onLibraryClick: vi.fn(),
+    onSettingsClick: vi.fn(),
+  };
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route element={<Outlet context={shellContext} />}>
+          <Route
+            path="/books/:bookId"
+            element={
+              <ReaderPage
+                runtime={{
+                  render: vi.fn(async () => ({
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph.\n\nSecond paragraph."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  })),
+                }}
+              />
+            }
+          />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const topbar = await screen.findByRole("banner");
+  expect(within(topbar).getByRole("button", { name: /library/i })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: /import epub/i })).toBeInTheDocument();
+  expect(within(topbar).getByRole("button", { name: /settings/i })).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: /reader app navigation/i })).not.toBeInTheDocument();
+});
+
+it("turns paginated pages from host-document arrow presses when the reading iframe is focused, while keeping top-bar paging active", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
+  await db.settings.put({
+    id: "settings",
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+    apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
+  });
+  const nextPage = vi.fn(async () => undefined);
+  const prevPage = vi.fn(async () => undefined);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ element }) => {
+                  const iframe = document.createElement("iframe");
+                  iframe.title = "Reader frame";
+                  element.appendChild(iframe);
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph.\n\nSecond paragraph."),
+                    goTo: vi.fn(async () => undefined),
+                    next: nextPage,
+                    prev: prevPage,
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /paginated mode/i })).toHaveAttribute("aria-pressed", "true");
+  });
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /next page/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /previous page/i })).toBeEnabled();
+  });
+
+  fireEvent.keyDown(document.body, { key: "ArrowRight" });
+  fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+  expect(nextPage).not.toHaveBeenCalled();
+  expect(prevPage).not.toHaveBeenCalled();
+
+  const iframe = document.querySelector(".epub-root iframe");
+  expect(iframe).toBeInstanceOf(HTMLIFrameElement);
+  (iframe as HTMLIFrameElement).focus();
+  expect(document.activeElement).toBe(iframe);
+
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  fireEvent.keyDown(window, { key: "ArrowLeft" });
+  expect(nextPage).toHaveBeenCalledTimes(1);
+  expect(prevPage).toHaveBeenCalledTimes(1);
+
+  const topbar = screen.getByRole("banner");
+  topbar.focus();
+  fireEvent.keyDown(topbar, { key: "ArrowRight" });
+  fireEvent.keyDown(topbar, { key: "ArrowLeft" });
+
+  expect(nextPage).toHaveBeenCalledTimes(2);
+  expect(prevPage).toHaveBeenCalledTimes(2);
 });
 
 it("keeps tts queue above appearance and persists voice rate and volume changes from the reader rail", async () => {
@@ -139,9 +424,11 @@ it("keeps tts queue above appearance and persists voice rate and volume changes 
   const tools = await screen.findByRole("complementary", { name: /reader tools/i });
   const ttsHeading = within(tools).getByRole("heading", { name: /tts queue/i });
   const appearanceHeading = within(tools).getByRole("heading", { name: /appearance/i });
-  const ttsSettings = within(tools).getByRole("group", { name: /tts settings/i });
   expect(ttsHeading.compareDocumentPosition(appearanceHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
+  await user.click(within(tools).getByRole("button", { name: /voice, speed, volume/i }));
+
+  const ttsSettings = within(tools).getByRole("group", { name: /tts settings/i });
   await screen.findByRole("option", { name: /microsoft andrew online/i });
   await user.selectOptions(within(ttsSettings).getByLabelText(/tts voice/i), "Microsoft Andrew Online (Natural)");
   fireEvent.change(within(ttsSettings).getByLabelText(/^tts rate$/i), { target: { value: "1.15" } });
@@ -176,10 +463,12 @@ it("waits for persisted reader settings before mounting the viewport runtime", a
     paragraphSpacing: 0.85,
     paragraphIndent: 1.8,
     contentPadding: 32,
+    contentBackgroundColor: "#c0ffee",
     maxLineWidth: 760,
     columnCount: 1,
     fontFamily: "book",
     apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
   });
   const renderSpy = vi.fn(async () => ({
     applyPreferences: vi.fn(async () => undefined),
@@ -211,6 +500,7 @@ it("waits for persisted reader settings before mounting the viewport runtime", a
         initialPreferences: expect.objectContaining({
           columnCount: 1,
           contentPadding: 32,
+          contentBackgroundColor: "#c0ffee",
           fontFamily: "book",
           fontScale: 1,
           lineHeight: 1.7,
@@ -221,6 +511,8 @@ it("waits for persisted reader settings before mounting the viewport runtime", a
       }),
     );
   });
+
+  expect(document.querySelector(".reader-layout")).toHaveStyle("--reader-page-background: #c0ffee");
 });
 
 it("prefers same-tab refresh settings when restoring paginated mode after reload", async () => {
@@ -249,15 +541,19 @@ it("prefers same-tab refresh settings when restoring paginated mode after reload
     paragraphSpacing: 0.85,
     paragraphIndent: 1.8,
     contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
     maxLineWidth: 760,
     columnCount: 2,
     fontFamily: "book",
     apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
   });
   writeRefreshSettingsSnapshot({
     apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
     columnCount: 2,
     contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
     fontFamily: "book",
     fontScale: 1,
     letterSpacing: 0,
@@ -330,10 +626,12 @@ it("waits for saved progress before opening the reader and restores the saved cf
     paragraphSpacing: 0.85,
     paragraphIndent: 1.8,
     contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
     maxLineWidth: 760,
     columnCount: 1,
     fontFamily: "book",
     apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
   });
   let resolveProgress:
     | ((
@@ -432,10 +730,12 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
     paragraphSpacing: 0.85,
     paragraphIndent: 1.8,
     contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
     maxLineWidth: 760,
     columnCount: 1,
     fontFamily: "book",
     apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
   });
   sessionStorage.setItem(
     "reader-refresh-progress:book-1",
@@ -520,10 +820,12 @@ it("always prefers the same-tab refresh snapshot over persisted progress during 
     paragraphSpacing: 0.85,
     paragraphIndent: 1.8,
     contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
     maxLineWidth: 760,
     columnCount: 1,
     fontFamily: "book",
     apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
   });
   sessionStorage.setItem(
     "reader-refresh-progress:book-1",
@@ -982,11 +1284,20 @@ it("switches reading modes and pages through the active rendition", async () => 
   await waitFor(() => {
     expect(screen.getByRole("button", { name: /paginated mode/i })).toHaveAttribute("aria-pressed", "true");
   });
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /next page/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /previous page/i })).toBeEnabled();
+  });
 
   await user.click(screen.getByRole("button", { name: /next page/i }));
   expect(next).toHaveBeenCalled();
 
   fireEvent.keyDown(window, { key: "ArrowLeft" });
+  expect(prev).not.toHaveBeenCalled();
+
+  const topbar = screen.getByRole("banner");
+  topbar.focus();
+  fireEvent.keyDown(topbar, { key: "ArrowLeft" });
 
   await waitFor(() => {
     expect(prev).toHaveBeenCalled();
@@ -1051,6 +1362,54 @@ it("applies live appearance changes through the active rendition handle", async 
         fontScale: 1.3,
       }),
     );
+  });
+});
+
+it("persists llm api url changes from the reader tools panel", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  findCfiFromTextQuote: vi.fn(async () => null),
+                  getTextFromCurrentLocation: vi.fn(async () => ""),
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await act(async () => {
+    fireEvent.change(await screen.findByLabelText(/llm api url/i), {
+      target: { value: "http://localhost:1234/v1" },
+    });
+  });
+
+  await waitFor(async () => {
+    expect(await getSettings()).toMatchObject({
+      llmApiUrl: "http://localhost:1234/v1",
+    });
   });
 });
 
@@ -1260,11 +1619,12 @@ it("starts pauses resumes and stops continuous reading from the current location
     );
   });
 
-  expect(await screen.findByText(/playing/i)).toBeInTheDocument();
+  const ttsQueue = screen.getByRole("region", { name: /tts queue/i });
+  expect(await within(ttsQueue).findByText(/^playing$/i)).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /pause tts/i }));
   expect(browserTts.speechSynthesis.pause).toHaveBeenCalledTimes(1);
-  expect(screen.getByText(/paused/i)).toBeInTheDocument();
+  expect(within(ttsQueue).getByText(/^paused$/i)).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /resume tts/i }));
   expect(browserTts.speechSynthesis.resume).toHaveBeenCalledTimes(1);
@@ -1281,7 +1641,7 @@ it("starts pauses resumes and stops continuous reading from the current location
 
   await user.click(screen.getByRole("button", { name: /stop tts/i }));
   expect(browserTts.speechSynthesis.cancel).toHaveBeenCalled();
-  expect(screen.getByText(/idle/i)).toBeInTheDocument();
+  expect(within(ttsQueue).getByText(/^ready$/i, { selector: ".reader-tts-badge" })).toBeInTheDocument();
 });
 
 it("tracks the active continuous tts segment for viewport highlighting", async () => {
@@ -1343,16 +1703,21 @@ it("tracks the active continuous tts segment for viewport highlighting", async (
 
   await user.click(screen.getByRole("button", { name: /start tts/i }));
 
+  const ttsQueue = screen.getByRole("region", { name: /tts queue/i });
   await waitFor(() => {
-    expect(screen.getByText(/current: first paragraph/i)).toBeInTheDocument();
+    expect(within(ttsQueue).getByText(/first paragraph/i)).toBeInTheDocument();
   });
 
-  expect(setActiveTtsSegment).toHaveBeenCalledWith(
-    expect.objectContaining({
-      spineItemId: "chap-1",
-      text: expect.stringContaining("First paragraph"),
-    }),
-  );
+  await waitFor(() => {
+    expect(setActiveTtsSegment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endOffset: 5,
+        spineItemId: "chap-1",
+        startOffset: 0,
+        text: "First",
+      }),
+    );
+  });
 });
 
 it("restarts continuous reading immediately when the tts rate changes", async () => {
@@ -1436,6 +1801,7 @@ it("restarts continuous reading immediately when the tts rate changes", async ()
     );
   });
 
+  await user.click(screen.getByRole("button", { name: /voice, speed, volume/i }));
   await user.click(screen.getByRole("button", { name: /1.4x/i }));
 
   await waitFor(() => {
@@ -1449,7 +1815,7 @@ it("restarts continuous reading immediately when the tts rate changes", async ()
   });
 });
 
-it("auto-turns pages during continuous reading in paginated mode", async () => {
+it("keeps paginated continuous reading on runtime-managed highlighting instead of forcing reader-level goTo", async () => {
   const user = userEvent.setup();
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   const browserTts = installSpeechSynthesis([
@@ -1464,7 +1830,6 @@ it("auto-turns pages during continuous reading in paginated mode", async () => {
   const goTo = vi.fn(async () => undefined);
   const firstParagraph = "First paragraph keeps the first page active.";
   const secondParagraph = "Second paragraph should move the rendition to the next page.";
-  const chunkText = `${firstParagraph} ${secondParagraph}`;
 
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
@@ -1488,7 +1853,7 @@ it("auto-turns pages during continuous reading in paginated mode", async () => {
                       return undefined;
                     },
                     findCfiFromTextQuote: vi.fn(async () => null),
-                    getTextFromCurrentLocation: vi.fn(async () => chunkText),
+                    getTextFromCurrentLocation: vi.fn(async () => `${firstParagraph}\n\n${secondParagraph}`),
                     getTtsBlocksFromCurrentLocation: vi.fn(async () => [
                       {
                         cfi: "epubcfi(/6/2!/4/2/1:0)",
@@ -1524,12 +1889,147 @@ it("auto-turns pages during continuous reading in paginated mode", async () => {
 
   await user.click(screen.getByRole("button", { name: /start tts/i }));
 
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: firstParagraph,
+      }),
+    );
+  });
+
   act(() => {
-    browserTts.emitBoundary(chunkText.indexOf(secondParagraph));
+    browserTts.finishCurrent();
   });
 
   await waitFor(() => {
-    expect(goTo).toHaveBeenCalledWith("epubcfi(/6/2!/4/4/1:0)");
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: secondParagraph,
+      }),
+    );
+  });
+
+  act(() => {
+    browserTts.emitBoundary(0);
+  });
+
+  await waitFor(() => {
+    expect(goTo).not.toHaveBeenCalled();
+  });
+});
+
+it("continues continuous reading into the next chapter after the current chapter finishes", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  const firstChapterParagraph = "First chapter closes with one final paragraph.";
+  const secondChapterParagraph = "Second chapter should begin speaking immediately after the turn.";
+  let activeChapter = 1;
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  const relocate = (chapter: number) => {
+                    const isFirstChapter = chapter === 1;
+                    onRelocated?.({
+                      cfi: isFirstChapter ? "epubcfi(/6/2!/4/1:0)" : "epubcfi(/6/4!/4/1:0)",
+                      progress: isFirstChapter ? 0.35 : 0.52,
+                      spineItemId: isFirstChapter ? "chap-1" : "chap-2",
+                      textQuote: isFirstChapter ? firstChapterParagraph : secondChapterParagraph,
+                    });
+                  };
+
+                  relocate(activeChapter);
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation: vi.fn(async () => ({
+                      cfi: activeChapter === 1 ? "epubcfi(/6/2!/4/1:0)" : "epubcfi(/6/4!/4/1:0)",
+                      progress: activeChapter === 1 ? 0.35 : 0.52,
+                      spineItemId: activeChapter === 1 ? "chap-1" : "chap-2",
+                      textQuote: activeChapter === 1 ? firstChapterParagraph : secondChapterParagraph,
+                    })),
+                    getTextFromCurrentLocation: vi.fn(async () =>
+                      activeChapter === 1 ? firstChapterParagraph : secondChapterParagraph,
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () =>
+                      activeChapter === 1
+                        ? [
+                            {
+                              cfi: "epubcfi(/6/2!/4/2/1:0)",
+                              spineItemId: "chap-1",
+                              text: firstChapterParagraph,
+                            },
+                          ]
+                        : [
+                            {
+                              cfi: "epubcfi(/6/4!/4/2/1:0)",
+                              spineItemId: "chap-2",
+                              text: secondChapterParagraph,
+                            },
+                          ],
+                    ),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => {
+                      activeChapter = 2;
+                      relocate(activeChapter);
+                    }),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: firstChapterParagraph,
+      }),
+    );
+  });
+
+  act(() => {
+    browserTts.finishCurrent();
+  });
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: secondChapterParagraph,
+      }),
+    );
   });
 });
 
@@ -1675,7 +2175,9 @@ it("moves the active viewport marker when boundary events advance into the next 
   await waitFor(() => {
     expect(setActiveTtsSegment).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining("First paragraph"),
+        endOffset: 5,
+        startOffset: 0,
+        text: "First",
       }),
     );
   });
@@ -1688,7 +2190,7 @@ it("moves the active viewport marker when boundary events advance into the next 
     const lastCall = setActiveTtsSegment.mock.calls.at(-1)?.[0];
     expect(lastCall).toEqual(
       expect.objectContaining({
-        text: expect.stringMatching(/^Second paragraph/),
+        text: "Second",
       }),
     );
   });
@@ -1769,7 +2271,7 @@ it("prefers paragraph tts blocks over flattened chapter text when choosing the i
   await waitFor(() => {
     expect(setActiveTtsSegment).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: paragraphBlocks[0],
+        text: paragraphBlocks[0].split(/\s+/)[0],
       }),
     );
   });
@@ -1777,7 +2279,7 @@ it("prefers paragraph tts blocks over flattened chapter text when choosing the i
   const firstMarker = setActiveTtsSegment.mock.calls.find((call) => call[0])?.[0];
   expect(firstMarker).toEqual(
     expect.objectContaining({
-      text: paragraphBlocks[0],
+      text: paragraphBlocks[0].split(/\s+/)[0],
     }),
   );
   expect(firstMarker?.text.startsWith("ONE")).toBe(false);
@@ -1837,6 +2339,7 @@ it("persistently updates tts rate from the quick control", async () => {
     expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
   });
 
+  await user.click(screen.getByRole("button", { name: /voice, speed, volume/i }));
   await user.click(screen.getByRole("button", { name: /1.2x/i }));
 
   await expect(getSettings()).resolves.toMatchObject({

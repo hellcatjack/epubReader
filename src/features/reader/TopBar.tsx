@@ -1,3 +1,4 @@
+import type { KeyboardEvent, ReactNode } from "react";
 import type { ReadingMode } from "../../lib/types/settings";
 
 type TopBarProps = {
@@ -10,6 +11,8 @@ type TopBarProps = {
   onToggleBookmark?: () => void;
   progress?: number;
   readingMode?: ReadingMode;
+  selectionActions?: ReactNode;
+  systemActions?: ReactNode;
 };
 
 export function TopBar({
@@ -22,12 +25,31 @@ export function TopBar({
   onToggleBookmark,
   progress = 0,
   readingMode = "scrolled",
+  selectionActions,
+  systemActions,
 }: TopBarProps) {
   const progressPercent = Math.round(progress * 100);
   const bookmarkLabel = isBookmarked ? "Remove bookmark from this location" : "Bookmark this location";
 
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (!canTurnPages || readingMode !== "paginated") {
+      return;
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      onNextPage?.();
+      return;
+    }
+
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      onPrevPage?.();
+    }
+  }
+
   return (
-    <header className="reader-topbar">
+    <header className="reader-topbar" onKeyDown={handleKeyDown} role="banner" tabIndex={0}>
       <div>
         <p className="reader-topbar-label">Reading progress</p>
         <div
@@ -43,6 +65,7 @@ export function TopBar({
         <p className="reader-topbar-label">Local annotations enabled</p>
       </div>
       <div className="reader-topbar-actions">
+        {systemActions ? <div className="reader-system-actions">{systemActions}</div> : null}
         <div className="reader-mode-toggle" role="group" aria-label="Reading mode">
           <button
             aria-pressed={readingMode === "scrolled"}
@@ -78,6 +101,7 @@ export function TopBar({
         >
           {isBookmarked ? "Remove bookmark" : "Bookmark"}
         </button>
+        {selectionActions}
       </div>
     </header>
   );

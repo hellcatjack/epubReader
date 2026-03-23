@@ -272,4 +272,4 @@ Use `The_Barren_Grounds_(The_Misewa_Saga_01)...epub` as a real validation book f
 - Mouse drag selection does not auto-clear or misfire into page navigation
 - Appearance settings update live and persist after refresh
 - First open lands in a body chapter instead of front matter in common novel EPUBs
-- The real-book flow on `http://192.168.1.31:5173/` remains stable
+- The real-book flow on `http://localhost:5173/` remains stable

@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTtsQueue } from "./ttsQueue";
 
 function createFakeBrowserTtsClient() {
   let current:
     | {
+        onStart?: () => void;
         onBoundary?: (event: SpeechSynthesisEvent) => void;
         onEnd?: () => void;
         onError?: (error: Event | SpeechSynthesisErrorEvent) => void;
@@ -12,8 +13,14 @@ function createFakeBrowserTtsClient() {
     | undefined;
 
   return {
+    emitStart() {
+      current?.onStart?.();
+    },
     emitBoundary(charIndex: number) {
       current?.onBoundary?.({ charIndex } as SpeechSynthesisEvent);
+    },
+    emitBoundaryEvent(event: Partial<SpeechSynthesisEvent>) {
+      current?.onBoundary?.(event as SpeechSynthesisEvent);
     },
     finishCurrent() {
       current?.onEnd?.();
@@ -27,6 +34,7 @@ function createFakeBrowserTtsClient() {
       async (
         text: string,
         options: {
+          onStart?: () => void;
           onBoundary?: (event: SpeechSynthesisEvent) => void;
           onEnd?: () => void;
           onError?: (error: Event | SpeechSynthesisErrorEvent) => void;
@@ -36,6 +44,7 @@ function createFakeBrowserTtsClient() {
         },
       ) => {
         current = {
+          onStart: options.onStart,
           onBoundary: options.onBoundary,
           onEnd: options.onEnd,
           onError: options.onError,
@@ -48,6 +57,10 @@ function createFakeBrowserTtsClient() {
 }
 
 describe("ttsQueue", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("advances to the next queued segment after the current utterance ends", async () => {
     const client = createFakeBrowserTtsClient();
     const queue = createTtsQueue({
@@ -71,6 +84,7 @@ describe("ttsQueue", () => {
         volume: 1,
       }),
     );
+    client.emitStart();
     expect(queue.getState()).toMatchObject({
       currentText: "First paragraph.",
       status: "playing",
@@ -130,6 +144,7 @@ describe("ttsQueue", () => {
       },
     });
 
+    client.emitStart();
     queue.pause();
     expect(client.pause).toHaveBeenCalledTimes(1);
     expect(queue.getState().status).toBe("paused");
@@ -154,6 +169,7 @@ describe("ttsQueue", () => {
     });
     const chunk =
       "First paragraph keeps the opening marker. Second paragraph should move the marker when the spoken boundary reaches it.";
+    const expectedWord = "spoken";
     const expectedParagraph = "Second paragraph should move the marker when the spoken boundary reaches it.";
 
     await queue.start({
@@ -185,7 +201,325 @@ describe("ttsQueue", () => {
 
     expect(queue.getState()).toMatchObject({
       currentText: chunk,
-      markerText: expectedParagraph,
+      markerText: expectedWord,
+      status: "playing",
+    });
+  });
+
+  it("tracks the currently spoken word inside a single marker from speech boundaries", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+    const chunk = "The highlight should follow the spoken word instead of the full sentence.";
+
+    await queue.start({
+      chunks: [
+        {
+          markers: [
+            {
+              cfi: "epubcfi(/6/2!/4/2/1:0)",
+              end: chunk.length,
+              start: 0,
+              text: chunk,
+            },
+          ],
+          text: chunk,
+        },
+      ],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.emitStart();
+    client.emitBoundary(chunk.indexOf("spoken"));
+
+    expect(queue.getState()).toMatchObject({
+      currentText: chunk,
+      markerCfi: "epubcfi(/6/2!/4/2/1:0)",
+      markerText: "spoken",
+      status: "playing",
+    });
+  });
+
+  it("ignores sentence boundary events so the active highlight stays on the current spoken word", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+    const chunk = "The reader keeps listening until the sentence ends.";
+
+    await queue.start({
+      chunks: [
+        {
+          markers: [
+            {
+              cfi: "epubcfi(/6/2!/4/2/1:0)",
+              end: chunk.length,
+              start: 0,
+              text: chunk,
+            },
+          ],
+          text: chunk,
+        },
+      ],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.emitStart();
+
+    expect(queue.getState()).toMatchObject({
+      markerText: "The",
+      status: "playing",
+    });
+
+    client.emitBoundaryEvent({
+      charIndex: chunk.length - 1,
+      name: "sentence",
+    });
+
+    expect(queue.getState()).toMatchObject({
+      markerText: "The",
+      status: "playing",
+    });
+  });
+
+  it("waits for the first spoken boundary before exposing the first marker highlight when a chunk spans multiple targets", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+
+    await queue.start({
+      chunks: [
+        {
+          markers: [
+            {
+              cfi: "epubcfi(/6/2!/4/2/1:0)",
+              end: "First paragraph.".length,
+              start: 0,
+              text: "First paragraph.",
+            },
+            {
+              cfi: "epubcfi(/6/2!/4/4/1:0)",
+              end: "First paragraph. Second paragraph.".length,
+              start: "First paragraph. ".length,
+              text: "Second paragraph.",
+            },
+          ],
+          text: "First paragraph. Second paragraph.",
+        },
+      ],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    expect(queue.getState()).toMatchObject({
+      currentText: "First paragraph. Second paragraph.",
+      markerCfi: "",
+      markerText: "",
+      status: "loading",
+    });
+
+    client.emitStart();
+
+    expect(queue.getState()).toMatchObject({
+      currentText: "First paragraph. Second paragraph.",
+      status: "playing",
+    });
+    expect(queue.getState()).toMatchObject({
+      markerCfi: "",
+      markerText: "",
+    });
+
+    client.emitBoundary(0);
+
+    expect(queue.getState()).toMatchObject({
+      currentText: "First paragraph. Second paragraph.",
+      markerCfi: "epubcfi(/6/2!/4/2/1:0)",
+      markerText: "First",
+      status: "playing",
+    });
+  });
+
+  it("falls back to the first marker shortly after start when the browser never emits boundaries", async () => {
+    vi.useFakeTimers();
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+
+    await queue.start({
+      chunks: [
+        {
+          markers: [
+            {
+              cfi: "epubcfi(/6/2!/4/2/1:0)",
+              end: "First paragraph.".length,
+              start: 0,
+              text: "First paragraph.",
+            },
+            {
+              cfi: "epubcfi(/6/2!/4/4/1:0)",
+              end: "First paragraph. Second paragraph.".length,
+              start: "First paragraph. ".length,
+              text: "Second paragraph.",
+            },
+          ],
+          text: "First paragraph. Second paragraph.",
+        },
+      ],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.emitStart();
+    vi.advanceTimersByTime(249);
+    expect(queue.getState()).toMatchObject({
+      markerCfi: "",
+      markerText: "",
+      status: "playing",
+    });
+
+    vi.advanceTimersByTime(1);
+
+    expect(queue.getState()).toMatchObject({
+      markerCfi: "epubcfi(/6/2!/4/2/1:0)",
+      markerText: "First",
+      status: "playing",
+    });
+  });
+
+  it("respects a custom initial marker fallback duration", async () => {
+    vi.useFakeTimers();
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+
+    await queue.start({
+      chunks: [
+        {
+          markers: [
+            {
+              cfi: "epubcfi(/6/2!/4/2/1:0)",
+              end: "First paragraph.".length,
+              start: 0,
+              text: "First paragraph.",
+            },
+            {
+              cfi: "epubcfi(/6/2!/4/4/1:0)",
+              end: "First paragraph. Second paragraph.".length,
+              start: "First paragraph. ".length,
+              text: "Second paragraph.",
+            },
+          ],
+          text: "First paragraph. Second paragraph.",
+        },
+      ],
+      request: {
+        initialMarkerFallbackMs: 700,
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.emitStart();
+    vi.advanceTimersByTime(699);
+    expect(queue.getState()).toMatchObject({
+      markerCfi: "",
+      markerText: "",
+      status: "playing",
+    });
+
+    vi.advanceTimersByTime(1);
+    expect(queue.getState()).toMatchObject({
+      markerCfi: "epubcfi(/6/2!/4/2/1:0)",
+      markerText: "First",
+      status: "playing",
+    });
+  });
+
+  it("reveals the first marker on start when a chunk maps to a single highlight target", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+
+    await queue.start({
+      chunks: [
+        {
+          markers: [
+            {
+              cfi: "epubcfi(/6/2!/4/2/1:0)",
+              end: "First sentence.".length,
+              start: 0,
+              text: "First sentence.",
+            },
+            {
+              cfi: "epubcfi(/6/2!/4/2/1:0)",
+              end: "First sentence. Second sentence.".length,
+              start: "First sentence. ".length,
+              text: "Second sentence.",
+            },
+          ],
+          text: "First sentence. Second sentence.",
+        },
+      ],
+      request: {
+        initialMarkerFallbackMs: 700,
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.emitStart();
+
+    expect(queue.getState()).toMatchObject({
+      markerCfi: "epubcfi(/6/2!/4/2/1:0)",
+      markerText: "First",
+      status: "playing",
+    });
+  });
+
+  it("does not emit block-local offsets for plain text chunks that have no source coordinates", async () => {
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+    const chunk = "First paragraph. Second paragraph keeps speaking.";
+
+    await queue.start({
+      chunks: [chunk],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    client.emitStart();
+    client.emitBoundary(chunk.indexOf("speaking"));
+
+    expect(queue.getState()).toMatchObject({
+      markerEndOffset: -1,
+      markerStartOffset: -1,
+      markerText: "speaking",
       status: "playing",
     });
   });

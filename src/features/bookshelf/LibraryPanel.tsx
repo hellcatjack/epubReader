@@ -3,6 +3,7 @@ import { BookCard } from "./BookCard";
 
 type LibraryPanelProps = {
   books: BookshelfListItem[];
+  mode?: "drawer" | "page";
   onDeleteBook: (bookId: string) => Promise<void> | void;
   onOpenBook: (bookId: string) => void;
 };
@@ -13,11 +14,16 @@ function getContinueReadingBook(books: BookshelfListItem[]) {
     .sort((left, right) => (right.lastReadAt ?? 0) - (left.lastReadAt ?? 0))[0];
 }
 
-export function LibraryPanel({ books, onDeleteBook, onOpenBook }: LibraryPanelProps) {
+export function LibraryPanel({
+  books,
+  mode = "page",
+  onDeleteBook,
+  onOpenBook,
+}: LibraryPanelProps) {
   const continueReadingBook = getContinueReadingBook(books);
 
   return (
-    <section aria-label="Library content" className="bookshelf-panel">
+    <section aria-label="Library content" className={`bookshelf-panel bookshelf-panel-${mode}`}>
       {continueReadingBook ? (
         <section aria-label="Continue reading" className="continue-reading-card">
           <div className="continue-reading-copy">

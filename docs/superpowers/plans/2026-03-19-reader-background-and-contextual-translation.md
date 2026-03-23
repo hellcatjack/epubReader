@@ -303,7 +303,7 @@ Expected: PASS
 Run:
 
 ```bash
-curl -sS http://192.168.1.31:8001/v1/completions \
+curl -sS http://localhost:8001/v1/completions \
   -H 'Content-Type: application/json' \
   --data '{"model":"tencent/HY-MT1.5-1.8B-GGUF:Q4_K_M","prompt":"任务：只翻译被选中英文片段在句中的含义。不要翻译整句，不要解释，只输出中文词义。\n选中片段：pressed\n句子：She looked pressed for time before the meeting.\n答案：","max_tokens":32,"temperature":0.1}'
 ```
@@ -315,7 +315,7 @@ Expected: output close to `时间紧迫的`
 Run:
 
 ```bash
-curl -sS http://192.168.1.31:8001/v1/completions \
+curl -sS http://localhost:8001/v1/completions \
   -H 'Content-Type: application/json' \
   --data '{"model":"tencent/HY-MT1.5-1.8B-GGUF:Q4_K_M","prompt":"任务：只翻译被选中英文片段在句中的含义。不要翻译整句，不要解释，只输出中文词义。\n选中片段：pressed\n句子：The flowers were pressed between pages.\n答案：","max_tokens":32,"temperature":0.1}'
 ```
@@ -327,7 +327,7 @@ Expected: output close to `压平`
 Run:
 
 ```bash
-curl -sS http://192.168.1.31:8001/v1/completions \
+curl -sS http://localhost:8001/v1/completions \
   -H 'Content-Type: application/json' \
   --data '{"model":"tencent/HY-MT1.5-1.8B-GGUF:Q4_K_M","prompt":"示例1\n选中短语：looked up at her\n句子：He looked up at her and smiled.\n答案：抬头看着她\n\n示例2\n选中短语：ran out of time\n句子：She ran out of time before finishing the task.\n答案：来不及了\n\n现在完成同样的任务：只输出选中短语在句中的中文短语，不要整句，不要标点。\n选中短语：looked up at him\n句子：He looked up at him before leaving the room.\n答案：","max_tokens":24,"temperature":0.1}'
 ```

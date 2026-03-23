@@ -12,6 +12,7 @@ describe("readerPreferences", () => {
       buildReaderTheme({
         columnCount: 2,
         contentPadding: 40,
+        contentBackgroundColor: "#c0ffee",
         fontFamily: "book",
         fontScale: 1.15,
         letterSpacing: 0.03,
@@ -24,6 +25,7 @@ describe("readerPreferences", () => {
       }),
     ).toMatchObject({
       body: {
+        "background-color": "#c0ffee",
         "column-count": "1",
         "column-gap": "40px",
         "font-family": '"Iowan Old Style", Georgia, serif',
@@ -73,6 +75,7 @@ describe("readerPreferences", () => {
       getEffectiveReaderPreferences({
         columnCount: 2,
         contentPadding: 40,
+        contentBackgroundColor: "#f6edde",
         fontFamily: "book",
         fontScale: 1.15,
         letterSpacing: 0.03,
@@ -84,5 +87,41 @@ describe("readerPreferences", () => {
         theme: "sepia",
       }).columnCount,
     ).toBe(1);
+  });
+
+  it("widens the scrolled reading surface by 200px without changing paginated width", () => {
+    expect(
+      buildReaderTheme({
+        columnCount: 1,
+        contentPadding: 32,
+        contentBackgroundColor: "#f6edde",
+        fontFamily: "book",
+        fontScale: 1,
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "scrolled",
+        theme: "sepia",
+      }).body["max-width"],
+    ).toBe("960px");
+
+    expect(
+      buildReaderTheme({
+        columnCount: 1,
+        contentPadding: 32,
+        contentBackgroundColor: "#f6edde",
+        fontFamily: "book",
+        fontScale: 1,
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "paginated",
+        theme: "sepia",
+      }).body["max-width"],
+    ).toBe("760px");
   });
 });

@@ -17,9 +17,11 @@ export type BrowserTtsVoice = {
 };
 
 export type BrowserTtsSpeakOptions = {
+  initialMarkerFallbackMs?: number;
   onBoundary?: (event: SpeechSynthesisEvent) => void;
   onEnd?: () => void;
   onError?: (error: SpeechSynthesisErrorEvent | Event) => void;
+  onStart?: () => void;
   rate: number;
   voiceId: string;
   volume: number;
@@ -121,6 +123,9 @@ export function createBrowserTtsClient({
       const utterance = utteranceFactory(text);
       const voice = voices.find((item) => (item.voiceURI || item.name) === options.voiceId) ?? voices[0];
 
+      utterance.onstart = () => {
+        options.onStart?.();
+      };
       utterance.onend = () => {
         options.onEnd?.();
       };

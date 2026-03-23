@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
@@ -35,6 +35,7 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
     resume: vi.fn(),
     speak: vi.fn((utterance: SpeechSynthesisUtterance) => {
       currentUtterance = utterance;
+      currentUtterance.onstart?.(new Event("start") as SpeechSynthesisEvent);
     }),
     speaking: false,
   } as unknown as SpeechSynthesis;
@@ -43,6 +44,7 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
   vi.stubGlobal(
     "SpeechSynthesisUtterance",
     class {
+      onstart: ((event: Event) => void) | null = null;
       onend: (() => void) | null = null;
       onerror: ((event: Event) => void) | null = null;
       rate = 1;
@@ -57,6 +59,9 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
   );
 
   return {
+    startCurrent() {
+      currentUtterance?.onstart?.(new Event("start") as SpeechSynthesisEvent);
+    },
     finishCurrent() {
       currentUtterance?.onend?.(new Event("end") as SpeechSynthesisEvent);
     },
@@ -92,13 +97,21 @@ it("automatically translates and auto-reads a new selection while keeping explai
   render(<ReaderPage ai={ai} />);
 
   act(() => {
-    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      sentenceContext: "She said hello world softly before leaving the room.",
+      spineItemId: "chap-1",
+      text: "Hello world",
+    });
   });
 
   await waitFor(() => {
     expect(ai.translateSelection).toHaveBeenCalledWith(
       "Hello world",
-      expect.objectContaining({ targetLanguage: "zh-CN" }),
+      expect.objectContaining({
+        sentenceContext: "She said hello world softly before leaving the room.",
+        targetLanguage: "zh-CN",
+      }),
     );
   });
   await waitFor(() => {
@@ -396,8 +409,9 @@ it("reads aloud the selected text through browser speech synthesis", async () =>
     browserTts.finishCurrent();
   });
 
+  const ttsQueue = screen.getByRole("region", { name: /tts queue/i });
   await waitFor(() => {
-    expect(screen.getByText(/tts status: idle/i)).toBeInTheDocument();
+    expect(within(ttsQueue).getByText(/^ready$/i, { selector: ".reader-tts-badge" })).toBeInTheDocument();
   });
 });
 

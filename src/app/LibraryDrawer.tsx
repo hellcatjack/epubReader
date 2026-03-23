@@ -22,7 +22,7 @@ export function LibraryDrawer({ children, onClose, open }: LibraryDrawerProps) {
         <div className="library-drawer-header">
           <div>
             <p className="library-drawer-eyebrow">Library</p>
-            <h2>Bookshelf</h2>
+            <h2>Your library</h2>
           </div>
           <button type="button" className="reader-app-nav-button" onClick={onClose}>
             Close library
