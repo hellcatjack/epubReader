@@ -7,6 +7,7 @@ const paginatedFixturePath = "tests/fixtures/epub/paginated-long.epub";
 const paginatedChunkedSentenceFixturePath = "tests/fixtures/epub/paginated-chunked-sentence.epub";
 const paginatedPageStartFixturePath = "tests/fixtures/epub/paginated-page-start.epub";
 const paginatedMultiChapterFixturePath = "tests/fixtures/epub/paginated-multi-chapter.epub";
+const paginatedTocHeadingFixturePath = "tests/fixtures/epub/paginated-toc-heading.epub";
 
 test("browser tts supports selection playback and continuous reader controls", async ({ page }) => {
   await page.addInitScript(() => {
@@ -1032,6 +1033,247 @@ test("paginated mode starts continuous tts from heading text on a chapter's firs
   );
 
   expect(firstCallText).toBe(pageStartSnippet);
+});
+
+test("toc navigation uses the chapter target for the first start tts after jumping to a heading-led chapter", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ text: string }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          text: utterance.text,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedTocHeadingFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  await page.getByRole("button", { name: /^1\. Third$/ }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const root = document.querySelector(".epub-root");
+        const frame = root?.querySelector<HTMLIFrameElement>("iframe");
+        const doc = frame?.contentDocument;
+        if (!doc) {
+          return "";
+        }
+
+        return doc.body.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      }),
+    )
+    .toContain("THIRD");
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  const firstCallText = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
+  );
+
+  expect(firstCallText).toBe("1 THIRD");
+});
+
+test("same-tab refresh preserves the toc-driven tts start target", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ text: string }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          text: utterance.text,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedTocHeadingFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  await page.getByRole("button", { name: /^1\. Third$/ }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const frame = document.querySelector(".epub-root iframe");
+        const doc = frame && frame.contentDocument;
+        return doc?.body?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      }),
+    )
+    .toContain("THIRD");
+
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page).toHaveURL(/\/books\//);
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  const firstCallText = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
+  );
+
+  expect(firstCallText).toBe("1 THIRD");
 });
 
 test("paginated mode starts continuous tts from the current long chapter page's first visible paragraph", async ({

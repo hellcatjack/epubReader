@@ -2568,6 +2568,219 @@ it("uses the live runtime selection when start tts is pressed before selection s
   });
 });
 
+it("prefers the explicit toc navigation target for the first start tts after chapter navigation", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const getTtsBlocksFromTarget = vi.fn(async () => [
+    {
+      cfi: "epubcfi(/6/2!/4/1:0)",
+      spineItemId: "chap-1",
+      tagName: "h1",
+      text: "1",
+    },
+    {
+      cfi: "epubcfi(/6/2!/4/2:0)",
+      spineItemId: "chap-1",
+      tagName: "h1",
+      text: "THIRD",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated, onTocChange }) => {
+                  onTocChange?.([
+                    {
+                      id: "c01",
+                      label: "1. Third",
+                      target: "OEBPS/c01.xhtml",
+                    },
+                  ]);
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/12/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "The monitor lady smiled very nicely and tousled his hair.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () => "The monitor lady smiled very nicely and tousled his hair.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/12/1:0)",
+                        spineItemId: "chap-1",
+                        text: "The monitor lady smiled very nicely and tousled his hair.",
+                      },
+                    ]),
+                    getTtsBlocksFromTarget,
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & {
+                    getTtsBlocksFromTarget: (target: string) => Promise<Array<{ cfi: string; spineItemId: string; tagName?: string; text: string }>>;
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /^1\. third$/i }));
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(getTtsBlocksFromTarget).toHaveBeenCalledWith("OEBPS/c01.xhtml");
+  });
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "1 THIRD",
+      }),
+    );
+  });
+});
+
+it("restores the pending toc tts start target after a same-tab refresh", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const getTtsBlocksFromTarget = vi.fn(async () => [
+    {
+      cfi: "epubcfi(/6/2!/4/1:0)",
+      spineItemId: "chap-1",
+      tagName: "h1",
+      text: "1",
+    },
+    {
+      cfi: "epubcfi(/6/2!/4/2:0)",
+      spineItemId: "chap-1",
+      tagName: "h1",
+      text: "THIRD",
+    },
+  ]);
+
+  const renderReader = () =>
+    render(
+      <MemoryRouter initialEntries={["/books/book-1"]}>
+        <Routes>
+          <Route
+            path="/books/:bookId"
+            element={
+              <ReaderPage
+                runtime={{
+                  render: vi.fn(async ({ onRelocated, onTocChange }) => {
+                    onTocChange?.([
+                      {
+                        id: "c01",
+                        label: "1. Third",
+                        target: "OEBPS/c01.xhtml",
+                      },
+                    ]);
+                    onRelocated?.({
+                      cfi: "epubcfi(/6/2!/4/12/1:0)",
+                      progress: 0.2,
+                      spineItemId: "chap-1",
+                      textQuote: "The monitor lady smiled very nicely and tousled his hair.",
+                    });
+
+                    return {
+                      applyPreferences: vi.fn(async () => undefined),
+                      destroy() {
+                        return undefined;
+                      },
+                      findCfiFromTextQuote: vi.fn(async () => null),
+                      getTextFromCurrentLocation: vi.fn(
+                        async () => "The monitor lady smiled very nicely and tousled his hair.",
+                      ),
+                      getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                        {
+                          cfi: "epubcfi(/6/2!/4/12/1:0)",
+                          spineItemId: "chap-1",
+                          text: "The monitor lady smiled very nicely and tousled his hair.",
+                        },
+                      ]),
+                      getTtsBlocksFromTarget,
+                      goTo: vi.fn(async () => undefined),
+                      next: vi.fn(async () => undefined),
+                      prev: vi.fn(async () => undefined),
+                      setActiveTtsSegment: vi.fn(async () => undefined),
+                      setFlow: vi.fn(async () => undefined),
+                    } as RuntimeRenderHandle & {
+                      getTtsBlocksFromTarget: (target: string) => Promise<Array<{ cfi: string; spineItemId: string; tagName?: string; text: string }>>;
+                    };
+                  }),
+                }}
+              />
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+  const firstMount = renderReader();
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+  await user.click(screen.getByRole("button", { name: /^1\. third$/i }));
+  firstMount.unmount();
+
+  renderReader();
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(getTtsBlocksFromTarget).toHaveBeenCalledWith("OEBPS/c01.xhtml");
+  });
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "1 THIRD",
+      }),
+    );
+  });
+});
+
 it("clears the active selection after start tts while continuing from the selection start", async () => {
   const user = userEvent.setup();
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");

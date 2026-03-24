@@ -19,12 +19,17 @@ import { createTtsQueue } from "../tts/ttsQueue";
 import { createPhoneticsService, getEligibleIpaWord } from "./phoneticsService";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
-import type { ActiveTtsSegment, EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
+import type { ActiveTtsSegment, EpubViewportRuntime, RuntimeRenderHandle, RuntimeTtsBlock } from "./epubRuntime";
 import {
   readRefreshProgressSnapshot,
   resolvePreferredProgress,
   writeRefreshProgressSnapshot,
 } from "./refreshProgressSnapshot";
+import {
+  clearRefreshTtsStartTargetSnapshot,
+  readRefreshTtsStartTargetSnapshot,
+  writeRefreshTtsStartTargetSnapshot,
+} from "./refreshTtsStartTargetSnapshot";
 import { LeftRail } from "./LeftRail";
 import { RightPanel } from "./RightPanel";
 import { SelectionPopover } from "./SelectionPopover";
@@ -119,11 +124,7 @@ async function getContinuousTtsChunks(runtimeHandle: RuntimeRenderHandle, readin
   try {
     const ttsBlocks = await runtimeHandle.getTtsBlocksFromCurrentLocation?.();
     if (ttsBlocks?.length) {
-      if (readingMode === "paginated") {
-        return ttsBlocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
-      }
-
-      return chunkTextSegmentsFromBlocks(ttsBlocks, continuousTtsChunkOptions);
+      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode);
     }
   } catch {
     // Fall back to flattened text extraction when paragraph-aware markers are unavailable.
@@ -135,6 +136,55 @@ async function getContinuousTtsChunks(runtimeHandle: RuntimeRenderHandle, readin
   } catch {
     return [];
   }
+}
+
+function isHeadingTtsBlock(block: RuntimeTtsBlock) {
+  return /^h[1-6]$/i.test(block.tagName ?? "");
+}
+
+function getContinuousTtsChunksFromBlocks(blocks: RuntimeTtsBlock[], readingMode: ReadingMode) {
+  if (!blocks.length) {
+    return [];
+  }
+
+  if (readingMode === "paginated") {
+    return blocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
+  }
+
+  return chunkTextSegmentsFromBlocks(blocks, continuousTtsChunkOptions);
+}
+
+async function getContinuousTtsChunksFromTarget(
+  runtimeHandle: RuntimeRenderHandle,
+  readingMode: ReadingMode,
+  target: string,
+) {
+  if (!target.trim()) {
+    return [];
+  }
+
+  try {
+    const ttsBlocks = await runtimeHandle.getTtsBlocksFromTarget?.(target);
+    if (ttsBlocks?.length) {
+      let headingBlockCount = 0;
+      while (headingBlockCount < ttsBlocks.length && isHeadingTtsBlock(ttsBlocks[headingBlockCount])) {
+        headingBlockCount += 1;
+      }
+
+      if (headingBlockCount > 0) {
+        return [
+          ...chunkTextSegmentsFromBlocks(ttsBlocks.slice(0, headingBlockCount), continuousTtsChunkOptions),
+          ...getContinuousTtsChunksFromBlocks(ttsBlocks.slice(headingBlockCount), readingMode),
+        ];
+      }
+
+      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode);
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
 }
 
 async function getContinuousTtsChunksFromSelection(
@@ -150,11 +200,7 @@ async function getContinuousTtsChunksFromSelection(
   try {
     const ttsBlocks = await runtimeHandle.getTtsBlocksFromSelectionStart?.(cfiRange);
     if (ttsBlocks?.length) {
-      if (readingMode === "paginated") {
-        return ttsBlocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
-      }
-
-      return chunkTextSegmentsFromBlocks(ttsBlocks, continuousTtsChunkOptions);
+      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode);
     }
   } catch {
     return [];
@@ -229,6 +275,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const lastContinuousMarkerCfiRef = useRef("");
   const lastContinuousTextRef = useRef("");
   const lastAutoPagedCfiRef = useRef("");
+  const pendingTtsStartTargetRef = useRef("");
   const ttsReadinessRequestRef = useRef(0);
   const browserTtsClientRef = useRef(createBrowserTtsClient());
   const phoneticsServiceRef = useRef(phonetics ?? createPhoneticsService());
@@ -264,6 +311,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     let cancelled = false;
 
     if (!bookId) {
+      pendingTtsStartTargetRef.current = "";
       setInitialCfi(undefined);
       setInitialProgress(null);
       setIsProgressReady(true);
@@ -275,6 +323,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
 
     setIsProgressReady(false);
+    pendingTtsStartTargetRef.current = readRefreshTtsStartTargetSnapshot(bookId);
     setInitialCfi(undefined);
     setInitialProgress(null);
     setLocationTarget(undefined);
@@ -1099,9 +1148,21 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     const liveRuntimeSelection = await runtimeHandle.getCurrentSelection?.();
     const latestSelection = liveRuntimeSelection ?? selectionBridge.read() ?? selectedSelection;
     const selectionDrivenChunks = await getContinuousTtsChunksFromSelection(runtimeHandle, settings.readingMode, latestSelection);
+    const pendingStartTarget = pendingTtsStartTargetRef.current.trim();
+    let targetDrivenChunks: ChunkSegment[] = [];
+    if (!selectionDrivenChunks.length && pendingStartTarget) {
+      try {
+        await runtimeHandle.goTo(pendingStartTarget);
+      } catch {
+        // Fall back to the currently rendered location if the explicit target cannot be re-opened.
+      }
+      targetDrivenChunks = await getContinuousTtsChunksFromTarget(runtimeHandle, settings.readingMode, pendingStartTarget);
+    }
     const chunks = selectionDrivenChunks.length
       ? selectionDrivenChunks
-      : await getContinuousTtsChunks(runtimeHandle, settings.readingMode);
+      : targetDrivenChunks.length
+        ? targetDrivenChunks
+        : await getContinuousTtsChunks(runtimeHandle, settings.readingMode);
 
     if (!chunks.length) {
       setTtsState({
@@ -1116,6 +1177,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       });
       return;
     }
+
+    if (bookId) {
+      clearRefreshTtsStartTargetSnapshot(bookId);
+    }
+    pendingTtsStartTargetRef.current = "";
 
     if (selectionDrivenChunks.length && latestSelection?.text.trim()) {
       await runtimeHandle.clearSelection?.();
@@ -1230,6 +1296,23 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const nextInitialCfi = locationTarget ?? initialCfi;
 
   function navigateToLocation(target: string) {
+    pendingTtsStartTargetRef.current = target;
+    if (bookId) {
+      writeRefreshTtsStartTargetSnapshot(bookId, target);
+      writeRefreshProgressSnapshot(bookId, {
+        cfi: target,
+        progress: currentLocationRef.current.progress,
+        ...(typeof currentLocationRef.current.pageIndex === "number"
+          ? { pageIndex: currentLocationRef.current.pageIndex }
+          : {}),
+        ...(typeof currentLocationRef.current.pageOffset === "number"
+          ? { pageOffset: currentLocationRef.current.pageOffset }
+          : {}),
+        ...(currentLocationRef.current.spineItemId ? { spineItemId: currentLocationRef.current.spineItemId } : {}),
+        ...(currentLocationRef.current.textQuote ? { textQuote: currentLocationRef.current.textQuote } : {}),
+      });
+    }
+
     if (!runtimeHandle) {
       setLocationTarget(target);
       return;

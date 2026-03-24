@@ -33,6 +33,16 @@ export type ActiveTtsSegment = {
   text: string;
 };
 
+export type RuntimeTtsBlock = {
+  cfi?: string;
+  locatorText?: string;
+  sourceEnd?: number;
+  sourceStart?: number;
+  spineItemId: string;
+  tagName?: string;
+  text: string;
+};
+
 export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   clearSelection?(): Promise<void>;
@@ -51,26 +61,9 @@ export type RuntimeRenderHandle = {
   getCurrentLocation?(): Promise<{ cfi: string; pageIndex?: number; pageOffset?: number; progress: number; spineItemId: string; textQuote: string } | null>;
   getViewportLocationSnapshot?(): { pageIndex?: number; pageOffset?: number };
   getTextFromCurrentLocation(): Promise<string>;
-  getTtsBlocksFromCurrentLocation?(): Promise<
-    Array<{
-      cfi?: string;
-      locatorText?: string;
-      sourceEnd?: number;
-      sourceStart?: number;
-      spineItemId: string;
-      text: string;
-    }>
-  >;
-  getTtsBlocksFromSelectionStart?(cfiRange: string): Promise<
-    Array<{
-      cfi?: string;
-      locatorText?: string;
-      sourceEnd?: number;
-      sourceStart?: number;
-      spineItemId: string;
-      text: string;
-    }>
-  >;
+  getTtsBlocksFromCurrentLocation?(): Promise<RuntimeTtsBlock[]>;
+  getTtsBlocksFromSelectionStart?(cfiRange: string): Promise<RuntimeTtsBlock[]>;
+  getTtsBlocksFromTarget?(target: string): Promise<RuntimeTtsBlock[]>;
   goTo(target: string): Promise<void>;
   next(): Promise<void>;
   prev(): Promise<void>;
@@ -1537,6 +1530,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
               sourceEnd: fullText.length,
               sourceStart: 0,
               spineItemId: currentSpineItemId,
+              tagName: candidate.tagName.toLowerCase(),
               text: fullText,
             };
           }
@@ -1552,6 +1546,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
             sourceEnd: sourceStart + text.length,
             sourceStart,
             spineItemId: currentSpineItemId,
+            tagName: candidate.tagName.toLowerCase(),
             text,
           };
         })
@@ -1614,6 +1609,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
               sourceEnd: fullText.length,
               sourceStart: 0,
               spineItemId: currentSpineItemId,
+              tagName: candidate.tagName.toLowerCase(),
               text: fullText,
             };
           }
@@ -1629,6 +1625,118 @@ export const epubViewportRuntime: EpubViewportRuntime = {
             sourceEnd: sourceStart + text.length,
             sourceStart,
             spineItemId: currentSpineItemId,
+            tagName: candidate.tagName.toLowerCase(),
+            text,
+          };
+        })
+        .filter((block) => Boolean(block.text));
+    };
+
+    const getTtsBlocksFromTarget = async (target: string) => {
+      syncCurrentContents();
+      const contents = currentContents;
+      if (!contents || !target) {
+        return [];
+      }
+
+      const doc = contents.document;
+      const candidates = Array.from(doc.body.querySelectorAll<HTMLElement>(ttsBlockSelector));
+      if (!candidates.length) {
+        return [];
+      }
+
+      const resolveTargetRange = async () => {
+        const resolvedTarget = await resolveNavigationTarget(target);
+
+        try {
+          const currentRange = contents.range(resolvedTarget);
+          if (currentRange && containsNode(doc.body, currentRange.startContainer)) {
+            return currentRange;
+          }
+        } catch {
+          // Fall back to book-level range resolution below.
+        }
+
+        try {
+          const bookRange = await book.getRange(resolvedTarget);
+          if (bookRange && containsNode(doc.body, bookRange.startContainer)) {
+            return bookRange;
+          }
+        } catch {
+          // Fall back to fragment targeting below.
+        }
+
+        const fragment = getNavigationTargetFragment(target);
+        if (fragment) {
+          const fragmentElement = doc.getElementById(fragment);
+          if (fragmentElement) {
+            const fragmentRange = doc.createRange();
+            fragmentRange.selectNodeContents(fragmentElement);
+            fragmentRange.collapse(true);
+            return fragmentRange;
+          }
+        }
+
+        const firstCandidate = candidates[0];
+        if (!firstCandidate) {
+          return null;
+        }
+
+        const chapterStartRange = doc.createRange();
+        chapterStartRange.selectNodeContents(firstCandidate);
+        chapterStartRange.collapse(true);
+        return chapterStartRange;
+      };
+
+      const targetRange = await resolveTargetRange();
+      if (!targetRange) {
+        return [];
+      }
+
+      const startNode = targetRange.startContainer;
+      const startOffset = resolveWordStartOffset(startNode, targetRange.startOffset ?? 0);
+      const startIndex = candidates.findIndex((candidate) => {
+        if (containsNode(candidate, startNode)) {
+          return true;
+        }
+
+        return Boolean(startNode.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+
+      if (startIndex < 0) {
+        return [];
+      }
+
+      return candidates
+        .slice(startIndex)
+        .map((candidate, index) => {
+          const cfi = getBlockCfi(contents, candidate);
+          const fullText = normalizeText(candidate.innerText || candidate.textContent || "");
+
+          if (index > 0) {
+            return {
+              cfi,
+              locatorText: fullText,
+              sourceEnd: fullText.length,
+              sourceStart: 0,
+              spineItemId: currentSpineItemId,
+              tagName: candidate.tagName.toLowerCase(),
+              text: fullText,
+            };
+          }
+
+          const candidateRange = doc.createRange();
+          candidateRange.selectNodeContents(candidate);
+          candidateRange.setStart(startNode, startOffset);
+          const text = normalizeText(candidateRange.toString());
+          const sourceStart = getNormalizedTextOffset(candidate, startNode, startOffset);
+          return {
+            cfi,
+            locatorText: fullText,
+            sourceEnd: sourceStart + text.length,
+            sourceStart,
+            spineItemId: currentSpineItemId,
+            tagName: candidate.tagName.toLowerCase(),
             text,
           };
         })
@@ -2072,6 +2180,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       },
       getTtsBlocksFromCurrentLocation,
       getTtsBlocksFromSelectionStart,
+      getTtsBlocksFromTarget,
       async goTo(target) {
         currentTarget = target;
         preferredPaginatedRestore =
