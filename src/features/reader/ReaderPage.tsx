@@ -1234,15 +1234,30 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     () => getEffectiveReaderPreferences(toReaderPreferences(settings)),
     [settings],
   );
-  const readerStyle = useMemo<CSSProperties & Record<"--reader-font-scale" | "--reader-page-background", string>>(
+  const readerStyle = useMemo<
+    CSSProperties &
+      Record<"--reader-font-scale" | "--reader-page-background" | "--reader-paginated-prose-width", string>
+  >(
     () => ({
       "--reader-font-scale": String(settings.fontScale),
       "--reader-page-background": settings.contentBackgroundColor,
+      "--reader-paginated-prose-width": `${readerPreferences.maxLineWidth + readerPreferences.contentPadding * 2}px`,
     }),
-    [settings.contentBackgroundColor, settings.fontScale],
+    [readerPreferences.contentPadding, readerPreferences.maxLineWidth, settings.contentBackgroundColor, settings.fontScale],
   );
   const shouldRenderViewport = Boolean(bookId) && isProgressReady && isSettingsReady;
   const nextInitialCfi = locationTarget ?? initialCfi;
+
+  function navigateToLocation(target: string) {
+    if (!runtimeHandle) {
+      setLocationTarget(target);
+      return;
+    }
+
+    void runtimeHandle.goTo(target).catch(() => {
+      setLocationTarget(target);
+    });
+  }
 
   useEffect(() => {
     if (!runtimeHandle || typeof runtimeHandle.applyPreferences !== "function") {
@@ -1259,9 +1274,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         currentSpineItemId={currentSpineItemId}
         highlights={highlights}
         notes={notes}
-        onNavigateToBookmark={setLocationTarget}
+        onNavigateToBookmark={navigateToLocation}
         onRemoveHighlight={handleRemoveHighlight}
-        onNavigateToTocItem={setLocationTarget}
+        onNavigateToTocItem={navigateToLocation}
         toc={toc}
       />
       <section className="reader-center" aria-label="Reading workspace">

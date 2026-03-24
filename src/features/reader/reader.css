@@ -581,8 +581,8 @@
 }
 
 .epub-root[data-reader-mode="paginated"][data-page-kind="prose"] {
-  width: 50%;
-  max-width: 50%;
+  width: min(100%, var(--reader-paginated-prose-width, 52rem));
+  max-width: var(--reader-paginated-prose-width, 52rem);
   justify-self: center;
 }
 
@@ -993,10 +993,6 @@
     min-height: min(70dvh, 38rem);
   }
 
-  .epub-root[data-reader-mode="paginated"][data-page-kind="prose"] {
-    width: 100%;
-    max-width: none;
-  }
 }
 
 @media (min-width: 1450px) {

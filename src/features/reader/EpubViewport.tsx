@@ -11,13 +11,11 @@ import {
   type EpubViewportRuntime,
   type RuntimeRenderHandle,
 } from "./epubRuntime";
-import type { ReaderController } from "./readerController";
 import type { ReaderPreferences } from "./readerPreferences";
 import { selectionBridge } from "./selectionBridge";
 
 type EpubViewportProps = {
   bookId?: string;
-  controller?: ReaderController;
   activeTtsSegment?: ActiveTtsSegment | null;
   initialCfi?: string;
   initialProgress?: ProgressRecord | null;
@@ -41,7 +39,6 @@ type EpubViewportProps = {
 export function EpubViewport({
   activeTtsSegment = null,
   bookId,
-  controller,
   initialCfi,
   initialProgress = null,
   onLocationChange,
@@ -73,142 +70,75 @@ export function EpubViewport({
   }, [onStatusChange, statusMessage]);
 
   useEffect(() => {
-    if (!controller || !bookId) {
-      if (!bookId) {
-        setStatusMessage("Open a book from the shelf to start reading.");
-        return;
-      }
-
-      if (!hostRef.current) {
-        return;
-      }
-
-      const activeBookId = bookId;
-      const activeHost = hostRef.current;
-      let cancelled = false;
-      let handle: RuntimeRenderHandle | null = null;
-
-      async function openPersistedBook(nextCfi?: string) {
-        const shouldRestorePaginatedFromChapter =
-          readingMode === "paginated" &&
-          Boolean(initialProgress?.spineItemId) &&
-          (!nextCfi || nextCfi === initialProgress?.cfi);
-        const openTarget =
-          shouldRestorePaginatedFromChapter && initialProgress?.spineItemId
-            ? initialProgress.spineItemId
-            : nextCfi;
-        handle?.destroy();
-        handle = await runtime.render({
-          bookId: activeBookId,
-          element: activeHost,
-          flow: readingMode,
-          initialCfi: openTarget,
-          initialPageIndex:
-            initialProgress &&
-            ((shouldRestorePaginatedFromChapter && openTarget === initialProgress.spineItemId) ||
-              nextCfi === initialProgress.cfi)
-              ? initialProgress.pageIndex
-              : undefined,
-          initialPageOffset:
-            initialProgress &&
-            ((shouldRestorePaginatedFromChapter && openTarget === initialProgress.spineItemId) ||
-              nextCfi === initialProgress.cfi)
-              ? initialProgress.pageOffset
-              : undefined,
-          initialPreferences: readerPreferences,
-          onRelocated: ({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote }) => {
-            void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
-            onLocationChange?.({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
-          },
-          onPagePresentationChange: setPageKind,
-          onSelectionChange: ({ cfiRange, isReleased, sentenceContext, spineItemId, text }) => {
-            selectionBridge.publish(text ? { cfiRange, isReleased, sentenceContext, spineItemId, text } : null);
-          },
-          onTocChange,
-        });
-
-        if (cancelled) {
-          handle.destroy();
-          handle = null;
-          return;
-        }
-
-        runtimeHandleRef.current = handle;
-        await handle.setActiveTtsSegment(activeTtsSegmentRef.current);
-        onReady?.(handle);
-      }
-
-      async function run() {
-        setStatusMessage("Opening book...");
-
-        try {
-          await openPersistedBook(initialCfi);
-
-          if (!cancelled) {
-            setStatusMessage(initialCfi ? "Opened from saved reading position." : "Opened from chapter start.");
-          }
-        } catch {
-          if (cancelled || !initialCfi) {
-            setStatusMessage("Unable to open the selected book.");
-            return;
-          }
-
-          if (initialProgress?.spineItemId) {
-            try {
-              await openPersistedBook(initialProgress.spineItemId);
-              const recoveredCfi = initialProgress.textQuote
-                ? await handle?.findCfiFromTextQuote(initialProgress.textQuote)
-                : null;
-
-              if (recoveredCfi) {
-                await handle?.goTo(recoveredCfi);
-                if (!cancelled) {
-                  setStatusMessage("Recovered from saved reading position.");
-                }
-              } else if (!cancelled) {
-                setStatusMessage("Recovered from saved chapter.");
-              }
-              return;
-            } catch {
-              // Fall through to the chapter-start fallback below.
-            }
-          }
-
-          try {
-            await openPersistedBook(undefined);
-
-            if (!cancelled) {
-              setStatusMessage("Opened from chapter start.");
-            }
-          } catch {
-            if (!cancelled) {
-              setStatusMessage("Unable to open the selected book.");
-            }
-          }
-        }
-      }
-
-      void run();
-
-      return () => {
-        cancelled = true;
-        handle?.destroy();
-        runtimeHandleRef.current = null;
-        setPageKind("prose");
-        onReady?.(null);
-        selectionBridge.publish(null);
-      };
+    if (!bookId) {
+      setStatusMessage("Open a book from the shelf to start reading.");
+      return;
     }
 
-    const activeController = controller;
-    const activeBookId = bookId;
-    let cancelled = false;
+    if (!hostRef.current) {
+      return;
+    }
 
-    async function openBook() {
+    const activeBookId = bookId;
+    const activeHost = hostRef.current;
+    let cancelled = false;
+    let handle: RuntimeRenderHandle | null = null;
+
+    async function openPersistedBook(nextCfi?: string) {
+      const shouldRestorePaginatedFromChapter =
+        readingMode === "paginated" &&
+        Boolean(initialProgress?.spineItemId) &&
+        (!nextCfi || nextCfi === initialProgress?.cfi);
+      const openTarget =
+        shouldRestorePaginatedFromChapter && initialProgress?.spineItemId
+          ? initialProgress.spineItemId
+          : nextCfi;
+      handle?.destroy();
+      handle = await runtime.render({
+        bookId: activeBookId,
+        element: activeHost,
+        flow: readingMode,
+        initialCfi: openTarget,
+        initialPageIndex:
+          initialProgress &&
+          ((shouldRestorePaginatedFromChapter && openTarget === initialProgress.spineItemId) ||
+            nextCfi === initialProgress.cfi)
+            ? initialProgress.pageIndex
+            : undefined,
+        initialPageOffset:
+          initialProgress &&
+          ((shouldRestorePaginatedFromChapter && openTarget === initialProgress.spineItemId) ||
+            nextCfi === initialProgress.cfi)
+            ? initialProgress.pageOffset
+            : undefined,
+        initialPreferences: readerPreferences,
+        onRelocated: ({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote }) => {
+          void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
+          onLocationChange?.({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
+        },
+        onPagePresentationChange: setPageKind,
+        onSelectionChange: ({ cfiRange, isReleased, sentenceContext, spineItemId, text }) => {
+          selectionBridge.publish(text ? { cfiRange, isReleased, sentenceContext, spineItemId, text } : null);
+        },
+        onTocChange,
+      });
+
+      if (cancelled) {
+        handle.destroy();
+        handle = null;
+        return;
+      }
+
+      runtimeHandleRef.current = handle;
+      await handle.setActiveTtsSegment(activeTtsSegmentRef.current);
+      onReady?.(handle);
+    }
+
+    async function run() {
       setStatusMessage("Opening book...");
 
       try {
-        await activeController.open(activeBookId, initialCfi);
+        await openPersistedBook(initialCfi);
 
         if (!cancelled) {
           setStatusMessage(initialCfi ? "Opened from saved reading position." : "Opened from chapter start.");
@@ -219,8 +149,29 @@ export function EpubViewport({
           return;
         }
 
+        if (initialProgress?.spineItemId) {
+          try {
+            await openPersistedBook(initialProgress.spineItemId);
+            const recoveredCfi = initialProgress.textQuote
+              ? await handle?.findCfiFromTextQuote(initialProgress.textQuote)
+              : null;
+
+            if (recoveredCfi) {
+              await handle?.goTo(recoveredCfi);
+              if (!cancelled) {
+                setStatusMessage("Recovered from saved reading position.");
+              }
+            } else if (!cancelled) {
+              setStatusMessage("Recovered from saved chapter.");
+            }
+            return;
+          } catch {
+            // Fall through to the chapter-start fallback below.
+          }
+        }
+
         try {
-          await activeController.open(activeBookId, undefined);
+          await openPersistedBook(undefined);
 
           if (!cancelled) {
             setStatusMessage("Opened from chapter start.");
@@ -233,32 +184,44 @@ export function EpubViewport({
       }
     }
 
-    openBook();
+    void run();
 
     return () => {
       cancelled = true;
+      handle?.destroy();
+      runtimeHandleRef.current = null;
       setPageKind("prose");
       onReady?.(null);
       selectionBridge.publish(null);
     };
-  }, [bookId, controller, initialCfi, initialProgress, readingMode]);
+  }, [
+    bookId,
+    initialCfi,
+    initialProgress?.cfi,
+    initialProgress?.pageIndex,
+    initialProgress?.pageOffset,
+    initialProgress?.progress,
+    initialProgress?.spineItemId,
+    initialProgress?.textQuote,
+    readingMode,
+  ]);
 
   useEffect(() => {
     activeTtsSegmentRef.current = activeTtsSegment;
   }, [activeTtsSegment]);
 
   useEffect(() => {
-    if (!controller && runtimeHandleRef.current) {
+    if (runtimeHandleRef.current) {
       void runtimeHandleRef.current.setActiveTtsSegment(activeTtsSegment);
     }
-  }, [activeTtsSegment, controller]);
+  }, [activeTtsSegment]);
 
   return (
     <section className="epub-viewport" aria-label="Book content">
       <div
         className="epub-root"
         data-page-kind={pageKind}
-        data-reader-mode={controller?.mode ?? readingMode}
+        data-reader-mode={readingMode}
         data-tts-active={activeTtsSegment ? "true" : "false"}
         ref={hostRef}
       >

@@ -238,6 +238,86 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
 });
 
+it("navigates toc targets through the active runtime handle instead of reopening the viewport", async () => {
+  await db.settings.put(createStoredSettings({
+    readingMode: "paginated",
+    targetLanguage: "zh-CN",
+    targetLanguageCustomized: false,
+    theme: "sepia",
+    ttsRate: 1,
+    ttsVoice: "",
+    ttsVolume: 1,
+    fontScale: 1,
+    lineHeight: 1.7,
+    letterSpacing: 0,
+    paragraphSpacing: 0.85,
+    paragraphIndent: 1.8,
+    contentPadding: 32,
+    contentBackgroundColor: "#f6edde",
+    maxLineWidth: 760,
+    columnCount: 1,
+    fontFamily: "book",
+    apiKey: "",
+    llmApiUrl: DEFAULT_TEST_LLM_API_URL,
+  }));
+  const user = userEvent.setup();
+  const goTo = vi.fn(async () => undefined);
+  const runtime = {
+    render: vi.fn(async ({ onRelocated, onTocChange }) => {
+      onTocChange?.([
+        {
+          children: [],
+          id: "chapter-2",
+          label: "Chapter 2",
+          target: "chapter-2.xhtml",
+        },
+      ]);
+      onRelocated?.({
+        cfi: "epubcfi(/6/2!/4/1:0)",
+        progress: 0.2,
+        spineItemId: "chapter-1.xhtml",
+        textQuote: "Chapter one opening.",
+      });
+
+      return {
+        applyPreferences: vi.fn(async () => undefined),
+        destroy() {
+          return undefined;
+        },
+        findCfiFromTextQuote: vi.fn(async () => null),
+        getTextFromCurrentLocation: vi.fn(async () => "Chapter one opening."),
+        goTo,
+        next: vi.fn(async () => undefined),
+        prev: vi.fn(async () => undefined),
+        setActiveTtsSegment: vi.fn(async () => undefined),
+        setFlow: vi.fn(async () => undefined),
+      } as RuntimeRenderHandle;
+    }),
+  };
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={runtime}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "Chapter 2" }));
+
+  await waitFor(() => {
+    expect(goTo).toHaveBeenCalledWith("chapter-2.xhtml");
+  });
+  expect(runtime.render).toHaveBeenCalledTimes(1);
+});
+
 it("renders selection actions in the top bar instead of below the reader stage", () => {
   render(<ReaderPage />);
 
@@ -2077,6 +2157,12 @@ it("flushes the latest reading location before page refresh", async () => {
                       return undefined;
                     },
                     findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation: vi.fn(async () => ({
+                      cfi: "epubcfi(/6/2!/4/8/1:12)",
+                      progress: 0.48,
+                      spineItemId: "chapter-one.xhtml",
+                      textQuote: "Morgan’s head was pressed against her pillow.",
+                    })),
                     getTextFromCurrentLocation: vi.fn(async () => "Morgan’s head was pressed against her pillow."),
                     goTo: vi.fn(async () => undefined),
                     next: vi.fn(async () => undefined),
@@ -2106,7 +2192,9 @@ it("flushes the latest reading location before page refresh", async () => {
   });
 
   saveProgressMock.mockClear();
-  window.dispatchEvent(new Event("pagehide"));
+  act(() => {
+    window.dispatchEvent(new Event("pagehide"));
+  });
 
   await waitFor(() => {
     expect(saveProgressMock).toHaveBeenCalledWith(

@@ -11,6 +11,9 @@ import {
   getPagePresentationKind,
   getNearestTtsBlockElement,
   readPaginatedPageIndex,
+  resolveApproximateLocationProgress,
+  resolveStoredLocationCfi,
+  resolveLocationProgressSnapshot,
   resolveLocationProgress,
   restorePaginatedPageOffset,
   restorePaginatedPagePosition,
@@ -359,6 +362,63 @@ describe("epubRuntime tts targeting helpers", () => {
     await expect(resolveLocationProgress("epubcfi(/6/2!/4/1:0)", 0.42, locations)).resolves.toBe(0.42);
     expect(generate).not.toHaveBeenCalled();
     expect(percentageFromCfi).not.toHaveBeenCalled();
+  });
+
+  it("does not trust a zero relocated percentage before epub locations exist", async () => {
+    const generate = vi.fn(async () => ["loc-1", "loc-2"]);
+    const percentageFromCfi = vi.fn(() => 0.58);
+    const locations = {
+      generate,
+      length: () => 0,
+      percentageFromCfi,
+    };
+
+    await expect(resolveLocationProgress("epubcfi(/6/2!/4/1:0)", 0, locations)).resolves.toBe(0.58);
+    expect(generate).toHaveBeenCalledWith(1600);
+    expect(percentageFromCfi).toHaveBeenCalledWith("epubcfi(/6/2!/4/1:0)");
+  });
+
+  it("returns a non-blocking snapshot progress without waiting for generated epub locations", () => {
+    const generate = vi.fn(async () => ["loc-1", "loc-2"]);
+    const percentageFromCfi = vi.fn(() => 0.58);
+    const locations = {
+      generate,
+      length: () => 0,
+      percentageFromCfi,
+    };
+
+    expect(resolveLocationProgressSnapshot("epubcfi(/6/2!/4/1:0)", undefined, locations)).toBe(0);
+    expect(generate).not.toHaveBeenCalled();
+    expect(percentageFromCfi).not.toHaveBeenCalled();
+  });
+
+  it("uses the relocated cfi when a preferred paginated target is only a chapter href", () => {
+    expect(resolveStoredLocationCfi("epubcfi(/6/12!/4/2/8/1:0)", "chapter-2.xhtml")).toBe("epubcfi(/6/12!/4/2/8/1:0)");
+    expect(resolveStoredLocationCfi("epubcfi(/6/12!/4/2/8/1:0)", "epubcfi(/6/12!/4/2/10/1:0)")).toBe(
+      "epubcfi(/6/12!/4/2/10/1:0)",
+    );
+  });
+
+  it("falls back to chapter-order progress when exact epub locations are not ready", () => {
+    expect(
+      resolveApproximateLocationProgress(
+        {
+          displayed: { page: 1, total: 1 },
+          index: 1,
+        },
+        2,
+      ),
+    ).toBe(0.5);
+
+    expect(
+      resolveApproximateLocationProgress(
+        {
+          displayed: { page: 2, total: 4 },
+          index: 1,
+        },
+        2,
+      ),
+    ).toBeCloseTo(0.625, 3);
   });
 
   it("prefers paragraph blocks over chapter headings or wrapper containers", () => {

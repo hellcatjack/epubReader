@@ -377,25 +377,81 @@ type LocationProgressResolver = {
   percentageFromCfi(cfi: string): number;
 };
 
+function hasReliableRelocatedPercentage(relocatedPercentage: number | undefined, locationsLength: number) {
+  if (!(typeof relocatedPercentage === "number" && Number.isFinite(relocatedPercentage))) {
+    return false;
+  }
+
+  if (relocatedPercentage > 0) {
+    return true;
+  }
+
+  return locationsLength > 0;
+}
+
 export async function resolveLocationProgress(
   cfi: string,
   relocatedPercentage: number | undefined,
   locations: LocationProgressResolver,
 ) {
-  if (typeof relocatedPercentage === "number" && Number.isFinite(relocatedPercentage)) {
-    return relocatedPercentage;
+  const locationsLength = locations.length();
+  if (hasReliableRelocatedPercentage(relocatedPercentage, locationsLength)) {
+    return relocatedPercentage ?? 0;
   }
 
   if (!cfi) {
     return 0;
   }
 
-  if (locations.length() === 0) {
+  if (locationsLength === 0) {
     await locations.generate(1600);
   }
 
   const resolvedProgress = locations.percentageFromCfi(cfi);
   return typeof resolvedProgress === "number" && Number.isFinite(resolvedProgress) ? resolvedProgress : 0;
+}
+
+export function resolveLocationProgressSnapshot(
+  cfi: string,
+  relocatedPercentage: number | undefined,
+  locations: Pick<LocationProgressResolver, "length" | "percentageFromCfi">,
+) {
+  const locationsLength = locations.length();
+  if (hasReliableRelocatedPercentage(relocatedPercentage, locationsLength)) {
+    return relocatedPercentage ?? 0;
+  }
+
+  if (!cfi || locationsLength === 0) {
+    return 0;
+  }
+
+  const resolvedProgress = locations.percentageFromCfi(cfi);
+  return typeof resolvedProgress === "number" && Number.isFinite(resolvedProgress) ? resolvedProgress : 0;
+}
+
+export function resolveStoredLocationCfi(relocatedCfi: string, preferredTarget?: string) {
+  if (preferredTarget?.startsWith("epubcfi(")) {
+    return preferredTarget;
+  }
+
+  return relocatedCfi;
+}
+
+export function resolveApproximateLocationProgress(
+  locationStart: Pick<Location["start"], "displayed" | "index">,
+  totalSpineItems: number,
+) {
+  if (!Number.isFinite(locationStart.index) || locationStart.index < 0 || totalSpineItems <= 0) {
+    return 0;
+  }
+
+  const chapterBase = locationStart.index / totalSpineItems;
+  const displayedTotal = Math.max(1, locationStart.displayed?.total ?? 1);
+  const displayedPage = Math.max(1, locationStart.displayed?.page ?? 1);
+  const chapterPageProgress =
+    displayedTotal > 1 ? (displayedPage - 1) / displayedTotal / totalSpineItems : 0;
+
+  return Math.min(0.999, chapterBase + chapterPageProgress);
 }
 
 function isContentEditableElement(node: Element | null) {
@@ -939,6 +995,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           text: string;
         }
       | null = null;
+    let isDestroyed = false;
+    let relocationSequence = 0;
     const selectionDocumentCleanups = new Map<Document, () => void>();
     let paginatedWheelDelta = 0;
     let paginatedWheelTurnInFlight = false;
@@ -1209,9 +1267,54 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       return resolveLocationProgress(cfi, relocatedPercentage, locations);
     };
 
+    const shouldDeferResolvedLocationProgress = (cfi: string, relocatedPercentage?: number) =>
+      !hasReliableRelocatedPercentage(relocatedPercentage, book.locations.length()) &&
+      Boolean(cfi) &&
+      book.locations.length() === 0;
+
+    const queueDeferredResolvedLocationProgress = (
+      storedLocation: {
+        cfi: string;
+        pageIndex?: number;
+        pageOffset?: number;
+        progress: number;
+        spineItemId: string;
+        textQuote: string;
+      },
+      relocatedPercentage: number | undefined,
+      sequence: number,
+    ) => {
+      if (!shouldDeferResolvedLocationProgress(storedLocation.cfi, relocatedPercentage)) {
+        return;
+      }
+
+      void ensureResolvedLocationProgress(storedLocation.cfi, relocatedPercentage)
+        .then((resolvedProgress) => {
+          if (
+            isDestroyed ||
+            sequence !== relocationSequence ||
+            currentTarget !== storedLocation.cfi ||
+            currentSpineItemId !== storedLocation.spineItemId ||
+            resolvedProgress === storedLocation.progress
+          ) {
+            return;
+          }
+
+          onRelocated?.({
+            ...storedLocation,
+            progress: resolvedProgress,
+          });
+        })
+        .catch(() => undefined);
+    };
+
     const toStoredLocation = async (location: Location) => {
       const cfi = location.start.cfi;
-      const progress = await ensureResolvedLocationProgress(cfi, location.start.percentage);
+      const exactProgress = resolveLocationProgressSnapshot(cfi, location.start.percentage, book.locations);
+      const progress =
+        exactProgress > 0
+          ? exactProgress
+          : resolveApproximateLocationProgress(location.start, book.packaging?.spine?.length ?? 0);
       const spineItemId = location.start.href;
       const textQuote = await getLocationTextQuote(cfi);
 
@@ -1226,12 +1329,17 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     };
 
     const toPreferredStoredLocation = async (location: Location, cfi: string) => {
-      const progress = await ensureResolvedLocationProgress(cfi, location.start.percentage);
+      const storedCfi = resolveStoredLocationCfi(location.start.cfi, cfi);
+      const exactProgress = resolveLocationProgressSnapshot(storedCfi, location.start.percentage, book.locations);
+      const progress =
+        exactProgress > 0
+          ? exactProgress
+          : resolveApproximateLocationProgress(location.start, book.packaging?.spine?.length ?? 0);
       const spineItemId = location.start.href;
-      const textQuote = await getLocationTextQuote(cfi);
+      const textQuote = await getLocationTextQuote(storedCfi);
 
       return {
-        cfi,
+        cfi: storedCfi,
         pageIndex: readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element)),
         pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
         progress,
@@ -1610,6 +1718,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     };
 
     const handleRelocated = async (location: Location) => {
+      const sequence = ++relocationSequence;
       const preferredRestore =
         activePreferences.readingMode === "paginated" ? preferredPaginatedRestore : null;
       if (preferredRestore) {
@@ -1625,6 +1734,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       currentTarget = storedLocation.cfi;
       currentSpineItemId = storedLocation.spineItemId;
       onRelocated?.(storedLocation);
+      queueDeferredResolvedLocationProgress(storedLocation, location.start.percentage, sequence);
       if (preferredRestore) {
         preferredPaginatedRestore = null;
       }
@@ -1862,6 +1972,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         await syncDisplayedLocation();
       },
       destroy() {
+        isDestroyed = true;
         resetPaginatedWheelDelta();
         clearActiveTtsRetry();
         clearActiveTtsSegment();
@@ -1924,7 +2035,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           cfi: currentTarget,
           pageIndex: readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element)),
           pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
-          progress: await ensureResolvedLocationProgress(currentTarget),
+          progress: resolveLocationProgressSnapshot(currentTarget, undefined, book.locations),
           spineItemId: currentSpineItemId,
           textQuote: await getLocationTextQuote(currentTarget),
         };

@@ -1,6 +1,37 @@
 # EPUB Reader
 
-Browser-based EPUB reader with local-first annotations, in-reader translation and explanation, and desktop-focused TTS controls.
+EPUB Reader is a browser-based reading and listening companion for Chinese learners who want a better English reading workflow.
+
+It keeps the book, translation, explanation, and read-aloud controls in one place so you do not have to bounce back and forth between an EPUB reader and a separate translator. The reader also uses LLM-assisted translation to improve contextual accuracy, especially when a word or phrase changes meaning across sentences.
+
+这个阅读器主要面向希望练习英文阅读与听力的中文用户。目标很直接：
+- 在同一界面里完成读书、翻译、解释和听书
+- 减少在翻译器和书籍之间反复切换的打断感
+- 借助 LLM 提高单词、多词短语和句子级翻译的准确度
+- 让英语阅读和听力练习更连贯、更轻松
+
+![Reader overview](docs/screenshots/reader-overview.png)
+
+## Why This Project Exists
+
+Most EPUB readers treat translation, explanation, and TTS as separate tasks. That creates a bad loop for language learners:
+
+- read a line in the book
+- switch to a translator
+- switch back to the book
+- lose context
+- repeat
+
+This project is built to remove that loop. It focuses on a workflow where the learner can stay inside the text, get contextual help when needed, and keep moving.
+
+## Core Experience
+
+- In-reader translation and explanation, without leaving the current page
+- Context-aware LLM translation for better word-sense disambiguation
+- Desktop-friendly TTS controls for listening practice while reading
+- Paginated and scrolled reading modes
+- Local-first bookmarks, notes, and highlights
+- Configurable AI providers for local models or Gemini BYOK
 
 ## Development
 
@@ -108,7 +139,7 @@ The published app is served from `/app/epubReader`.
 - `src/features/ai`: translation, explanation, and endpoint normalization
 - `src/features/settings`: persisted reader and AI settings
 - `tests/e2e`: Playwright coverage
-- `docs/`: design notes, plans, and feasibility writeups
+- `docs/`: design notes and implementation plans
 
 ## Privacy And Repo Hygiene
 

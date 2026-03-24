@@ -162,6 +162,34 @@ test("scrolled mode allocates at least 800px to the prose page on a 1600px deskt
   expect(scrolledWidth).toBeGreaterThanOrEqual(800);
 });
 
+test("paginated mode keeps the prose page width stable across desktop resizes until the compact breakpoint", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1700, height: 1200 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "paginated");
+
+  const wideDesktop = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().width);
+
+  await page.setViewportSize({ width: 1550, height: 1200 });
+  await page.waitForTimeout(300);
+
+  const mediumDesktop = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().width);
+
+  await page.setViewportSize({ width: 660, height: 1200 });
+  await page.waitForTimeout(300);
+
+  const compactDesktop = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().width);
+
+  expect(wideDesktop).toBeGreaterThanOrEqual(800);
+  expect(Math.abs(mediumDesktop - wideDesktop)).toBeLessThanOrEqual(24);
+  expect(compactDesktop).toBeLessThan(mediumDesktop - 24);
+});
+
 test("paginated mode turns pages with arrow keys when focus is in the reading surface or top bar", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");

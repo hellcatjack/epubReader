@@ -33,3 +33,14 @@ it("renders reader-route shell actions inside the top bar instead of a separate 
   expect(within(topbar).getByRole("button", { name: /settings/i })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /preparing your book/i })).toBeInTheDocument();
 });
+
+it("does not expose the obsolete local translation spike route", () => {
+  const { container } = render(
+    <MemoryRouter initialEntries={["/spike/openai"]}>
+      <App />
+    </MemoryRouter>,
+  );
+
+  expect(screen.queryByRole("heading", { name: /local translation spike/i })).not.toBeInTheDocument();
+  expect(container).toBeEmptyDOMElement();
+});

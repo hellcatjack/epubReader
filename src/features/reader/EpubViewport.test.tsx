@@ -6,29 +6,42 @@ import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
 
 it("falls back to chapter start when a saved cfi is invalid", async () => {
   const onStatusChange = vi.fn();
-  const controller = {
-    open: vi
-      .fn<(bookId: string, cfi?: string) => Promise<void>>()
-      .mockRejectedValueOnce(new Error("invalid cfi"))
-      .mockResolvedValueOnce(undefined),
-    observeSelection: vi.fn(() => () => undefined),
-    observeChapterChanges: vi.fn(() => () => undefined),
-    currentCfi: "",
-    mode: "paginated" as const,
-    sandbox: "allow-same-origin",
-    getToc: vi.fn(async () => []),
-    goToLocation: vi.fn(async () => undefined),
+  const secondHandle = {
+    applyPreferences: vi.fn(async () => undefined),
+    destroy() {
+      return undefined;
+    },
+    findCfiFromTextQuote: vi.fn(async () => null),
+    getTextFromCurrentLocation: vi.fn(async () => ""),
+    goTo: vi.fn(async () => undefined),
+    next: vi.fn(async () => undefined),
+    prev: vi.fn(async () => undefined),
+    setActiveTtsSegment: vi.fn(async () => undefined),
+    setFlow: vi.fn(async () => undefined),
+  };
+  const runtime = {
+    render: vi.fn().mockRejectedValueOnce(new Error("invalid cfi")).mockResolvedValueOnce(secondHandle),
   };
 
-  render(
-    <EpubViewport bookId="book-1" controller={controller} initialCfi="epubcfi(invalid)" onStatusChange={onStatusChange} />,
-  );
+  render(<EpubViewport bookId="book-1" initialCfi="epubcfi(invalid)" onStatusChange={onStatusChange} runtime={runtime} />);
 
   await vi.waitFor(() => {
     expect(onStatusChange).toHaveBeenLastCalledWith("Opened from chapter start.");
   });
-  expect(controller.open).toHaveBeenNthCalledWith(1, "book-1", "epubcfi(invalid)");
-  expect(controller.open).toHaveBeenNthCalledWith(2, "book-1", undefined);
+  expect(runtime.render).toHaveBeenNthCalledWith(
+    1,
+    expect.objectContaining({
+      bookId: "book-1",
+      initialCfi: "epubcfi(invalid)",
+    }),
+  );
+  expect(runtime.render).toHaveBeenNthCalledWith(
+    2,
+    expect.objectContaining({
+      bookId: "book-1",
+      initialCfi: undefined,
+    }),
+  );
 });
 
 it("uses the runtime renderer for persisted books when no test controller is provided", async () => {
