@@ -181,10 +181,20 @@ it("does not show ipa for a multi-word selection", async () => {
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
-  const fetchSpy = vi.fn(async () => ({
-    json: async () => [{ phonetics: [{ text: "/ignored/" }] }],
-    ok: true,
-  }));
+  const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/models")) {
+      return {
+        json: async () => ({ data: [{ id: "local-reader-chat" }] }),
+        ok: true,
+      };
+    }
+
+    return {
+      json: async () => [{ phonetics: [{ text: "/ignored/" }] }],
+      ok: true,
+    };
+  });
   vi.stubGlobal("fetch", fetchSpy);
   const ai = {
     translateSelection: vi.fn(async () => "事情是这样的"),
@@ -205,7 +215,8 @@ it("does not show ipa for a multi-word selection", async () => {
 
   expect(await screen.findByText("事情是这样的")).toBeInTheDocument();
   expect(screen.queryByText(/^IPA$/i)).not.toBeInTheDocument();
-  expect(fetchSpy).not.toHaveBeenCalled();
+  const phoneticCalls = fetchSpy.mock.calls.filter(([input]) => !String(input).endsWith("/v1/models"));
+  expect(phoneticCalls).toHaveLength(0);
 });
 
 it("ignores stale ipa responses after the selection changes", async () => {
@@ -222,18 +233,28 @@ it("ignores stale ipa responses after the selection changes", async () => {
   let resolveFirstLookup:
     | ((value: { json: () => Promise<Array<{ phonetics: Array<{ text: string }> }>>; ok: boolean }) => void)
     | undefined;
-  const fetchSpy = vi
-    .fn()
-    .mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveFirstLookup = resolve;
-        }),
-    )
-    .mockResolvedValueOnce({
+  let phoneticRequestCount = 0;
+  const fetchSpy = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/v1/models")) {
+      return Promise.resolve({
+        json: async () => ({ data: [{ id: "local-reader-chat" }] }),
+        ok: true,
+      });
+    }
+
+    phoneticRequestCount += 1;
+    if (phoneticRequestCount === 1) {
+      return new Promise((resolve) => {
+        resolveFirstLookup = resolve;
+      });
+    }
+
+    return Promise.resolve({
       json: async () => [{ phonetics: [{ text: "/sekənd/" }] }],
       ok: true,
     });
+  });
   vi.stubGlobal("fetch", fetchSpy);
   const ai = {
     translateSelection: vi.fn(async (text: string) => (text === "pressed" ? "按压" : "第二个")),
@@ -251,7 +272,7 @@ it("ignores stale ipa responses after the selection changes", async () => {
   });
 
   await waitFor(() => {
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(phoneticRequestCount).toBe(2);
   });
 
   resolveFirstLookup?.({

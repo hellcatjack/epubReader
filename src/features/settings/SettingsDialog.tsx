@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import type { ReaderFontFamily, ReadingMode, SettingsInput, ThemeName } from "../../lib/types/settings";
+import type { ReaderFontFamily, ReadingMode, SettingsInput, ThemeName, TranslationProvider } from "../../lib/types/settings";
+import { geminiModelOptions, translationProviderOptions } from "../ai/providerOptions";
+import { useLocalLlmModels } from "../ai/useLocalLlmModels";
 import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
 import { defaultSettings, getResolvedSettings, saveSettings } from "./settingsRepository";
 import "./settings.css";
@@ -17,6 +19,10 @@ function parseNumberInput(value: string, fallback: number) {
   return Number.parseFloat(value || String(fallback)) || fallback;
 }
 
+function mergeModelOptions(currentValue: string, fetchedModels: string[]) {
+  return currentValue && !fetchedModels.includes(currentValue) ? [currentValue, ...fetchedModels] : fetchedModels;
+}
+
 export function SettingsDialog() {
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
   const [fontScaleInput, setFontScaleInput] = useState(String(defaultSettings.fontScale));
@@ -31,7 +37,9 @@ export function SettingsDialog() {
   const [ttsVoices, setTtsVoices] = useState<BrowserTtsVoice[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [showAdvancedTypography, setShowAdvancedTypography] = useState(false);
-  const [status, setStatus] = useState("Local translation is enabled. TTS is optimized for Microsoft Edge on desktop.");
+  const [status, setStatus] = useState("AI translation is configurable per provider. TTS is optimized for Microsoft Edge on desktop.");
+  const localModelState = useLocalLlmModels(settings.llmApiUrl, isReady && settings.translationProvider === "local_llm");
+  const localModelOptions = mergeModelOptions(settings.localLlmModel, localModelState.models);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +163,25 @@ export function SettingsDialog() {
                 </select>
               </label>
               <label className="settings-field">
+                <span>Translation provider</span>
+                <select
+                  aria-label="Translation provider"
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      translationProvider: event.target.value as TranslationProvider,
+                    }))
+                  }
+                  value={settings.translationProvider}
+                >
+                  {translationProviderOptions.map((provider) => (
+                    <option key={provider.value} value={provider.value}>
+                      {provider.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="settings-field">
                 <span>Theme</span>
                 <select
                   aria-label="Theme"
@@ -201,18 +228,75 @@ export function SettingsDialog() {
                   ))}
                 </select>
               </label>
-              <label className="settings-field settings-field-wide">
-                <span>LLM API URL</span>
-                <input
-                  aria-label="LLM API URL"
-                  inputMode="url"
-                  onChange={(event) => setSettings((current) => ({ ...current, llmApiUrl: event.target.value }))}
-                  placeholder="http://localhost:1234/v1"
-                  type="url"
-                  value={settings.llmApiUrl}
-                />
-                <small>Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
-              </label>
+              {settings.translationProvider === "local_llm" ? (
+                <>
+                  <label className="settings-field settings-field-wide">
+                    <span>LLM API URL</span>
+                    <input
+                      aria-label="LLM API URL"
+                      inputMode="url"
+                      onChange={(event) => setSettings((current) => ({ ...current, llmApiUrl: event.target.value }))}
+                      placeholder="http://localhost:1234/v1"
+                      type="url"
+                      value={settings.llmApiUrl}
+                    />
+                    <small>Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
+                  </label>
+                  <label className="settings-field settings-field-wide">
+                    <span>Local LLM model</span>
+                    <select
+                      aria-label="Local LLM model"
+                      onChange={(event) => setSettings((current) => ({ ...current, localLlmModel: event.target.value }))}
+                      value={settings.localLlmModel}
+                    >
+                      <option value="">Default model</option>
+                      {localModelOptions.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      {localModelState.status === "loading"
+                        ? "Loading models from /v1/models…"
+                        : localModelState.status === "error"
+                          ? "Could not load models from the current endpoint."
+                          : "Models are discovered automatically from /v1/models."}
+                    </small>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="settings-field settings-field-wide">
+                    <span>Gemini API Key</span>
+                    <input
+                      aria-label="Gemini API Key"
+                      autoComplete="off"
+                      onChange={(event) => setSettings((current) => ({ ...current, apiKey: event.target.value }))}
+                      placeholder="AIza..."
+                      spellCheck={false}
+                      type="password"
+                      value={settings.apiKey}
+                    />
+                    <small>Stored only in this browser. Suitable for personal BYOK usage.</small>
+                  </label>
+                  <label className="settings-field settings-field-wide">
+                    <span>Gemini model</span>
+                    <select
+                      aria-label="Gemini model"
+                      onChange={(event) => setSettings((current) => ({ ...current, geminiModel: event.target.value }))}
+                      value={settings.geminiModel}
+                    >
+                      {geminiModelOptions.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                    <small>Uses Google Gemini directly from this browser with your own API key.</small>
+                  </label>
+                </>
+              )}
               <label className="settings-field">
                 <span>TTS rate</span>
                 <input
@@ -387,7 +471,9 @@ export function SettingsDialog() {
       )}
       <div className="settings-footer">
         <p className="settings-disclosure">
-          Translation and explanation requests are sent directly from this browser to your configured model endpoint.
+          {settings.translationProvider === "gemini_byok"
+            ? "Translation and explanation requests are sent directly from this browser to Gemini using your API key."
+            : "Translation and explanation requests are sent directly from this browser to your configured local model endpoint."}
         </p>
         <div className="settings-actions">
           <button onClick={handleSave} type="button" className="settings-save-button">

@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
+import type { TranslationProvider } from "../../lib/types/settings";
 import type { ReaderPreferences } from "./readerPreferences";
 import { AiResultPanel } from "./panels/AiResultPanel";
 import { AppearancePanel } from "./panels/AppearancePanel";
@@ -9,15 +10,21 @@ import type { BrowserTtsVoice } from "../tts/browserTtsClient";
 
 type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   annotationCount?: number;
+  apiKey?: string;
   aiIpa?: string;
   appearance?: ReaderPreferences;
   explanation?: string;
   explanationError?: string;
+  geminiModel?: string;
   noteDraft?: string;
   noteOpen?: boolean;
   llmApiUrl?: string;
+  localLlmModel?: string;
+  onApiKeyChange?: (value: string) => void;
   onAppearanceChange?: (patch: Partial<ReaderPreferences>) => void;
+  onGeminiModelChange?: (value: string) => void;
   onLlmApiUrlChange?: (value: string) => void;
+  onLocalLlmModelChange?: (value: string) => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
   onTtsPause?: () => void;
@@ -27,11 +34,13 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onTtsStop?: () => void;
   onTtsVoiceChange?: (voiceId: string) => void;
   onTtsVolumeChange?: (volume: number) => void;
+  onTranslationProviderChange?: (value: TranslationProvider) => void;
   readerStatus?: string;
   ttsRate?: number;
   selectedText?: string;
   translation?: string;
   translationError?: string;
+  translationProvider?: TranslationProvider;
   ttsStartDisabled?: boolean;
   ttsCurrentText?: string;
   ttsError?: string;
@@ -43,15 +52,21 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
 
 export function RightPanel({
   annotationCount,
+  apiKey,
   aiIpa,
   appearance,
   explanation,
   explanationError,
+  geminiModel,
   llmApiUrl,
+  localLlmModel,
   noteDraft,
   noteOpen,
+  onApiKeyChange,
   onAppearanceChange,
+  onGeminiModelChange,
   onLlmApiUrlChange,
+  onLocalLlmModelChange,
   onNoteDraftChange,
   onNoteSave,
   onTtsPause,
@@ -61,10 +76,12 @@ export function RightPanel({
   onTtsStop,
   onTtsVoiceChange,
   onTtsVolumeChange,
+  onTranslationProviderChange,
   readerStatus,
   selectedText,
   translation,
   translationError,
+  translationProvider,
   ttsStartDisabled,
   ttsCurrentText,
   ttsError,
@@ -108,10 +125,18 @@ export function RightPanel({
         <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
         {appearance ? (
           <AppearancePanel
+            apiKey={apiKey}
+            geminiModel={geminiModel}
             llmApiUrl={llmApiUrl}
+            localLlmModel={localLlmModel}
+            onApiKeyChange={onApiKeyChange}
             onChange={onAppearanceChange}
+            onGeminiModelChange={onGeminiModelChange}
             onLlmApiUrlChange={onLlmApiUrlChange}
+            onLocalLlmModelChange={onLocalLlmModelChange}
+            onTranslationProviderChange={onTranslationProviderChange}
             preferences={appearance}
+            translationProvider={translationProvider}
           />
         ) : null}
         <NoteEditorPanel

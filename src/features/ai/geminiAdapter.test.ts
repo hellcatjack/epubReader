@@ -1,0 +1,52 @@
+import { expect, it, vi } from "vitest";
+import { createGeminiAdapter } from "./geminiAdapter";
+
+it("sends translation requests to gemini generateContent with the configured api key and model", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: "安置" }],
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createGeminiAdapter({
+    apiKey: "gemini-secret-key",
+    fetch: fakeFetch,
+    textModel: "gemini-2.5-flash",
+  });
+
+  await expect(
+    adapter.translateSelection("stick", {
+      sentenceContext: "Where else would you stick the oldest foster kid?",
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("安置");
+
+  expect(fakeFetch).toHaveBeenCalledWith(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        "Content-Type": "application/json",
+        "x-goog-api-key": "gemini-secret-key",
+      }),
+      method: "POST",
+    }),
+  );
+
+  const body = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(body.contents[0]?.parts[0]?.text).toContain("选中词：stick");
+  expect(body.generationConfig.temperature).toBe(0.1);
+});
+

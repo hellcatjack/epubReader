@@ -1,10 +1,21 @@
+import type { TranslationProvider } from "../../../lib/types/settings";
+import { geminiModelOptions, translationProviderOptions } from "../../ai/providerOptions";
+import { useLocalLlmModels } from "../../ai/useLocalLlmModels";
 import type { ReaderPreferences } from "../readerPreferences";
 
 type AppearancePanelProps = {
+  apiKey?: string;
+  geminiModel?: string;
   llmApiUrl?: string;
+  localLlmModel?: string;
+  onApiKeyChange?: (value: string) => void;
   onChange?: (patch: Partial<ReaderPreferences>) => void;
+  onGeminiModelChange?: (value: string) => void;
   onLlmApiUrlChange?: (value: string) => void;
+  onLocalLlmModelChange?: (value: string) => void;
+  onTranslationProviderChange?: (value: TranslationProvider) => void;
   preferences: ReaderPreferences;
+  translationProvider?: TranslationProvider;
 };
 
 function parseNumericPatch(
@@ -19,7 +30,27 @@ function parseNumericPatch(
   }
 }
 
-export function AppearancePanel({ llmApiUrl = "", onChange, onLlmApiUrlChange, preferences }: AppearancePanelProps) {
+function mergeModelOptions(currentValue: string, fetchedModels: string[]) {
+  return currentValue && !fetchedModels.includes(currentValue) ? [currentValue, ...fetchedModels] : fetchedModels;
+}
+
+export function AppearancePanel({
+  apiKey = "",
+  geminiModel = "gemini-2.5-flash",
+  llmApiUrl = "",
+  localLlmModel = "",
+  onApiKeyChange,
+  onChange,
+  onGeminiModelChange,
+  onLlmApiUrlChange,
+  onLocalLlmModelChange,
+  onTranslationProviderChange,
+  preferences,
+  translationProvider = "local_llm",
+}: AppearancePanelProps) {
+  const localModelState = useLocalLlmModels(llmApiUrl, translationProvider === "local_llm");
+  const localModelOptions = mergeModelOptions(localLlmModel, localModelState.models);
+
   return (
     <section className="reader-panel" aria-label="Appearance">
       <h2>Appearance</h2>
@@ -123,18 +154,84 @@ export function AppearancePanel({ llmApiUrl = "", onChange, onLlmApiUrlChange, p
             value={preferences.contentBackgroundColor}
           />
         </label>
-        <label className="appearance-field appearance-field-wide">
-          <span>LLM API URL</span>
-          <input
-            aria-label="LLM API URL"
-            inputMode="url"
-            onChange={(event) => onLlmApiUrlChange?.(event.target.value)}
-            placeholder="http://localhost:1234/v1"
-            type="url"
-            value={llmApiUrl}
-          />
-          <small className="appearance-field-note">Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
+        <label className="appearance-field">
+          <span>Translation provider</span>
+          <select
+            aria-label="Translation provider"
+            onChange={(event) => onTranslationProviderChange?.(event.target.value as TranslationProvider)}
+            value={translationProvider}
+          >
+            {translationProviderOptions.map((provider) => (
+              <option key={provider.value} value={provider.value}>
+                {provider.label}
+              </option>
+            ))}
+          </select>
         </label>
+        {translationProvider === "local_llm" ? (
+          <>
+            <label className="appearance-field appearance-field-wide">
+              <span>LLM API URL</span>
+              <input
+                aria-label="LLM API URL"
+                inputMode="url"
+                onChange={(event) => onLlmApiUrlChange?.(event.target.value)}
+                placeholder="http://localhost:1234/v1"
+                type="url"
+                value={llmApiUrl}
+              />
+              <small className="appearance-field-note">Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
+            </label>
+            <label className="appearance-field appearance-field-wide">
+              <span>Local LLM model</span>
+              <select
+                aria-label="Local LLM model"
+                onChange={(event) => onLocalLlmModelChange?.(event.target.value)}
+                value={localLlmModel}
+              >
+                <option value="">Default model</option>
+                {localModelOptions.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+              <small className="appearance-field-note">
+                {localModelState.status === "loading"
+                  ? "Loading models from /v1/models…"
+                  : localModelState.status === "error"
+                    ? "Could not load models from the current endpoint."
+                    : "Models are discovered automatically from /v1/models."}
+              </small>
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="appearance-field appearance-field-wide">
+              <span>Gemini API Key</span>
+              <input
+                aria-label="Gemini API Key"
+                autoComplete="off"
+                onChange={(event) => onApiKeyChange?.(event.target.value)}
+                placeholder="AIza..."
+                spellCheck={false}
+                type="password"
+                value={apiKey}
+              />
+              <small className="appearance-field-note">Stored only in this browser for direct Gemini access.</small>
+            </label>
+            <label className="appearance-field appearance-field-wide">
+              <span>Gemini model</span>
+              <select aria-label="Gemini model" onChange={(event) => onGeminiModelChange?.(event.target.value)} value={geminiModel}>
+                {geminiModelOptions.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
         <label className="appearance-field">
           <span>Max line width</span>
           <input

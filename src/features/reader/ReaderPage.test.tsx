@@ -7,7 +7,7 @@ import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { db, resetDb } from "../../lib/db/appDb";
 import type { ReaderAppShellContext } from "../../app/readerAppShellContext";
-import { getSettings } from "../settings/settingsRepository";
+import { defaultSettings, getSettings } from "../settings/settingsRepository";
 import { writeRefreshSettingsSnapshot } from "../settings/refreshSettingsSnapshot";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
 import { ReaderPage } from "./ReaderPage";
@@ -102,6 +102,21 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[], options: { autoS
   };
 }
 
+function createStoredSettings(overrides: Partial<(typeof defaultSettings)> = {}) {
+  return {
+    id: "settings" as const,
+    ...defaultSettings,
+    ...overrides,
+  };
+}
+
+function createSettingsInput(overrides: Partial<typeof defaultSettings> = {}) {
+  return {
+    ...defaultSettings,
+    ...overrides,
+  };
+}
+
 it("does not expose paginated continuous tts markers before speech actually starts", async () => {
   const user = userEvent.setup();
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
@@ -117,8 +132,7 @@ it("does not expose paginated continuous tts markers before speech actually star
     ],
     { autoStart: false },
   );
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     readingMode: "paginated",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -138,7 +152,7 @@ it("does not expose paginated continuous tts markers before speech actually star
     fontFamily: "book",
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
+  }));
 
   const goTo = vi.fn(async () => undefined);
   const setActiveTtsSegment = vi.fn<(segment: ActiveTtsSegment | null) => Promise<void>>(async () => undefined);
@@ -294,8 +308,7 @@ it("turns paginated pages from host-document arrow presses when the reading ifra
   installSpeechSynthesis([
     { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
   ]);
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     readingMode: "paginated",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -315,7 +328,7 @@ it("turns paginated pages from host-document arrow presses when the reading ifra
     fontFamily: "book",
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
+  }));
   const nextPage = vi.fn(async () => undefined);
   const prevPage = vi.fn(async () => undefined);
 
@@ -450,8 +463,7 @@ it("waits for persisted reader settings before mounting the viewport runtime", a
   installSpeechSynthesis([
     { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
   ]);
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     readingMode: "paginated",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -471,7 +483,7 @@ it("waits for persisted reader settings before mounting the viewport runtime", a
     fontFamily: "book",
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
+  }));
   const renderSpy = vi.fn(async () => ({
     applyPreferences: vi.fn(async () => undefined),
     destroy() {
@@ -528,8 +540,7 @@ it("prefers same-tab refresh settings when restoring paginated mode after reload
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     readingMode: "scrolled",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -549,8 +560,8 @@ it("prefers same-tab refresh settings when restoring paginated mode after reload
     fontFamily: "book",
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
-  writeRefreshSettingsSnapshot({
+  }));
+  writeRefreshSettingsSnapshot(createSettingsInput({
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
     columnCount: 2,
@@ -570,7 +581,7 @@ it("prefers same-tab refresh settings when restoring paginated mode after reload
     ttsRate: 1,
     ttsVoice: "",
     ttsVolume: 1,
-  });
+  }));
   const renderSpy = vi.fn(async () => ({
     applyPreferences: vi.fn(async () => undefined),
     destroy() {
@@ -613,8 +624,7 @@ it("waits for saved progress before opening the reader and restores the saved cf
   installSpeechSynthesis([
     { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
   ]);
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     readingMode: "paginated",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -634,7 +644,7 @@ it("waits for saved progress before opening the reader and restores the saved cf
     fontFamily: "book",
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
+  }));
   let resolveProgress:
     | ((
         value:
@@ -717,8 +727,7 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     readingMode: "paginated",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -738,7 +747,7 @@ it("prefers a newer same-tab refresh snapshot over older persisted progress when
     fontFamily: "book",
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
+  }));
   sessionStorage.setItem(
     "reader-refresh-progress:book-1",
     JSON.stringify({
@@ -807,8 +816,7 @@ it("always prefers the same-tab refresh snapshot over persisted progress during 
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     readingMode: "paginated",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -828,7 +836,7 @@ it("always prefers the same-tab refresh snapshot over persisted progress during 
     fontFamily: "book",
     apiKey: "",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
+  }));
   sessionStorage.setItem(
     "reader-refresh-progress:book-1",
     JSON.stringify({

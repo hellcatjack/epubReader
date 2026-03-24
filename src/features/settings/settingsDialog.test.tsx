@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { db, resetDb } from "../../lib/db/appDb";
-import { createDefaultSettings, getSettings } from "./settingsRepository";
+import { createDefaultSettings, defaultSettings, getSettings } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
 
 const DEFAULT_TEST_LLM_API_URL = "http://localhost:8001/v1/chat/completions";
@@ -54,6 +54,14 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
   return speechSynthesis;
 }
 
+function createStoredSettings(overrides: Partial<typeof defaultSettings> = {}) {
+  return {
+    id: "settings" as const,
+    ...defaultSettings,
+    ...overrides,
+  };
+}
+
 afterEach(async () => {
   vi.unstubAllGlobals();
   await resetDb();
@@ -63,30 +71,51 @@ it("includes a configurable llm api url in default settings", () => {
   const keys = Object.keys(createDefaultSettings("localhost"));
 
   expect(createDefaultSettings("localhost")).toMatchObject({
+    geminiModel: "gemini-2.5-flash",
     llmApiUrl: "http://localhost:8001/v1/chat/completions",
+    localLlmModel: "",
     ttsRate: 1,
     ttsVoice: "",
     ttsVolume: 1,
+    translationProvider: "local_llm",
   });
   expect(keys.some((key) => /llmapiurl/i.test(key))).toBe(true);
 });
 
-it("persists browser tts settings and a custom llm api url", async () => {
+it("persists browser tts settings and local llm provider configuration", async () => {
   const user = userEvent.setup();
   installSpeechSynthesis([
     buildVoice("Microsoft Ava Online (Natural)", "en-US", true),
     buildVoice("Microsoft Andrew Online (Natural)", "en-US"),
   ]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: "local-reader-chat" }, { id: "phi-4-mini" }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    ),
+  );
 
   render(<SettingsDialog />);
 
   const targetLanguage = await screen.findByLabelText(/target language/i);
+  const translationProvider = screen.getByLabelText(/translation provider/i);
   const theme = screen.getByLabelText(/theme/i);
   const readingMode = screen.getByLabelText(/reading mode/i);
   const ttsVoice = await screen.findByRole("combobox", { name: /tts voice/i });
   const ttsRate = screen.getByLabelText(/tts rate/i);
   const ttsVolume = screen.getByLabelText(/tts volume/i);
   const llmApiUrl = screen.getByLabelText(/llm api url/i);
+  const localLlmModel = await screen.findByRole("combobox", { name: /local llm model/i });
+  await screen.findByRole("option", { name: "phi-4-mini" });
 
   expect(screen.queryByLabelText(/font scale/i)).not.toBeInTheDocument();
 
@@ -104,6 +133,7 @@ it("persists browser tts settings and a custom llm api url", async () => {
   const pageBackground = screen.getByLabelText(/page background/i);
 
   await user.selectOptions(targetLanguage, "zh-CN");
+  await user.selectOptions(translationProvider, "local_llm");
   await user.selectOptions(theme, "dark");
   await user.selectOptions(readingMode, "paginated");
   await user.clear(fontScale);
@@ -126,6 +156,7 @@ it("persists browser tts settings and a custom llm api url", async () => {
   await user.selectOptions(ttsVoice, "Microsoft Andrew Online (Natural)");
   await user.clear(llmApiUrl);
   await user.type(llmApiUrl, "http://localhost:1234/v1");
+  await user.selectOptions(localLlmModel, "phi-4-mini");
   await user.clear(ttsRate);
   await user.type(ttsRate, "1.15");
   await user.clear(ttsVolume);
@@ -134,9 +165,12 @@ it("persists browser tts settings and a custom llm api url", async () => {
 
   await expect(getSettings()).resolves.toMatchObject({
     apiKey: "",
+    geminiModel: "gemini-2.5-flash",
     llmApiUrl: "http://localhost:1234/v1",
+    localLlmModel: "phi-4-mini",
     targetLanguage: "zh-CN",
     theme: "dark",
+    translationProvider: "local_llm",
     readingMode: "paginated",
     fontScale: 1.2,
     lineHeight: 1.9,
@@ -151,6 +185,32 @@ it("persists browser tts settings and a custom llm api url", async () => {
     ttsRate: 1.15,
     ttsVoice: "Microsoft Andrew Online (Natural)",
     ttsVolume: 0.9,
+  });
+});
+
+it("switches to gemini byok fields and persists the gemini provider settings", async () => {
+  const user = userEvent.setup();
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+
+  render(<SettingsDialog />);
+
+  const translationProvider = await screen.findByLabelText(/translation provider/i);
+  await user.selectOptions(translationProvider, "gemini_byok");
+
+  const geminiApiKey = await screen.findByLabelText(/gemini api key/i);
+  const geminiModel = screen.getByRole("combobox", { name: /gemini model/i });
+
+  expect(screen.queryByLabelText(/llm api url/i)).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: /local llm model/i })).not.toBeInTheDocument();
+
+  await user.type(geminiApiKey, "gemini-test-key");
+  await user.selectOptions(geminiModel, "gemini-2.5-flash-lite");
+  await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+  await expect(getSettings()).resolves.toMatchObject({
+    apiKey: "gemini-test-key",
+    geminiModel: "gemini-2.5-flash-lite",
+    translationProvider: "gemini_byok",
   });
 });
 
@@ -172,8 +232,7 @@ it("shows common settings first and reveals advanced typography on demand", asyn
 
 it("shows single-column paginated mode in the settings UI without deleting the saved scrolled preference", async () => {
   installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
-  await db.settings.put({
-    id: "settings",
+  await db.settings.put(createStoredSettings({
     apiKey: "",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
@@ -193,7 +252,7 @@ it("shows single-column paginated mode in the settings UI without deleting the s
     columnCount: 2,
     fontFamily: "book",
     llmApiUrl: DEFAULT_TEST_LLM_API_URL,
-  });
+  }));
 
   render(<SettingsDialog />);
 

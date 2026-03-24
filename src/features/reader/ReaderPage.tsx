@@ -3,7 +3,7 @@ import { useOutletContext, useParams } from "react-router-dom";
 import type { ReaderAppShellContext } from "../../app/readerAppShellContext";
 import type { AnnotationRecord, BookmarkRecord } from "../../lib/types/annotations";
 import type { ProgressRecord, TocItem } from "../../lib/types/books";
-import type { ReadingMode, SettingsInput } from "../../lib/types/settings";
+import type { ReadingMode, SettingsInput, TranslationProvider } from "../../lib/types/settings";
 import { aiService, type AiService } from "../ai/aiService";
 import { annotationService } from "../annotations/annotationService";
 import { getProgress, saveProgress } from "../bookshelf/progressRepository";
@@ -1050,6 +1050,22 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     await updateSettings({ llmApiUrl });
   }
 
+  async function handleTranslationProviderChange(translationProvider: TranslationProvider) {
+    await updateSettings({ translationProvider });
+  }
+
+  async function handleLocalLlmModelChange(localLlmModel: string) {
+    await updateSettings({ localLlmModel });
+  }
+
+  async function handleApiKeyChange(apiKey: string) {
+    await updateSettings({ apiKey });
+  }
+
+  async function handleGeminiModelChange(geminiModel: string) {
+    await updateSettings({ geminiModel });
+  }
+
   async function handleQuickTtsRateChange(rate: number) {
     await updateSettings({ ttsRate: rate });
 
@@ -1336,17 +1352,23 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             )}
           </section>
           <RightPanel
+            apiKey={settings.apiKey}
             aiIpa={aiIpa}
             annotationCount={visibleAnnotations.length}
             appearance={readerPreferences}
             aria-label="Reader tools"
             explanation={explanation}
             explanationError={explanationError}
+            geminiModel={settings.geminiModel}
             llmApiUrl={settings.llmApiUrl}
+            localLlmModel={settings.localLlmModel}
             noteDraft={noteDraft}
             noteOpen={noteOpen}
+            onApiKeyChange={handleApiKeyChange}
             onAppearanceChange={handleAppearanceChange}
+            onGeminiModelChange={handleGeminiModelChange}
             onLlmApiUrlChange={handleLlmApiUrlChange}
+            onLocalLlmModelChange={handleLocalLlmModelChange}
             onNoteDraftChange={setNoteDraft}
             onNoteSave={handleSaveNote}
             onTtsPause={handlePauseTts}
@@ -1356,10 +1378,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             onTtsStop={handleStopTts}
             onTtsVoiceChange={handleTtsVoiceChange}
             onTtsVolumeChange={handleTtsVolumeChange}
+            onTranslationProviderChange={handleTranslationProviderChange}
             readerStatus={readerStatus}
             selectedText={selectedText}
             translation={translation}
             translationError={translationError}
+            translationProvider={settings.translationProvider}
             ttsCurrentText={ttsState.currentText}
             ttsError={ttsState.error}
             ttsRate={settings.ttsRate}

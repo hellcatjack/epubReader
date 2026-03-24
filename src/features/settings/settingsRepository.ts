@@ -19,7 +19,9 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
 
   return {
     apiKey: "",
+    geminiModel: "gemini-2.5-flash",
     llmApiUrl: DEFAULT_LLM_API_URL,
+    localLlmModel: "",
     targetLanguage: "zh-CN",
     targetLanguageCustomized: false,
     theme,
@@ -37,6 +39,7 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
     maxLineWidth: 760,
     columnCount: 1,
     fontFamily: "book",
+    translationProvider: "local_llm",
   };
 }
 
@@ -50,6 +53,9 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
 
   return (
     typeof record.llmApiUrl !== "string" ||
+    typeof record.localLlmModel !== "string" ||
+    typeof record.geminiModel !== "string" ||
+    typeof record.translationProvider !== "string" ||
     typeof record.readingMode !== "string" ||
     typeof record.lineHeight !== "number" ||
     typeof record.letterSpacing !== "number" ||
@@ -91,6 +97,10 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
     record.ttsVoice?.startsWith("am_")
   ) {
     migratedSettings.ttsVoice = "";
+  }
+
+  if (migratedSettings.translationProvider !== "local_llm" && migratedSettings.translationProvider !== "gemini_byok") {
+    migratedSettings.translationProvider = defaultSettings.translationProvider;
   }
 
   if (

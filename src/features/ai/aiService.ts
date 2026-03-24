@@ -1,4 +1,5 @@
 import { getResolvedSettings } from "../settings/settingsRepository";
+import { createGeminiAdapter } from "./geminiAdapter";
 import { createOpenAIAdapter, normalizeOpenAIError } from "./openaiAdapter";
 
 type ServiceContext = {
@@ -15,15 +16,31 @@ type SpeechContext = {
 };
 
 type AiServiceDeps = {
-  createAdapter?: typeof createOpenAIAdapter;
+  createGeminiAdapter?: typeof createGeminiAdapter;
+  createLocalAdapter?: typeof createOpenAIAdapter;
   loadSettings?: typeof getResolvedSettings;
 };
 
-export function createAiService({ createAdapter = createOpenAIAdapter, loadSettings = getResolvedSettings }: AiServiceDeps = {}) {
+export function createAiService({
+  createGeminiAdapter: buildGeminiAdapter = createGeminiAdapter,
+  createLocalAdapter = createOpenAIAdapter,
+  loadSettings = getResolvedSettings,
+}: AiServiceDeps = {}) {
   async function getAdapter() {
     const settings = await loadSettings();
+    if (settings.translationProvider === "gemini_byok") {
+      return buildGeminiAdapter({
+        apiKey: settings.apiKey.trim(),
+        textModel: settings.geminiModel.trim() || undefined,
+      });
+    }
+
     const endpoint = settings.llmApiUrl.trim();
-    return createAdapter(endpoint ? { endpoint } : {});
+    const textModel = settings.localLlmModel.trim();
+    return createLocalAdapter({
+      ...(endpoint ? { endpoint } : {}),
+      ...(textModel ? { textModel } : {}),
+    });
   }
 
   return {
