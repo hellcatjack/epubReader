@@ -76,6 +76,13 @@ function installEdgeDesktopUserAgent() {
   });
 }
 
+function installChromeDesktopUserAgent() {
+  Object.defineProperty(window.navigator, "userAgent", {
+    configurable: true,
+    value: "Mozilla/5.0 (X11; Linux x86_64) Chrome/123.0",
+  });
+}
+
 it("automatically translates and auto-reads a new selection while keeping explain and note actions available", async () => {
   const user = userEvent.setup();
   installEdgeDesktopUserAgent();
@@ -433,6 +440,32 @@ it("reads aloud the selected text through browser speech synthesis", async () =>
   const ttsQueue = screen.getByRole("region", { name: /tts queue/i });
   await waitFor(() => {
     expect(within(ttsQueue).getByText(/^ready$/i, { selector: ".reader-tts-badge" })).toBeInTheDocument();
+  });
+});
+
+it("allows read aloud in chrome when browser speech synthesis and english voices are available", async () => {
+  const user = userEvent.setup();
+  installChromeDesktopUserAgent();
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Google US English",
+      voiceURI: "Google US English",
+    },
+  ]);
+
+  render(<ReaderPage />);
+
+  act(() => {
+    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", spineItemId: "chap-1", text: "Hello world" });
+  });
+
+  await user.click(screen.getByRole("button", { name: /read aloud/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(2);
   });
 });
 

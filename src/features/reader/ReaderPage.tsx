@@ -94,10 +94,6 @@ function sliceChunksFromMarker(chunks: ChunkSegment[], chunkIndex: number, marke
   return [trimmedChunk, ...chunks.slice(chunkIndex + 1)];
 }
 
-function isEdgeDesktopBrowser(userAgent: string) {
-  return /Edg\//.test(userAgent) && !/(Android|iPhone|iPad|Mobile)/i.test(userAgent);
-}
-
 function formatTtsError(error: unknown) {
   if (typeof error === "object" && error && "error" in error && typeof error.error === "string") {
     return error.error;
@@ -421,21 +417,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     setTtsStartReady(false);
 
-    if (!isEdgeDesktopBrowser(globalThis.navigator?.userAgent ?? "")) {
-      setTtsState({
-        chunkIndex: -1,
-        currentText: "",
-        error: "TTS is optimized for Microsoft Edge on desktop.",
-        markerCfi: "",
-        markerIndex: -1,
-        markerText: "",
-        mode: "idle",
-        status: "error",
-      });
-      setTtsVoices([]);
-      return;
-    }
-
     void Promise.all([getContinuousTtsChunks(runtimeHandle, settings.readingMode), browserTtsClientRef.current.getVoices()])
       .then(([chunks, voices]) => {
         if (ttsReadinessRequestRef.current !== requestId) {
@@ -449,7 +430,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           setTtsState({
             chunkIndex: -1,
             currentText: "",
-            error: "No compatible Edge English voices detected.",
+            error: "No compatible English voices detected.",
             markerCfi: "",
             markerIndex: -1,
             markerText: "",

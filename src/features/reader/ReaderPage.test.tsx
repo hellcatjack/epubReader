@@ -2893,8 +2893,11 @@ it("falls back to flattened chapter text when paragraph tts blocks cannot be ext
   });
 });
 
-it("shows an explicit edge support warning when browser tts is unsupported", async () => {
+it("allows continuous tts in chrome when browser speech synthesis and english voices are available", async () => {
   setUserAgent("Mozilla/5.0 (X11; Linux x86_64) Chrome/123.0");
+  installSpeechSynthesis([
+    { default: true, lang: "en-US", localService: false, name: "Google US English", voiceURI: "Google US English" },
+  ]);
 
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
@@ -2925,6 +2928,45 @@ it("shows an explicit edge support warning when browser tts is unsupported", asy
     </MemoryRouter>,
   );
 
-  expect(await screen.findByText(/optimized for microsoft edge on desktop/i)).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+  expect(screen.queryByText(/optimized for microsoft edge on desktop/i)).not.toBeInTheDocument();
+});
+
+it("still disables continuous tts when browser speech synthesis is unavailable", async () => {
+  setUserAgent("Mozilla/5.0 (X11; Linux x86_64) Chrome/123.0");
+  vi.stubGlobal("speechSynthesis", undefined);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async () => ({
+                  applyPreferences: vi.fn(async () => undefined),
+                  destroy() {
+                    return undefined;
+                  },
+                  findCfiFromTextQuote: vi.fn(async () => null),
+                  getTextFromCurrentLocation: vi.fn(async () => "Ready text for browser speech."),
+                  goTo: vi.fn(async () => undefined),
+                  next: vi.fn(async () => undefined),
+                  prev: vi.fn(async () => undefined),
+                  setActiveTtsSegment: vi.fn(async () => undefined),
+                  setFlow: vi.fn(async () => undefined),
+                })),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByText(/browser speech synthesis unavailable/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /start tts/i })).toBeDisabled();
 });

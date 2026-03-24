@@ -37,7 +37,9 @@ export function SettingsDialog() {
   const [ttsVoices, setTtsVoices] = useState<BrowserTtsVoice[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [showAdvancedTypography, setShowAdvancedTypography] = useState(false);
-  const [status, setStatus] = useState("AI translation is configurable per provider. TTS is optimized for Microsoft Edge on desktop.");
+  const [status, setStatus] = useState(
+    "AI translation is configurable per provider. Microsoft Edge on desktop is recommended for the best TTS listening experience.",
+  );
   const localModelState = useLocalLlmModels(settings.llmApiUrl, isReady && settings.translationProvider === "local_llm");
   const localModelOptions = mergeModelOptions(settings.localLlmModel, localModelState.models);
 

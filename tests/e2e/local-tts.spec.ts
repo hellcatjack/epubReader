@@ -201,6 +201,134 @@ test("browser tts supports selection playback and continuous reader controls", a
   await expect(ttsBadge).toHaveText(/ready/i);
 });
 
+test("chrome allows start tts and read aloud when browser speech synthesis and english voices are available", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ rate: number; text: string; voice: string | null; volume: number }> = [];
+    let activeTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (X11; Linux x86_64) Chrome/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Google US English",
+        voiceURI: "Google US English",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          rate: utterance.rate,
+          text: utterance.text,
+          voice: utterance.voice?.name ?? null,
+          volume: utterance.volume,
+        });
+        activeTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+          utterance.onend?.(new Event("end"));
+        }, 50);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: "中文翻译" } }],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+  await expect(page.getByRole("button", { name: /start tts/i })).toBeEnabled();
+
+  const selectedText = await selectTextInIframe(page);
+  expect(selectedText.length).toBeGreaterThan(0);
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBe(1);
+
+  await page.getByRole("button", { name: /read aloud/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBe(2);
+
+  const selectionCall = await page.evaluate(
+    () =>
+      (window as typeof window & { __ttsCalls: Array<{ text: string; voice: string | null }> }).__ttsCalls.at(-1),
+  );
+  expect(selectionCall?.text).toContain(selectedText);
+  expect(selectionCall?.voice).toBe("Google US English");
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(2);
+});
+
 test("paginated mode keeps continuous tts aligned to one paragraph at a time", async ({ page }) => {
   await page.addInitScript(() => {
     const calls: Array<{ rate: number; text: string; voice: string | null; volume: number }> = [];
