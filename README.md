@@ -12,6 +12,10 @@ It keeps the book, translation, explanation, and TTS controls in one interface, 
 
 This project is built to help Chinese learners stay inside the text, keep listening and reading, and get help from contextual translation without constantly breaking focus.
 
+推荐使用 Microsoft Edge，可获得最佳听书体验，尤其是在英文自然语音、连续朗读和同步高亮方面。
+
+Microsoft Edge is recommended for the best listening experience, especially for natural English voices, continuous playback, and synced highlighting.
+
 ![Reader overview / 阅读器截图](docs/screenshots/reader-overview.png)
 
 ## 为什么做这个项目 / Why This Project Exists
@@ -42,8 +46,8 @@ The goal of this reader is to remove that loop as much as possible, so users can
   In-reader translation and explanation without leaving the current page
 - 利用语境和 LLM 提高单词、多词短语与句子的翻译准确度  
   Context-aware LLM translation for better word and phrase disambiguation
-- 为桌面阅读设计的 TTS 控制与同步高亮，适合边读边听  
-  Desktop-friendly TTS controls and synced highlighting for listening while reading
+- 为桌面阅读设计的 TTS 控制与同步高亮，推荐在 Microsoft Edge 中获得最佳听书体验  
+  Desktop-friendly TTS controls and synced highlighting, with the best listening experience recommended on Microsoft Edge
 - 同时支持 `paginated` 和 `scrolled` 两种阅读模式  
   Supports both `paginated` and `scrolled` reading modes
 - 本地优先的书签、笔记和高亮  
@@ -90,6 +94,12 @@ Both can be configured in:
 
 - global `Settings`
 - the in-reader `Appearance` panel
+
+## 浏览器建议 / Browser Recommendation
+
+推荐使用 Microsoft Edge 来获得最佳 TTS 听书体验。当前项目的朗读链路基于浏览器原生 `speechSynthesis`，而在桌面版 Edge 中，英文自然语音、连续朗读与高亮同步通常表现最好。
+
+Microsoft Edge is recommended for the best TTS listening experience. The reader uses the browser-native `speechSynthesis` pipeline, and desktop Edge typically provides the best results for natural English voices, continuous playback, and highlight sync.
 
 ### Local LLM
 
