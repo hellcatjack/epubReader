@@ -25,6 +25,7 @@ type EpubViewportProps = {
     pageIndex?: number;
     pageOffset?: number;
     progress: number;
+    sectionPath?: string[];
     scrollTop?: number;
     spineItemId: string;
     textQuote: string;
@@ -118,9 +119,9 @@ export function EpubViewport({
         initialScrollTop:
           initialProgress && nextCfi === initialProgress.cfi ? initialProgress.scrollTop : undefined,
         initialPreferences: readerPreferences,
-        onRelocated: ({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote }) => {
+        onRelocated: ({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote }) => {
           void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
-          onLocationChange?.({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
+          onLocationChange?.({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote });
         },
         onPagePresentationChange: setPageKind,
         onSelectionChange: ({ cfiRange, isReleased, sentenceContext, spineItemId, text }) => {

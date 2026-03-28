@@ -11,6 +11,7 @@ type TopBarProps = {
   onToggleBookmark?: () => void;
   progress?: number;
   readingMode?: ReadingMode;
+  sectionPath?: string[];
   selectionActions?: ReactNode;
   systemActions?: ReactNode;
 };
@@ -25,11 +26,15 @@ export function TopBar({
   onToggleBookmark,
   progress = 0,
   readingMode = "scrolled",
+  sectionPath = [],
   selectionActions,
   systemActions,
 }: TopBarProps) {
   const progressPercent = Math.round(progress * 100);
   const bookmarkLabel = isBookmarked ? "Remove bookmark from this location" : "Bookmark this location";
+  const normalizedSectionPath = sectionPath.map((label) => label.trim()).filter(Boolean);
+  const currentSectionLabel = normalizedSectionPath.at(-1) ?? "Locating current section…";
+  const sectionPrefix = normalizedSectionPath.slice(0, -1).join(" / ");
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (!canTurnPages || readingMode !== "paginated") {
@@ -50,20 +55,28 @@ export function TopBar({
 
   return (
     <header className="reader-topbar" onKeyDown={handleKeyDown} role="banner" tabIndex={0}>
-      <div>
-        <p className="reader-topbar-label">Reading progress</p>
-        <div
-          aria-label="Reading progress"
-          aria-valuemax={100}
-          aria-valuemin={0}
-          aria-valuenow={progressPercent}
-          className="reader-progress"
-          role="progressbar"
-        >
-          <span className="reader-progress-fill" style={{ width: `${progressPercent}%` }} />
+      <div className="reader-topbar-status">
+        <div className="reader-topbar-metric reader-topbar-metric-progress">
+          <span className="reader-topbar-label">Reading progress</span>
+          <div
+            aria-label="Reading progress"
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={progressPercent}
+            className="reader-progress"
+            role="progressbar"
+          >
+            <span className="reader-progress-fill" style={{ width: `${progressPercent}%` }} />
+          </div>
+          <span className="reader-progress-value">{progressPercent}%</span>
         </div>
-        <p className="reader-progress-value">{progressPercent}%</p>
-        <p className="reader-topbar-label">Local annotations enabled</p>
+        <div className="reader-topbar-metric reader-topbar-metric-section">
+          <span className="reader-topbar-label">Current section</span>
+          <div aria-label="Current section" className="reader-current-section">
+            {sectionPrefix ? <span className="reader-current-section-prefix">{sectionPrefix} / </span> : null}
+            <span className="reader-current-section-current">{currentSectionLabel}</span>
+          </div>
+        </div>
       </div>
       <div className="reader-topbar-actions">
         {systemActions ? <div className="reader-system-actions">{systemActions}</div> : null}

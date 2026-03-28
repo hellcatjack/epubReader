@@ -30,6 +30,7 @@ vi.mock("../bookshelf/progressRepository", async () => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   getProgressMock.mockReset();
   getProgressMock.mockResolvedValue(null);
@@ -238,6 +239,76 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
   expect(screen.getByRole("progressbar", { name: /reading progress/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
+});
+
+it("shows the deepest current section breadcrumb in the top bar instead of the local annotations label", async () => {
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated, onTocChange }) => {
+                  onTocChange?.([
+                    {
+                      children: [
+                        {
+                          children: [
+                            {
+                              id: "genesis-10-heading",
+                              label: "Nations Descended from Noah",
+                              target: "genesis.xhtml#heading",
+                            },
+                          ],
+                          id: "genesis-10",
+                          label: "Chapter 10",
+                          target: "genesis.xhtml#chapter-10",
+                        },
+                      ],
+                      id: "genesis",
+                      label: "GENESIS",
+                      target: "genesis.xhtml#book",
+                    },
+                  ]);
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/166/2[v01010001]/2/1:0)",
+                    progress: 0.42,
+                    sectionPath: ["GENESIS", "Chapter 10", "Nations Descended from Noah"],
+                    spineItemId: "genesis.xhtml",
+                    textQuote: "These are the generations of the sons of Noah.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "These are the generations of the sons of Noah."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByText("Current section")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Current section")).toHaveTextContent(
+      "GENESIS / Chapter 10 / Nations Descended from Noah",
+    );
+  });
+  expect(screen.queryByText(/local annotations enabled/i)).not.toBeInTheDocument();
 });
 
 it("navigates toc targets through the active runtime handle instead of reopening the viewport", async () => {

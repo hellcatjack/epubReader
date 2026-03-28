@@ -3,6 +3,7 @@ import { loadStoredBookFile } from "../bookshelf/bookFileRepository";
 import type { TocItem } from "../../lib/types/books";
 import type { ReadingMode } from "../../lib/types/settings";
 import { buildReaderTheme, defaultReaderPreferences, type ReaderPreferences, toEpubFlow } from "./readerPreferences";
+import { findTocPathBySpineItemId, getTocTarget, getTocTargetSpineItemId } from "./tocTree";
 
 export type RuntimeRenderArgs = {
   bookId: string;
@@ -18,6 +19,7 @@ export type RuntimeRenderArgs = {
     pageIndex?: number;
     pageOffset?: number;
     progress: number;
+    sectionPath?: string[];
     scrollTop?: number;
     spineItemId: string;
     textQuote: string;
@@ -84,6 +86,7 @@ export type RuntimeRenderHandle = {
     pageIndex?: number;
     pageOffset?: number;
     progress: number;
+    sectionPath?: string[];
     scrollTop?: number;
     spineItemId: string;
     textQuote: string;
@@ -740,6 +743,193 @@ function getNavigationTargetFragment(target: string) {
   }
 }
 
+function resolveTocTargetElement(document: Document, item: TocItem) {
+  const target = getTocTarget(item);
+  const fragment = getNavigationTargetFragment(target);
+  if (!fragment) {
+    return document.body.firstElementChild ?? document.body;
+  }
+
+  const fragmentElement =
+    document.getElementById(fragment) ??
+    document.querySelector<HTMLElement>(`[name="${fragment.replace(/"/g, '\\"')}"]`);
+
+  if (!fragmentElement) {
+    return null;
+  }
+
+  return getNearestTtsBlockElement(fragmentElement) ?? fragmentElement;
+}
+
+function createCollapsedRange(document: Document, node: Node) {
+  const range = document.createRange();
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    range.selectNodeContents(node);
+  } else {
+    range.setStart(node, 0);
+    range.setEnd(node, 0);
+  }
+  range.collapse(true);
+  return range;
+}
+
+function compareRangeStarts(left: Range, right: Range) {
+  return left.compareBoundaryPoints(Range.START_TO_START, right);
+}
+
+type TocPathMatch = {
+  path: TocItem[];
+  point: Range;
+};
+
+type TocViewport = {
+  height: number;
+  left: number;
+  readingMode: ReadingMode;
+  top: number;
+  width: number;
+};
+
+export function findActiveTocPathForRange(
+  items: TocItem[],
+  spineItemId: string,
+  currentRange: Range | null,
+  document: Document,
+): TocItem[] {
+  if (!spineItemId || !currentRange) {
+    return [];
+  }
+
+  const currentPoint = createCollapsedRange(document, currentRange.startContainer);
+  currentPoint.setStart(currentRange.startContainer, currentRange.startOffset);
+  currentPoint.setEnd(currentRange.startContainer, currentRange.startOffset);
+
+  let bestMatch: TocPathMatch | null = null;
+
+  const visit = (entries: TocItem[], ancestors: TocItem[]) => {
+    for (const item of entries) {
+      const path = [...ancestors, item];
+
+      if (getTocTargetSpineItemId(item) === spineItemId) {
+        const targetElement = resolveTocTargetElement(document, item);
+        if (targetElement && containsNode(document.body, targetElement)) {
+          const targetPoint = createCollapsedRange(document, targetElement);
+          if (compareRangeStarts(targetPoint, currentPoint) <= 0) {
+            let shouldReplace = false;
+            if (!bestMatch) {
+              shouldReplace = true;
+            } else {
+              const currentBest = bestMatch;
+              const pointComparison = compareRangeStarts(targetPoint, currentBest.point);
+              shouldReplace = pointComparison > 0 || (pointComparison === 0 && path.length > currentBest.path.length);
+            }
+
+            if (shouldReplace) {
+              bestMatch = {
+                path,
+                point: targetPoint,
+              };
+            }
+          }
+        }
+      }
+
+      if (item.children?.length) {
+        visit(item.children, path);
+      }
+    }
+  };
+
+  visit(items, []);
+  const resolvedBestMatch = bestMatch as TocPathMatch | null;
+  if (resolvedBestMatch) {
+    return resolvedBestMatch.path;
+  }
+
+  return findTocPathBySpineItemId(items, spineItemId);
+}
+
+export function findVisibleTocPathForViewport(
+  items: TocItem[],
+  spineItemId: string,
+  document: Document,
+  viewport: TocViewport,
+): TocItem[] {
+  if (!spineItemId || viewport.width <= 0 || viewport.height <= 0) {
+    return [];
+  }
+
+  let bestMatch: TocItem[] = [];
+  let bestRect: DOMRect | null = null;
+
+  const isVisibleInViewport = (rect: DOMRect) => {
+    if (viewport.readingMode === "paginated") {
+      return (
+        rect.right > viewport.left &&
+        rect.left < viewport.left + viewport.width &&
+        rect.bottom > 0 &&
+        rect.top < viewport.height
+      );
+    }
+
+    return (
+      rect.bottom > viewport.top &&
+      rect.top < viewport.top + viewport.height &&
+      rect.right > 0 &&
+      rect.left < viewport.width
+    );
+  };
+
+  const shouldReplace = (rect: DOMRect, path: TocItem[]) => {
+    if (!bestRect) {
+      return true;
+    }
+
+    if (viewport.readingMode === "paginated") {
+      if (rect.left !== bestRect.left) {
+        return rect.left < bestRect.left;
+      }
+
+      if (rect.top !== bestRect.top) {
+        return rect.top < bestRect.top;
+      }
+    } else {
+      if (rect.top !== bestRect.top) {
+        return rect.top < bestRect.top;
+      }
+
+      if (rect.left !== bestRect.left) {
+        return rect.left < bestRect.left;
+      }
+    }
+
+    return path.length > bestMatch.length;
+  };
+
+  const visit = (entries: TocItem[], ancestors: TocItem[]) => {
+    for (const item of entries) {
+      const path = [...ancestors, item];
+      if (getTocTargetSpineItemId(item) === spineItemId) {
+        const targetElement = resolveTocTargetElement(document, item);
+        if (targetElement && containsNode(document.body, targetElement)) {
+          const rect = targetElement.getBoundingClientRect();
+          if (isVisibleInViewport(rect) && shouldReplace(rect, path)) {
+            bestMatch = path;
+            bestRect = rect;
+          }
+        }
+      }
+
+      if (item.children?.length) {
+        visit(item.children, path);
+      }
+    }
+  };
+
+  visit(items, []);
+  return bestMatch;
+}
+
 function readPaginatedPageOffset(readingMode: ReadingMode, container: HTMLElement | null) {
   if (readingMode !== "paginated" || !container) {
     return undefined;
@@ -1112,6 +1302,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     let currentTarget = initialCfi ?? "";
     let currentContents: Contents | null = null;
     let currentSpineItemId = "";
+    let currentToc: TocItem[] = [];
     let activePreferences: ReaderPreferences = {
       ...defaultReaderPreferences,
       ...initialPreferences,
@@ -2127,8 +2318,43 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }
     };
 
+    const getCurrentSectionPath = (cfi: string) => {
+      if (!currentToc.length || !currentContents || !cfi) {
+        return [];
+      }
+
+      const viewportPath = findVisibleTocPathForViewport(currentToc, currentSpineItemId, currentContents.document, {
+        ...getVisibleViewportMetrics(),
+        readingMode: activePreferences.readingMode,
+      })
+        .map((item) => item.label.trim())
+        .filter(Boolean);
+      if (viewportPath.length) {
+        return viewportPath;
+      }
+
+      try {
+        const currentRange = currentContents.range(cfi);
+        if (!currentRange || !containsNode(currentContents.document.body, currentRange.startContainer)) {
+          return [];
+        }
+
+        return findActiveTocPathForRange(
+          currentToc,
+          currentSpineItemId,
+          currentRange,
+          currentContents.document,
+        )
+          .map((item) => item.label.trim())
+          .filter(Boolean);
+      } catch {
+        return [];
+      }
+    };
+
     const handleRelocated = async (location: Location) => {
       const sequence = ++relocationSequence;
+      syncCurrentContents();
       const preferredRestore =
         activePreferences.readingMode === "paginated" ? preferredPaginatedRestore : null;
       if (preferredRestore) {
@@ -2146,7 +2372,12 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         : await toStoredLocation(location);
       currentTarget = storedLocation.cfi;
       currentSpineItemId = storedLocation.spineItemId;
-      onRelocated?.(storedLocation);
+      const sectionPath = getCurrentSectionPath(storedLocation.cfi);
+
+      onRelocated?.({
+        ...storedLocation,
+        ...(sectionPath?.length ? { sectionPath } : {}),
+      });
       queueDeferredResolvedLocationProgress(storedLocation, location.start.percentage, sequence);
       if (preferredRestore) {
         preferredPaginatedRestore = null;
@@ -2232,7 +2463,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }
 
       try {
-        return currentContents.cfiFromNode(fragmentElement);
+        const targetElement = getNearestTtsBlockElement(fragmentElement) ?? fragmentElement;
+        return currentContents.cfiFromNode(targetElement);
       } catch {
         return target;
       }
@@ -2362,7 +2594,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     });
 
     const navigation = await book.loaded.navigation;
-    onTocChange?.(buildTocItems(navigation.toc));
+    currentToc = buildTocItems(navigation.toc);
+    onTocChange?.(currentToc);
     await rendition.display(initialCfi);
     syncCurrentContents();
     if (initialCfi) {
@@ -2461,6 +2694,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
           pageIndex: readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element)),
           pageOffset: readPaginatedPageOffset(activePreferences.readingMode, getPaginatedContainer(element)),
           progress: resolveLocationProgressSnapshot(currentTarget, undefined, book.locations),
+          ...(getCurrentSectionPath(currentTarget).length ? { sectionPath: getCurrentSectionPath(currentTarget) } : {}),
           scrollTop: readScrolledViewportOffset(activePreferences.readingMode, getPaginatedContainer(element)),
           spineItemId: currentSpineItemId,
           textQuote: await getLocationTextQuote(currentTarget),

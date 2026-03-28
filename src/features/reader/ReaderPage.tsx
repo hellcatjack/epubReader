@@ -36,7 +36,7 @@ import { SelectionPopover } from "./SelectionPopover";
 import { TopBar } from "./TopBar";
 import { getEffectiveReaderPreferences, toReaderPreferences, type ReaderPreferences } from "./readerPreferences";
 import { selectionBridge, type ReaderSelection } from "./selectionBridge";
-import { findTocLabelBySpineItemId } from "./tocTree";
+import { findTocLabelBySpineItemId, findTocPathBySpineItemId } from "./tocTree";
 
 type ReaderPageProps = {
   ai?: Pick<AiService, "explainSelection" | "translateSelection">;
@@ -63,6 +63,7 @@ type ReaderLocationState = {
   pageIndex?: number;
   pageOffset?: number;
   progress: number;
+  sectionPath?: string[];
   scrollTop?: number;
   spineItemId: string;
   textQuote: string;
@@ -249,6 +250,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     pageIndex: undefined,
     pageOffset: undefined,
     progress: 0,
+    sectionPath: undefined,
     scrollTop: undefined,
     spineItemId: "",
     textQuote: "",
@@ -278,6 +280,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     pageIndex: undefined,
     pageOffset: undefined,
     progress: 0,
+    sectionPath: undefined,
     scrollTop: undefined,
     spineItemId: "",
     textQuote: "",
@@ -350,6 +353,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         pageIndex: undefined,
         pageOffset: undefined,
         progress: 0,
+        sectionPath: undefined,
         scrollTop: undefined,
         spineItemId: "",
         textQuote: "",
@@ -372,6 +376,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       pageIndex: undefined,
       pageOffset: undefined,
       progress: 0,
+      sectionPath: undefined,
       scrollTop: undefined,
       spineItemId: "",
       textQuote: "",
@@ -1407,6 +1412,17 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }),
     [readerPreferences.contentPadding, readerPreferences.maxLineWidth, settings.contentBackgroundColor, settings.fontScale],
   );
+  const currentSectionPath = useMemo(() => {
+    const labels = (currentLocation.sectionPath?.length
+      ? currentLocation.sectionPath
+      : findTocPathBySpineItemId(toc, currentSpineItemId)
+          .map((item) => item.label.trim())
+          .filter(Boolean))
+      .map((label) => label.trim())
+      .filter(Boolean);
+
+    return labels.filter((label, index) => index === 0 || label !== labels[index - 1]);
+  }, [currentLocation.sectionPath, currentSpineItemId, toc]);
   const shouldRenderViewport = Boolean(bookId) && isProgressReady && isSettingsReady;
   const nextInitialCfi = locationTarget ?? initialCfi;
 
@@ -1491,6 +1507,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           onToggleBookmark={handleToggleBookmark}
           progress={currentLocation.progress}
           readingMode={settings.readingMode}
+          sectionPath={currentSectionPath}
           systemActions={
             shellContext ? (
               <div aria-label="Reader system actions" className="reader-system-actions-group" role="group">
@@ -1541,7 +1558,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                 initialCfi={nextInitialCfi}
                 initialProgress={initialProgress}
                 preferExactInitialTarget={preferExactViewportTarget}
-                onLocationChange={({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote }) => {
+                onLocationChange={({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote }) => {
                   if (bookId) {
                     writeRefreshProgressSnapshot(bookId, {
                       cfi,
@@ -1553,7 +1570,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                       textQuote,
                     });
                   }
-                  setCurrentLocation({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
+                  setCurrentLocation({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote });
                   setCurrentSpineItemId(spineItemId);
                 }}
                 onReady={setRuntimeHandle}

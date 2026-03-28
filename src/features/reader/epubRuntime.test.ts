@@ -3,10 +3,12 @@ import {
   buildTocItems,
   extractTtsBlockText,
   extractSentenceContextFromRange,
+  findActiveTocPathForRange,
   findFirstVisibleTextOffset,
   findMostVisibleContentsIndex,
   findFirstVisiblePaginatedTtsBlockIndex,
   findFirstVisibleTtsBlockIndex,
+  findVisibleTocPathForViewport,
   findTtsSegmentTextRange,
   findTtsBlockElementByText,
   getPagePresentationKind,
@@ -712,6 +714,140 @@ describe("epubRuntime tts targeting helpers", () => {
         target: "genesis.xhtml#book",
       },
     ]);
+  });
+
+  it("resolves the active toc path from the current range within a shared spine document", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <h1 id="book">GENESIS</h1>
+      <h2 id="chapter-9">Chapter 9</h2>
+      <p>Earlier chapter paragraph.</p>
+      <h2 id="chapter-10">Chapter 10</h2>
+      <h3 id="heading">Nations Descended from Noah</h3>
+      <p id="current">These are the generations of the sons of Noah, Shem, Ham, and Japheth.</p>
+    `;
+
+    const currentTextNode = doc.querySelector("#current")?.firstChild;
+    if (!currentTextNode) {
+      throw new Error("missing current text node");
+    }
+
+    const currentRange = doc.createRange();
+    currentRange.setStart(currentTextNode, 0);
+    currentRange.setEnd(currentTextNode, 0);
+
+    expect(
+      findActiveTocPathForRange(
+        [
+          {
+            children: [
+              {
+                children: [],
+                id: "genesis-9",
+                label: "Chapter 9",
+                target: "genesis.xhtml#chapter-9",
+              },
+              {
+                children: [
+                  {
+                    children: [],
+                    id: "genesis-10-heading",
+                    label: "Nations Descended from Noah",
+                    target: "genesis.xhtml#heading",
+                  },
+                ],
+                id: "genesis-10",
+                label: "Chapter 10",
+                target: "genesis.xhtml#chapter-10",
+              },
+            ],
+            id: "genesis",
+            label: "GENESIS",
+            target: "genesis.xhtml#book",
+          },
+        ],
+        "genesis.xhtml",
+        currentRange,
+        doc,
+      ).map((item) => item.label),
+    ).toEqual(["GENESIS", "Chapter 10", "Nations Descended from Noah"]);
+  });
+
+  it("prefers the first toc target visible in the current paginated viewport", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <h1 id="book">GENESIS</h1>
+      <h2 id="chapter-9">Chapter 9</h2>
+      <p id="chapter-9-tail">May God enlarge Japheth, and let Canaan be his servant.</p>
+      <h2 id="chapter-10">Chapter 10</h2>
+      <h3 id="heading">Nations Descended from Noah</h3>
+      <p id="chapter-10-start"><b id="v01010001"><big>10</big>:1 </b>These are the generations of the sons of Noah.</p>
+    `;
+
+    const layout = new Map<string, DOMRect>([
+      [
+        "book",
+        { bottom: 40, height: 24, left: 0, right: 120, top: 16, width: 120, x: 0, y: 16 } as DOMRect,
+      ],
+      [
+        "chapter-9",
+        { bottom: 110, height: 28, left: 29750, right: 30350, top: 84, width: 600, x: 29750, y: 84 } as DOMRect,
+      ],
+      [
+        "chapter-9-tail",
+        { bottom: 170, height: 44, left: 31080, right: 31680, top: 118, width: 600, x: 31080, y: 118 } as DOMRect,
+      ],
+      [
+        "heading",
+        { bottom: 246, height: 32, left: 31093, right: 31741, top: 214, width: 648, x: 31093, y: 214 } as DOMRect,
+      ],
+      [
+        "chapter-10-start",
+        { bottom: 318, height: 56, left: 31093, right: 31741, top: 262, width: 648, x: 31093, y: 262 } as DOMRect,
+      ],
+    ]);
+
+    for (const [id, rect] of layout) {
+      const element = doc.getElementById(id);
+      if (element) {
+        element.getBoundingClientRect = () => rect;
+      }
+    }
+
+    expect(
+      findVisibleTocPathForViewport(
+        [
+          {
+            children: [
+              {
+                children: [],
+                id: "genesis-9",
+                label: "Chapter 9",
+                target: "genesis.xhtml#chapter-9",
+              },
+              {
+                children: [],
+                id: "genesis-10",
+                label: "Chapter 10",
+                target: "genesis.xhtml#v01010001",
+              },
+            ],
+            id: "genesis",
+            label: "GENESIS",
+            target: "genesis.xhtml#book",
+          },
+        ],
+        "genesis.xhtml",
+        doc,
+        {
+          height: 640,
+          left: 31064,
+          readingMode: "paginated",
+          top: 0,
+          width: 706,
+        },
+      ).map((item) => item.label),
+    ).toEqual(["GENESIS", "Chapter 10"]);
   });
 
   it("never auto-scrolls active tts markers inside paginated renditions", () => {

@@ -97,13 +97,13 @@ export function findTocPathBySpineItemId(items: TocItem[], spineItemId: string):
   }
 
   for (const item of items) {
-    if (getTocTargetSpineItemId(item) === spineItemId) {
-      return [item];
-    }
-
     const nestedPath = item.children?.length ? findTocPathBySpineItemId(item.children, spineItemId) : [];
     if (nestedPath.length) {
       return [item, ...nestedPath];
+    }
+
+    if (getTocTargetSpineItemId(item) === spineItemId) {
+      return [item];
     }
   }
 

@@ -12,6 +12,31 @@ async function importBible(page: Parameters<typeof test>[0]["page"]) {
   await expect(page.getByRole("navigation", { name: /table of contents/i })).toBeVisible();
 }
 
+test("Bible reader top bar keeps reading status on a single compact row", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  const topbarMetrics = await page.evaluate(() => {
+    const banner = document.querySelector(".reader-topbar");
+    const status = document.querySelector(".reader-topbar-status");
+    const actions = document.querySelector(".reader-topbar-actions");
+    const progress = document.querySelector(".reader-progress");
+    const current = document.querySelector(".reader-current-section");
+
+    return {
+      actionsTop: actions?.getBoundingClientRect().top ?? null,
+      bannerHeight: banner?.getBoundingClientRect().height ?? null,
+      currentTop: current?.getBoundingClientRect().top ?? null,
+      progressTop: progress?.getBoundingClientRect().top ?? null,
+      statusTop: status?.getBoundingClientRect().top ?? null,
+    };
+  });
+
+  expect(topbarMetrics.bannerHeight).not.toBeNull();
+  expect(topbarMetrics.bannerHeight ?? 0).toBeLessThan(140);
+  expect(Math.abs((topbarMetrics.progressTop ?? 0) - (topbarMetrics.currentTop ?? 0))).toBeLessThan(20);
+});
+
 test("Bible tts skips verse and footnote markers when starting from Genesis 1", async ({ page }) => {
   await page.addInitScript(() => {
     const calls: Array<{ text: string }> = [];
@@ -327,6 +352,34 @@ test("Bible toc chapter navigation lands on the requested Genesis chapter anchor
   expect(metrics.targetTop).not.toBeNull();
   expect(Math.abs((metrics.targetTop ?? 0) - metrics.containerScrollTop)).toBeLessThan(80);
   expect(metrics.targetText).toContain("In the beginning, God created the heavens and the earth.");
+});
+
+test("Bible toc chapter navigation opens Genesis 10 instead of falling back to the Genesis contents page", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await page.waitForTimeout(1200);
+
+  const currentSection = (await page.getByLabel("Current section").textContent())?.replace(/\s+/g, " ").trim() ?? "";
+  const chapterHeadingVisible = await page.locator(".epub-root iframe").evaluate((node) => {
+    const iframe = node;
+    const root = iframe.closest(".epub-root");
+    const container = root?.querySelector<HTMLElement>(".epub-container");
+    const viewportLeft = container?.scrollLeft ?? 0;
+    const viewportWidth = root?.clientWidth ?? 0;
+    const heading = iframe.contentDocument?.getElementById("h00022");
+    if (!heading) {
+      return false;
+    }
+
+    const rect = heading.getBoundingClientRect();
+    return rect.right > viewportLeft && rect.left < viewportLeft + viewportWidth;
+  });
+
+  expect(currentSection).toContain("GENESIS / Chapter 10");
+  expect(chapterHeadingVisible).toBe(true);
 });
 
 test("Bible scrolled mode preserves the Genesis 10 viewport position across refresh", async ({ page }) => {
