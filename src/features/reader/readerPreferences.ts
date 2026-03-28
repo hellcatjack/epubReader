@@ -120,6 +120,11 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
       "scroll-margin-top": "18vh",
       "transition": "none",
     },
+    ".reader-paginated-explicit-start": {
+      "-webkit-column-break-before": "always",
+      "break-before": "column",
+      "page-break-before": "always",
+    },
   };
 }
 

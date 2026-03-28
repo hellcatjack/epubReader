@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildTocItems,
+  extractTtsBlockText,
   extractSentenceContextFromRange,
   findFirstVisibleTextOffset,
   findMostVisibleContentsIndex,
@@ -134,6 +135,28 @@ describe("epubRuntime tts targeting helpers", () => {
     });
 
     expect(findFirstVisibleTtsBlockIndex(paragraphs, 640, 360)).toBe(1);
+  });
+
+  it("respects the scrolled container offset when picking the first visible paragraph", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>Earlier chapter paragraph</p>
+      <p>Current chapter paragraph</p>
+      <p>Later chapter paragraph</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const rects = [
+      { bottom: 13087, left: 0, right: 640, top: 12998 },
+      { bottom: 13748, left: 0, right: 640, top: 13688 },
+      { bottom: 14685, left: 0, right: 640, top: 14628 },
+    ];
+
+    paragraphs.forEach((paragraph, index) => {
+      paragraph.getBoundingClientRect = () => rects[index] as DOMRect;
+    });
+
+    expect(findFirstVisibleTtsBlockIndex(paragraphs, 640, 360, 13650)).toBe(1);
   });
 
   it("uses column-major reading order when picking the first visible paginated paragraph", () => {
@@ -276,6 +299,80 @@ describe("epubRuntime tts targeting helpers", () => {
     doc.createRange = originalCreateRange;
   });
 
+  it("omits bible verse and footnote markers from tts block text", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p class="chapter-first"><b id="v01001001"><big>1</big>:1&nbsp;</b>In the beginning, God created the heavens and the earth. <b><sup>2</sup></b>The earth was without form and void.<sup><a href="#f01-1" id="b01-1">[1]</a></sup></p>
+    `;
+
+    const paragraph = doc.querySelector("p");
+    if (!paragraph) {
+      throw new Error("missing paragraph");
+    }
+
+    expect(extractTtsBlockText(paragraph)).toBe(
+      "In the beginning, God created the heavens and the earth. The earth was without form and void.",
+    );
+  });
+
+  it("skips bible verse markers when finding the first visible text offset", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p class="chapter-first"><b id="v01001001"><big>1</big>:1&nbsp;</b>In the beginning, God created the heavens and the earth.</p>
+    `;
+
+    const paragraph = doc.querySelector("p");
+    const textNode = paragraph?.lastChild;
+    if (!paragraph || !textNode) {
+      throw new Error("missing paragraph text");
+    }
+
+    const originalCreateRange = doc.createRange.bind(doc);
+    let activeNode: Node | null = null;
+
+    doc.createRange = (() =>
+      ({
+        getClientRects: () =>
+          activeNode === textNode
+            ? ([
+                {
+                  bottom: 24,
+                  height: 16,
+                  left: 0,
+                  right: 12,
+                  top: 8,
+                  width: 12,
+                  x: 0,
+                  y: 8,
+                },
+              ] as DOMRect[])
+            : ([
+                {
+                  bottom: 24,
+                  height: 16,
+                  left: 0,
+                  right: 12,
+                  top: 8,
+                  width: 12,
+                  x: 0,
+                  y: 8,
+                },
+              ] as DOMRect[]),
+        selectNodeContents: vi.fn(),
+        setEnd: vi.fn(),
+        setStart: vi.fn((node: Node) => {
+          activeNode = node;
+        }),
+      }) as unknown as Range) as typeof doc.createRange;
+
+    expect(findFirstVisibleTextOffset(paragraph, 640, 360)).toEqual({
+      node: textNode,
+      offset: 0,
+    });
+
+    doc.createRange = originalCreateRange;
+  });
+
   it("finds the first visible word within the current paginated page band", () => {
     const doc = document.implementation.createHTMLDocument("chapter");
     doc.body.innerHTML = `
@@ -392,6 +489,14 @@ describe("epubRuntime tts targeting helpers", () => {
     expect(percentageFromCfi).not.toHaveBeenCalled();
   });
 
+  it("tolerates missing epub locations when computing snapshot progress", () => {
+    expect(resolveLocationProgressSnapshot("epubcfi(/6/2!/4/1:0)", undefined, undefined)).toBe(0);
+  });
+
+  it("tolerates missing epub locations when resolving exact progress", async () => {
+    await expect(resolveLocationProgress("epubcfi(/6/2!/4/1:0)", undefined, undefined)).resolves.toBe(0);
+  });
+
   it("uses the relocated cfi when a preferred paginated target is only a chapter href", () => {
     expect(resolveStoredLocationCfi("epubcfi(/6/12!/4/2/8/1:0)", "chapter-2.xhtml")).toBe("epubcfi(/6/12!/4/2/8/1:0)");
     expect(resolveStoredLocationCfi("epubcfi(/6/12!/4/2/8/1:0)", "epubcfi(/6/12!/4/2/10/1:0)")).toBe(
@@ -496,6 +601,26 @@ describe("epubRuntime tts targeting helpers", () => {
     expect(prefix.toString().replace(/\s+/g, " ").trim()).toBe("Alpha beta");
   });
 
+  it("uses tts offsets that ignore bible verse and footnote markers", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p class="chapter-first"><b id="v01001001"><big>1</big>:1&nbsp;</b>In the beginning, God created the heavens and the earth. <b><sup>2</sup></b>The earth was without form and void.<sup><a href="#f01-1" id="b01-1">[1]</a></sup></p>
+    `;
+
+    const paragraph = doc.querySelector("p");
+    if (!paragraph) {
+      throw new Error("missing paragraph");
+    }
+
+    const fullText = extractTtsBlockText(paragraph);
+    const segment = "The earth was without form and void.";
+    const segmentStart = fullText.indexOf(segment);
+    const range = findTtsSegmentTextRange(paragraph, segment, segmentStart, segmentStart + segment.length);
+
+    expect(range).not.toBeNull();
+    expect(range?.toString().replace(/\s+/g, " ").trim()).toBe(segment);
+  });
+
   it("extracts the full sentence context for a single-word selection", () => {
     const doc = document.implementation.createHTMLDocument("chapter");
     doc.body.innerHTML = `
@@ -598,13 +723,13 @@ describe("epubRuntime tts targeting helpers", () => {
     ).toBe(false);
   });
 
-  it("auto-scrolls active tts markers in scrolled mode when they leave the viewport band", () => {
+  it("never auto-scrolls active tts markers in scrolled mode", () => {
     expect(
       shouldAutoScrollTtsSegment("scrolled", {
         bottom: 980,
         top: 40,
       } as DOMRect, 900),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("restores the saved paginated page offset on the epub container", () => {

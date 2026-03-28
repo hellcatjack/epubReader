@@ -199,6 +199,95 @@ it("respects explicit navigation targets in paginated mode instead of reopening 
   });
 });
 
+it("keeps an explicit paginated mode target exact even when it matches the saved cfi", async () => {
+  const runtime = {
+    render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
+      destroy() {
+        return undefined;
+      },
+      findCfiFromTextQuote: vi.fn(async () => null),
+      getTextFromCurrentLocation: vi.fn(async () => ""),
+      goTo: vi.fn(async () => undefined),
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setActiveTtsSegment: vi.fn(async () => undefined),
+      setFlow: vi.fn(async () => undefined),
+    })),
+  };
+
+  render(
+    <EpubViewport
+      bookId="book-1"
+      initialCfi="epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)"
+      initialProgress={{
+        bookId: "book-1",
+        cfi: "epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)",
+        progress: 0.42,
+        spineItemId: "ch004.xhtml",
+        textQuote: "10:1 These are the generations of the sons of Noah.",
+        updatedAt: Date.now(),
+      }}
+      preferExactInitialTarget
+      readingMode="paginated"
+      runtime={runtime}
+    />,
+  );
+
+  await vi.waitFor(() => {
+    expect(runtime.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialCfi: "epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)",
+      }),
+    );
+  });
+});
+
+it("passes the saved scrolled scrollTop to the runtime when restoring a same-tab refresh snapshot", async () => {
+  const runtime = {
+    render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
+      destroy() {
+        return undefined;
+      },
+      findCfiFromTextQuote: vi.fn(async () => null),
+      getTextFromCurrentLocation: vi.fn(async () => ""),
+      goTo: vi.fn(async () => undefined),
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setActiveTtsSegment: vi.fn(async () => undefined),
+      setFlow: vi.fn(async () => undefined),
+    })),
+  };
+
+  render(
+    <EpubViewport
+      bookId="book-1"
+      initialCfi="epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)"
+      initialProgress={{
+        bookId: "book-1",
+        cfi: "epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)",
+        progress: 0.42,
+        scrollTop: 13824,
+        spineItemId: "ch004.xhtml",
+        textQuote: "10:1 These are the generations of the sons of Noah.",
+        updatedAt: Date.now(),
+      }}
+      readingMode="scrolled"
+      runtime={runtime}
+    />,
+  );
+
+  await vi.waitFor(() => {
+    expect(runtime.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialCfi: "epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)",
+        initialScrollTop: 13824,
+      }),
+    );
+  });
+});
+
 it("destroys stale runtime handles that resolve after the viewport unmounts", async () => {
   let resolveRender: ((value: RuntimeRenderHandle) => void) | undefined;
   const destroy = vi.fn();

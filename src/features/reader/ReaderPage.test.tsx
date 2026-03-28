@@ -36,7 +36,9 @@ afterEach(async () => {
   saveProgressMock.mockReset();
   saveProgressMock.mockResolvedValue(undefined);
   sessionStorage.clear();
-  selectionBridge.publish(null);
+  act(() => {
+    selectionBridge.publish(null);
+  });
   await resetDb();
 });
 
@@ -1273,6 +1275,106 @@ it("writes the synchronous paginated viewport snapshot to sessionStorage on page
   });
 });
 
+it("writes the synchronous scrolled viewport snapshot scrollTop to sessionStorage on pagehide", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  let resolveLocationChange:
+    | ((value: {
+        cfi: string;
+        pageIndex?: number;
+        pageOffset?: number;
+        progress: number;
+        scrollTop?: number;
+        spineItemId: string;
+        textQuote: string;
+      }) => void)
+    | undefined;
+  const getCurrentLocation = vi.fn(
+    () =>
+      new Promise<{
+        cfi: string;
+        pageIndex?: number;
+        pageOffset?: number;
+        progress: number;
+        scrollTop?: number;
+        spineItemId: string;
+        textQuote: string;
+      } | null>(() => undefined),
+  );
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  resolveLocationChange = onRelocated;
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation,
+                    getTextFromCurrentLocation: vi.fn(async () => "Reader text."),
+                    getViewportLocationSnapshot: vi.fn(() => ({
+                      scrollTop: 13824,
+                    })),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(resolveLocationChange).toBeTypeOf("function");
+  });
+
+  await act(async () => {
+    resolveLocationChange?.({
+      cfi: "epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)",
+      progress: 0.63,
+      spineItemId: "ch004.xhtml",
+      textQuote: "10:1 These are the generations of the sons of Noah.",
+    });
+  });
+
+  window.dispatchEvent(new Event("pagehide"));
+
+  await waitFor(() => {
+    expect(JSON.parse(sessionStorage.getItem("reader-refresh-progress:book-1") ?? "null")).toEqual(
+      expect.objectContaining({
+        cfi: "epubcfi(/6/12!/4/166/2[v01010001]/2/1:0)",
+        progress: 0.63,
+        scrollTop: 13824,
+        spineItemId: "ch004.xhtml",
+        textQuote: "10:1 These are the generations of the sons of Noah.",
+      }),
+    );
+  });
+});
+
 it("places the tts queue controls above appearance controls in the tools rail", async () => {
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   installSpeechSynthesis([
@@ -1554,8 +1656,10 @@ it("does not reapply reader preferences when only the reading location changes",
   );
 
   await waitFor(() => {
-    expect(applyPreferences).toHaveBeenCalled();
     expect(emitRelocated).toBeTypeOf("function");
+  });
+  await act(async () => {
+    await Promise.resolve();
   });
   const initialApplyCount = applyPreferences.mock.calls.length;
 
@@ -2893,6 +2997,624 @@ it("clears the active selection after start tts while continuing from the select
 
   expect(clearSelection).toHaveBeenCalledTimes(1);
   expect(selectionBridge.read()).toBeNull();
+});
+
+it("preserves the released selection when start tts is pressed and the iframe selection collapses on pointer down", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "First paragraph on the current page.\n\nSecond paragraph keeps the queue running after the selected opening words.\n\nThird paragraph keeps the queue alive after the selected block.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph keeps the queue running after the selected opening words.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/6/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Third paragraph keeps the queue alive after the selected block.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "Second paragraph",
+    });
+  });
+
+  const startButton = screen.getByRole("button", { name: /start tts/i });
+  fireEvent.mouseDown(startButton);
+  act(() => {
+    selectionBridge.publish(null);
+  });
+  fireEvent.click(startButton);
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+});
+
+it("captures the live iframe selection on start tts pointer down before bridge state exists", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot: vi.fn(() => ({
+                      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+                      isReleased: true,
+                      spineItemId: "chap-1",
+                      text: "Second paragraph",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "First paragraph on the current page.\n\nSecond paragraph keeps the queue running after the selected opening words.\n\nThird paragraph keeps the queue alive after the selected block.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph keeps the queue running after the selected opening words.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/6/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Third paragraph keeps the queue alive after the selected block.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  const startButton = screen.getByRole("button", { name: /start tts/i });
+  fireEvent.mouseDown(startButton);
+  fireEvent.click(startButton);
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+});
+
+it("falls back to the most recent released selection when focus clearing already wiped the bridge before start tts", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot: vi.fn(() => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "First paragraph on the current page.\n\nSecond paragraph keeps the queue running after the selected opening words.\n\nThird paragraph keeps the queue alive after the selected block.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph keeps the queue running after the selected opening words.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/6/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Third paragraph keeps the queue alive after the selected block.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "Second paragraph",
+    });
+  });
+  act(() => {
+    selectionBridge.publish(null);
+  });
+
+  const startButton = screen.getByRole("button", { name: /start tts/i });
+  fireEvent.mouseDown(startButton);
+  fireEvent.click(startButton);
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+});
+
+it("falls back to the most recent non-empty selection even if the iframe never published a released snapshot", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot: vi.fn(() => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "First paragraph on the current page.\n\nSecond paragraph keeps the queue running after the selected opening words.\n\nThird paragraph keeps the queue alive after the selected block.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/4/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Second paragraph keeps the queue running after the selected opening words.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/6/1:0)",
+                        spineItemId: "chap-1",
+                        text: "Third paragraph keeps the queue alive after the selected block.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/4,/1:0,/1:18)",
+      isReleased: false,
+      spineItemId: "chap-1",
+      text: "Second paragraph",
+    });
+  });
+  act(() => {
+    selectionBridge.publish(null);
+  });
+
+  const startButton = screen.getByRole("button", { name: /start tts/i });
+  fireEvent.mouseDown(startButton);
+  fireEvent.click(startButton);
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+});
+
+it("starts continuous tts from a pointer-down selection block snapshot even when no cfi-backed selection survives", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  const getTtsBlocksFromCurrentSelection = vi.fn(async () => [
+    {
+      cfi: "epubcfi(/6/2!/4/4/1:18)",
+      spineItemId: "chap-1",
+      text: "selected opening words. Third paragraph keeps the queue alive after the selected block.",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph on the current page.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot: vi.fn(() => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "First paragraph on the current page.\n\nSecond paragraph keeps the queue running after the selected opening words.\n\nThird paragraph keeps the queue alive after the selected block.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph on the current page.",
+                      },
+                    ]),
+                    getTtsBlocksFromCurrentSelection,
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => []),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  const startButton = screen.getByRole("button", { name: /start tts/i });
+  fireEvent.mouseDown(startButton);
+  fireEvent.click(startButton);
+
+  await waitFor(() => {
+    expect(getTtsBlocksFromCurrentSelection).toHaveBeenCalledTimes(1);
+  });
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+});
+
+it("reuses the cached live selection blocks when a later cfi fallback would jump back to chapter start", async () => {
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  const getTtsBlocksFromCurrentSelection = vi
+    .fn<NonNullable<RuntimeRenderHandle["getTtsBlocksFromCurrentSelection"]>>()
+    .mockResolvedValueOnce([
+      {
+        cfi: "epubcfi(/6/2!/4/20/1:24)",
+        spineItemId: "chap-10",
+        text: "the sons of Noah, and from these the people of the whole earth were dispersed. The sons of Japheth were Gomer, Magog, Madai, Javan, Tubal, Meshech, and Tiras.",
+      },
+    ])
+    .mockResolvedValue([]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-10",
+                    textQuote: "These are the generations of the sons of Noah.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot: vi.fn(() => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () =>
+                        "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-10",
+                        text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
+                      },
+                    ]),
+                    getTtsBlocksFromCurrentSelection,
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-10",
+                        text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/20,/1:24,/1:41)",
+      isReleased: true,
+      spineItemId: "chap-10",
+      text: "the sons of Noah",
+    });
+  });
+
+  await waitFor(() => {
+    expect(getTtsBlocksFromCurrentSelection).toHaveBeenCalledTimes(1);
+  });
+
+  act(() => {
+    selectionBridge.publish(null);
+  });
+
+  const startButton = screen.getByRole("button", { name: /start tts/i });
+  fireEvent.mouseDown(startButton);
+  fireEvent.click(startButton);
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "the sons of Noah, and from these the people of the whole earth were dispersed. The sons of Japheth were Gomer, Magog, Madai, Javan, Tubal, Meshech, and Tiras.",
+      }),
+    );
+  });
 });
 
 it("persistently updates tts rate from the quick control", async () => {

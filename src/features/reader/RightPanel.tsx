@@ -30,6 +30,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onTtsPause?: () => void;
   onTtsRateChange?: (rate: number) => void;
   onTtsResume?: () => void;
+  onTtsStartPointerDown?: () => void;
   onTtsStart?: () => void;
   onTtsStop?: () => void;
   onTtsVoiceChange?: (voiceId: string) => void;
@@ -72,6 +73,7 @@ export function RightPanel({
   onTtsPause,
   onTtsRateChange,
   onTtsResume,
+  onTtsStartPointerDown,
   onTtsStart,
   onTtsStop,
   onTtsVoiceChange,
@@ -101,6 +103,7 @@ export function RightPanel({
           onPause={onTtsPause}
           onRateChange={onTtsRateChange}
           onResume={onTtsResume}
+          onStartPointerDown={onTtsStartPointerDown}
           onStart={onTtsStart}
           onStop={onTtsStop}
           rate={ttsRate}

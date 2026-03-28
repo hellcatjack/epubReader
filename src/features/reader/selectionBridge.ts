@@ -1,9 +1,12 @@
+import type { RuntimeTtsBlock } from "./epubRuntime";
+
 export type ReaderSelection = {
   cfiRange?: string;
   isReleased?: boolean;
   sentenceContext?: string;
   spineItemId?: string;
   text: string;
+  ttsBlocks?: RuntimeTtsBlock[];
 };
 
 type SelectionListener = (selection: ReaderSelection | null) => void;

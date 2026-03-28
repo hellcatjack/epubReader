@@ -7,6 +7,7 @@ type TtsStatusPanelProps = {
   onPause?: () => void;
   onRateChange?: (rate: number) => void;
   onResume?: () => void;
+  onStartPointerDown?: () => void;
   onStart?: () => void;
   onStop?: () => void;
   onVoiceChange?: (voiceId: string) => void;
@@ -43,6 +44,7 @@ export function TtsStatusPanel({
   onPause,
   onRateChange,
   onResume,
+  onStartPointerDown,
   onStart,
   onStop,
   onVoiceChange,
@@ -80,7 +82,15 @@ export function TtsStatusPanel({
       </div>
       {error ? <p className="reader-tts-error">{error}</p> : null}
       <div className="reader-tts-actions" role="group" aria-label="TTS controls">
-        <button type="button" onClick={onStart} disabled={startDisabled}>
+        <button
+          type="button"
+          onClick={onStart}
+          onMouseDown={(event) => {
+            onStartPointerDown?.();
+            event.preventDefault();
+          }}
+          disabled={startDisabled}
+        >
           Start TTS
         </button>
         <button type="button" onClick={onPause}>

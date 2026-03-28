@@ -19,11 +19,13 @@ type EpubViewportProps = {
   activeTtsSegment?: ActiveTtsSegment | null;
   initialCfi?: string;
   initialProgress?: ProgressRecord | null;
+  preferExactInitialTarget?: boolean;
   onLocationChange?: (location: {
     cfi: string;
     pageIndex?: number;
     pageOffset?: number;
     progress: number;
+    scrollTop?: number;
     spineItemId: string;
     textQuote: string;
   }) => void;
@@ -41,6 +43,7 @@ export function EpubViewport({
   bookId,
   initialCfi,
   initialProgress = null,
+  preferExactInitialTarget = false,
   onLocationChange,
   onReady,
   onStatusChange,
@@ -87,6 +90,7 @@ export function EpubViewport({
     async function openPersistedBook(nextCfi?: string) {
       const shouldRestorePaginatedFromChapter =
         readingMode === "paginated" &&
+        !preferExactInitialTarget &&
         Boolean(initialProgress?.spineItemId) &&
         (!nextCfi || nextCfi === initialProgress?.cfi);
       const openTarget =
@@ -111,10 +115,12 @@ export function EpubViewport({
             nextCfi === initialProgress.cfi)
             ? initialProgress.pageOffset
             : undefined,
+        initialScrollTop:
+          initialProgress && nextCfi === initialProgress.cfi ? initialProgress.scrollTop : undefined,
         initialPreferences: readerPreferences,
-        onRelocated: ({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote }) => {
-          void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
-          onLocationChange?.({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
+        onRelocated: ({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote }) => {
+          void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
+          onLocationChange?.({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
         },
         onPagePresentationChange: setPageKind,
         onSelectionChange: ({ cfiRange, isReleased, sentenceContext, spineItemId, text }) => {
@@ -201,8 +207,10 @@ export function EpubViewport({
     initialProgress?.pageIndex,
     initialProgress?.pageOffset,
     initialProgress?.progress,
+    initialProgress?.scrollTop,
     initialProgress?.spineItemId,
     initialProgress?.textQuote,
+    preferExactInitialTarget,
     readingMode,
   ]);
 

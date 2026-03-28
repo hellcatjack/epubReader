@@ -17,6 +17,7 @@ export type ProgressRecord = {
   pageIndex?: number;
   pageOffset?: number;
   progress: number;
+  scrollTop?: number;
   spineItemId?: string;
   textQuote?: string;
   updatedAt?: number;

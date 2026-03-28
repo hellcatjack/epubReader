@@ -63,12 +63,25 @@ type ReaderLocationState = {
   pageIndex?: number;
   pageOffset?: number;
   progress: number;
+  scrollTop?: number;
   spineItemId: string;
   textQuote: string;
 };
 
+type LocationTargetIntent = "explicit" | "restored";
+
 const continuousTtsChunkOptions = { firstSegmentMax: 280, segmentMax: 500 } as const;
 const paginatedInitialMarkerFallbackMs = 700;
+const recentReleasedSelectionWindowMs = 5000;
+
+function getSelectionCacheKey(selection: ReaderSelection | null) {
+  const text = selection?.text.trim() ?? "";
+  if (!text) {
+    return "";
+  }
+
+  return [selection?.spineItemId ?? "", selection?.cfiRange ?? "", text].join("::");
+}
 
 function sliceChunksFromMarker(chunks: ChunkSegment[], chunkIndex: number, markerIndex: number) {
   const activeChunk = chunks[chunkIndex];
@@ -216,6 +229,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const [initialProgress, setInitialProgress] = useState<ProgressRecord | null>(null);
   const [isProgressReady, setIsProgressReady] = useState(!bookId);
   const [locationTarget, setLocationTarget] = useState<string>();
+  const [locationTargetIntent, setLocationTargetIntent] = useState<LocationTargetIntent>("restored");
+  const [explicitLocationTarget, setExplicitLocationTarget] = useState<string>();
+  const [preferExactViewportTarget, setPreferExactViewportTarget] = useState(false);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [currentSpineItemId, setCurrentSpineItemId] = useState("");
   const [readerStatus, setReaderStatus] = useState(
@@ -233,6 +249,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     pageIndex: undefined,
     pageOffset: undefined,
     progress: 0,
+    scrollTop: undefined,
     spineItemId: "",
     textQuote: "",
   });
@@ -261,6 +278,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     pageIndex: undefined,
     pageOffset: undefined,
     progress: 0,
+    scrollTop: undefined,
     spineItemId: "",
     textQuote: "",
   });
@@ -275,8 +293,16 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const lastContinuousMarkerCfiRef = useRef("");
   const lastContinuousTextRef = useRef("");
   const lastAutoPagedCfiRef = useRef("");
+  const pendingPointerStartSelectionRef = useRef<ReaderSelection | null>(null);
+  const pendingPointerStartBlocksPromiseRef = useRef<Promise<RuntimeTtsBlock[]> | null>(null);
+  const cachedSelectionBlocksKeyRef = useRef("");
+  const cachedSelectionBlocksPromiseRef = useRef<Promise<RuntimeTtsBlock[]> | null>(null);
+  const lastReleasedSelectionRef = useRef<ReaderSelection | null>(null);
+  const lastReleasedSelectionAtRef = useRef(0);
   const pendingTtsStartTargetRef = useRef("");
   const ttsReadinessRequestRef = useRef(0);
+  const appliedPreferencesRuntimeRef = useRef<RuntimeRenderHandle | null>(null);
+  const appliedPreferencesSignatureRef = useRef("");
   const browserTtsClientRef = useRef(createBrowserTtsClient());
   const phoneticsServiceRef = useRef(phonetics ?? createPhoneticsService());
   const ttsQueueRef = useRef<ReturnType<typeof createTtsQueue> | null>(null);
@@ -316,7 +342,18 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       setInitialProgress(null);
       setIsProgressReady(true);
       setLocationTarget(undefined);
-      setCurrentLocation({ cfi: "", pageIndex: undefined, pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
+      setLocationTargetIntent("restored");
+      setExplicitLocationTarget(undefined);
+      setPreferExactViewportTarget(false);
+      setCurrentLocation({
+        cfi: "",
+        pageIndex: undefined,
+        pageOffset: undefined,
+        progress: 0,
+        scrollTop: undefined,
+        spineItemId: "",
+        textQuote: "",
+      });
       setCurrentSpineItemId("");
       setReaderStatus("Open a book from the shelf to start reading.");
       return;
@@ -327,7 +364,18 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     setInitialCfi(undefined);
     setInitialProgress(null);
     setLocationTarget(undefined);
-    setCurrentLocation({ cfi: "", pageIndex: undefined, pageOffset: undefined, progress: 0, spineItemId: "", textQuote: "" });
+    setLocationTargetIntent("restored");
+    setExplicitLocationTarget(undefined);
+    setPreferExactViewportTarget(false);
+    setCurrentLocation({
+      cfi: "",
+      pageIndex: undefined,
+      pageOffset: undefined,
+      progress: 0,
+      scrollTop: undefined,
+      spineItemId: "",
+      textQuote: "",
+    });
     setCurrentSpineItemId("");
     setReaderStatus("Restoring reading position...");
 
@@ -336,6 +384,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       setInitialProgress(progress ?? null);
       setInitialCfi(progress?.cfi);
       setLocationTarget(progress?.cfi);
+      setLocationTargetIntent("restored");
+      setExplicitLocationTarget(undefined);
+      setPreferExactViewportTarget(false);
     };
 
     if (refreshSnapshot) {
@@ -546,6 +597,13 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     const unsubscribe = selectionBridge.subscribe((selection) => {
       setSelectedSelection(selection);
 
+      if (selection?.text.trim()) {
+        lastReleasedSelectionRef.current = selection;
+        lastReleasedSelectionAtRef.current = Date.now();
+        cachedSelectionBlocksKeyRef.current = getSelectionCacheKey(selection);
+        cachedSelectionBlocksPromiseRef.current = runtimeHandleValueRef.current?.getTtsBlocksFromCurrentSelection?.() ?? null;
+      }
+
       if (!selection?.text.trim()) {
         lastAutoTranslatedSelectionKeyRef.current = "";
       }
@@ -661,6 +719,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           pageIndex: nextLocation.pageIndex,
           pageOffset: nextLocation.pageOffset,
           progress: nextLocation.progress,
+          scrollTop: nextLocation.scrollTop,
           spineItemId: nextLocation.spineItemId,
           textQuote: nextLocation.textQuote,
         });
@@ -1065,10 +1124,14 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   async function handleChangeReadingMode(mode: ReadingMode) {
     setTtsStartReady(false);
     const modeSwitchLocation =
+      (locationTargetIntent === "explicit" ? explicitLocationTarget : undefined) ??
       (await runtimeHandle?.getCurrentLocation?.())?.cfi ??
       currentLocationRef.current.cfi ??
       currentLocationRef.current.spineItemId;
     setLocationTarget(modeSwitchLocation || undefined);
+    setLocationTargetIntent("explicit");
+    setExplicitLocationTarget(modeSwitchLocation || undefined);
+    setPreferExactViewportTarget(true);
     await updateSettings({ readingMode: mode });
   }
 
@@ -1140,14 +1203,61 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     await updateSettings({ ttsVolume: volume });
   }
 
+  function getRecentReleasedSelectionFallback() {
+    if (Date.now() - lastReleasedSelectionAtRef.current > recentReleasedSelectionWindowMs) {
+      return null;
+    }
+
+    return lastReleasedSelectionRef.current?.text.trim() ? lastReleasedSelectionRef.current : null;
+  }
+
+  function handlePrepareStartTts() {
+    const latestSelection =
+      runtimeHandleValueRef.current?.getCurrentSelectionSnapshot?.() ??
+      selectionBridge.read() ??
+      selectedSelection ??
+      getRecentReleasedSelectionFallback();
+    pendingPointerStartSelectionRef.current = latestSelection?.text.trim() ? latestSelection : null;
+    pendingPointerStartBlocksPromiseRef.current = runtimeHandleValueRef.current?.getTtsBlocksFromCurrentSelection?.() ?? null;
+  }
+
   async function handleStartTts() {
     if (!runtimeHandle || !ttsStartReady) {
       return;
     }
 
     const liveRuntimeSelection = await runtimeHandle.getCurrentSelection?.();
-    const latestSelection = liveRuntimeSelection ?? selectionBridge.read() ?? selectedSelection;
-    const selectionDrivenChunks = await getContinuousTtsChunksFromSelection(runtimeHandle, settings.readingMode, latestSelection);
+    const pendingPointerStartBlocks =
+      (await pendingPointerStartBlocksPromiseRef.current?.catch(() => [])) ?? [];
+    const latestSelection =
+      liveRuntimeSelection ??
+      selectionBridge.read() ??
+      selectedSelection ??
+      pendingPointerStartSelectionRef.current ??
+      getRecentReleasedSelectionFallback();
+    const selectionSnapshotChunks = latestSelection?.ttsBlocks?.length
+      ? getContinuousTtsChunksFromBlocks(latestSelection.ttsBlocks, settings.readingMode)
+      : [];
+    const latestSelectionKey = getSelectionCacheKey(latestSelection);
+    const cachedSelectionBlocks =
+      latestSelectionKey && cachedSelectionBlocksKeyRef.current === latestSelectionKey
+        ? (await cachedSelectionBlocksPromiseRef.current?.catch(() => [])) ?? []
+        : [];
+    pendingPointerStartSelectionRef.current = null;
+    pendingPointerStartBlocksPromiseRef.current = null;
+    const pointerSelectionDrivenChunks = pendingPointerStartBlocks.length
+      ? getContinuousTtsChunksFromBlocks(pendingPointerStartBlocks, settings.readingMode)
+      : [];
+    const cachedSelectionDrivenChunks = cachedSelectionBlocks.length
+      ? getContinuousTtsChunksFromBlocks(cachedSelectionBlocks, settings.readingMode)
+      : [];
+    const selectionDrivenChunks = pointerSelectionDrivenChunks.length
+      ? pointerSelectionDrivenChunks
+      : selectionSnapshotChunks.length
+        ? selectionSnapshotChunks
+      : cachedSelectionDrivenChunks.length
+        ? cachedSelectionDrivenChunks
+      : await getContinuousTtsChunksFromSelection(runtimeHandle, settings.readingMode, latestSelection);
     const pendingStartTarget = pendingTtsStartTargetRef.current.trim();
     let targetDrivenChunks: ChunkSegment[] = [];
     if (!selectionDrivenChunks.length && pendingStartTarget) {
@@ -1183,10 +1293,14 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
     pendingTtsStartTargetRef.current = "";
 
-    if (selectionDrivenChunks.length && latestSelection?.text.trim()) {
+    if (selectionDrivenChunks.length && (latestSelection?.text.trim() || pointerSelectionDrivenChunks.length)) {
       await runtimeHandle.clearSelection?.();
       selectionBridge.publish(null);
       setSelectedSelection(null);
+      cachedSelectionBlocksKeyRef.current = "";
+      cachedSelectionBlocksPromiseRef.current = null;
+      lastReleasedSelectionRef.current = null;
+      lastReleasedSelectionAtRef.current = 0;
     }
 
     activeSelectionSpeechRequestRef.current += 1;
@@ -1281,6 +1395,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     () => getEffectiveReaderPreferences(toReaderPreferences(settings)),
     [settings],
   );
+  const readerPreferencesSignature = useMemo(() => JSON.stringify(readerPreferences), [readerPreferences]);
   const readerStyle = useMemo<
     CSSProperties &
       Record<"--reader-font-scale" | "--reader-page-background" | "--reader-paginated-prose-width", string>
@@ -1297,6 +1412,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
   function navigateToLocation(target: string) {
     pendingTtsStartTargetRef.current = target;
+    setLocationTargetIntent("explicit");
+    setExplicitLocationTarget(target);
     if (bookId) {
       writeRefreshTtsStartTargetSnapshot(bookId, target);
       writeRefreshProgressSnapshot(bookId, {
@@ -1308,6 +1425,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         ...(typeof currentLocationRef.current.pageOffset === "number"
           ? { pageOffset: currentLocationRef.current.pageOffset }
           : {}),
+        ...(typeof currentLocationRef.current.scrollTop === "number"
+          ? { scrollTop: currentLocationRef.current.scrollTop }
+          : {}),
         ...(currentLocationRef.current.spineItemId ? { spineItemId: currentLocationRef.current.spineItemId } : {}),
         ...(currentLocationRef.current.textQuote ? { textQuote: currentLocationRef.current.textQuote } : {}),
       });
@@ -1315,21 +1435,38 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     if (!runtimeHandle) {
       setLocationTarget(target);
+      setPreferExactViewportTarget(true);
       return;
     }
 
     void runtimeHandle.goTo(target).catch(() => {
+      setLocationTargetIntent("explicit");
+      setExplicitLocationTarget(target);
       setLocationTarget(target);
+      setPreferExactViewportTarget(true);
     });
   }
 
   useEffect(() => {
     if (!runtimeHandle || typeof runtimeHandle.applyPreferences !== "function") {
+      appliedPreferencesRuntimeRef.current = null;
+      appliedPreferencesSignatureRef.current = "";
       return;
     }
 
+    if (appliedPreferencesRuntimeRef.current !== runtimeHandle) {
+      appliedPreferencesRuntimeRef.current = runtimeHandle;
+      appliedPreferencesSignatureRef.current = readerPreferencesSignature;
+      return;
+    }
+
+    if (appliedPreferencesSignatureRef.current === readerPreferencesSignature) {
+      return;
+    }
+
+    appliedPreferencesSignatureRef.current = readerPreferencesSignature;
     void runtimeHandle.applyPreferences(readerPreferences);
-  }, [readerPreferences, runtimeHandle]);
+  }, [readerPreferences, readerPreferencesSignature, runtimeHandle]);
 
   return (
     <main className={`reader-layout theme-${settings.theme}`} style={readerStyle}>
@@ -1403,11 +1540,20 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                 bookId={bookId}
                 initialCfi={nextInitialCfi}
                 initialProgress={initialProgress}
-                onLocationChange={({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote }) => {
+                preferExactInitialTarget={preferExactViewportTarget}
+                onLocationChange={({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote }) => {
                   if (bookId) {
-                    writeRefreshProgressSnapshot(bookId, { cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
+                    writeRefreshProgressSnapshot(bookId, {
+                      cfi,
+                      pageIndex,
+                      pageOffset,
+                      progress,
+                      scrollTop,
+                      spineItemId,
+                      textQuote,
+                    });
                   }
-                  setCurrentLocation({ cfi, pageIndex, pageOffset, progress, spineItemId, textQuote });
+                  setCurrentLocation({ cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
                   setCurrentSpineItemId(spineItemId);
                 }}
                 onReady={setRuntimeHandle}
@@ -1453,6 +1599,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             onTtsPause={handlePauseTts}
             onTtsRateChange={handleQuickTtsRateChange}
             onTtsResume={handleResumeTts}
+            onTtsStartPointerDown={handlePrepareStartTts}
             onTtsStart={handleStartTts}
             onTtsStop={handleStopTts}
             onTtsVoiceChange={handleTtsVoiceChange}

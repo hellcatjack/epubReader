@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
 import { TtsStatusPanel } from "./TtsStatusPanel";
 
 it("renders voice rate and volume controls inside the advanced tts section", async () => {
@@ -61,4 +62,14 @@ it("keeps advanced tts settings collapsed until the reader expands them", async 
   expect(within(settingsGroup).getByLabelText(/tts voice/i)).toBeInTheDocument();
   expect(within(settingsGroup).getByLabelText(/^tts rate$/i)).toBeInTheDocument();
   expect(within(settingsGroup).getByLabelText(/tts volume/i)).toBeInTheDocument();
+});
+
+it("captures the current selection on start tts pointer down before the button click runs", () => {
+  const onStartPointerDown = vi.fn();
+
+  render(<TtsStatusPanel onStartPointerDown={onStartPointerDown} />);
+
+  fireEvent.mouseDown(screen.getByRole("button", { name: /start tts/i }));
+
+  expect(onStartPointerDown).toHaveBeenCalledTimes(1);
 });
