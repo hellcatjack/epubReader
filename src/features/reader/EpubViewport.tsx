@@ -35,6 +35,7 @@ type EpubViewportProps = {
   onTocChange?: (toc: TocItem[]) => void;
   readerPreferences?: ReaderPreferences;
   readingMode?: ReadingMode;
+  ttsFollowPlayback?: boolean;
   visibleAnnotations?: AnnotationRecord[];
   runtime?: EpubViewportRuntime;
 };
@@ -51,6 +52,7 @@ export function EpubViewport({
   onTocChange,
   readerPreferences,
   readingMode = "scrolled",
+  ttsFollowPlayback = false,
   runtime = epubViewportRuntime,
   visibleAnnotations = [],
 }: EpubViewportProps) {
@@ -137,6 +139,7 @@ export function EpubViewport({
       }
 
       runtimeHandleRef.current = handle;
+      await handle.setTtsPlaybackFollow?.(ttsFollowPlayback);
       await handle.setActiveTtsSegment(activeTtsSegmentRef.current);
       onReady?.(handle);
     }
@@ -224,6 +227,12 @@ export function EpubViewport({
       void runtimeHandleRef.current.setActiveTtsSegment(activeTtsSegment);
     }
   }, [activeTtsSegment]);
+
+  useEffect(() => {
+    if (runtimeHandleRef.current) {
+      void runtimeHandleRef.current.setTtsPlaybackFollow?.(ttsFollowPlayback);
+    }
+  }, [ttsFollowPlayback]);
 
   return (
     <section className="epub-viewport" aria-label="Book content">

@@ -102,6 +102,7 @@ export type RuntimeRenderHandle = {
   prev(): Promise<void>;
   setActiveTtsSegment(segment: ActiveTtsSegment | null): Promise<void>;
   setFlow(flow: ReadingMode): Promise<void>;
+  setTtsPlaybackFollow?(enabled: boolean): Promise<void>;
 };
 
 export type EpubViewportRuntime = {
@@ -1066,15 +1067,100 @@ function readPaginatedLastPageIndex(container: HTMLElement | null) {
   return Math.max(0, Math.ceil(container.scrollWidth / container.clientWidth) - 1);
 }
 
+function readScrolledFollowLeadPx(rect: Pick<DOMRect, "top" | "bottom">, viewportHeight: number) {
+  if (viewportHeight <= 0) {
+    return 0;
+  }
+
+  const segmentHeight = Math.max(0, rect.bottom - rect.top);
+  const minimumLead = 28;
+  const maximumLead = Math.min(72, Math.max(minimumLead, Math.round(viewportHeight * 0.08)));
+  return Math.min(maximumLead, Math.max(minimumLead, Math.round(segmentHeight) + 12));
+}
+
+function readScrolledFollowLinePx(rect: Pick<DOMRect, "top" | "bottom">) {
+  const segmentHeight = Math.max(0, rect.bottom - rect.top);
+  return Math.min(40, Math.max(20, Math.round(segmentHeight)));
+}
+
 export function shouldAutoScrollTtsSegment(
   readingMode: ReadingMode,
   rect: Pick<DOMRect, "top" | "bottom">,
   viewportHeight: number,
+  followPlayback = false,
 ) {
-  void readingMode;
-  void rect;
-  void viewportHeight;
-  return false;
+  if (!followPlayback || readingMode === "paginated" || viewportHeight <= 0) {
+    return false;
+  }
+
+  if (rect.top < 0) {
+    return true;
+  }
+
+  const leadPx = readScrolledFollowLeadPx(rect, viewportHeight);
+  return rect.bottom > viewportHeight - leadPx;
+}
+
+export function resolvePaginatedFollowPageIndex(
+  viewport: { clientWidth: number; currentPageIndex: number },
+  rect: Pick<DOMRect, "left" | "right">,
+  followPlayback = false,
+) {
+  if (!followPlayback || viewport.clientWidth <= 0) {
+    return viewport.currentPageIndex;
+  }
+
+  const pageWidth = viewport.clientWidth;
+  const clampedLeft = Math.max(0, rect.left);
+  const clampedRight = Math.max(0, rect.right);
+  const startPageIndex = Math.floor(clampedLeft / pageWidth);
+  const endPageIndex = Math.floor(Math.max(0, clampedRight - 1) / pageWidth);
+
+  if (viewport.currentPageIndex >= startPageIndex && viewport.currentPageIndex <= endPageIndex) {
+    return viewport.currentPageIndex;
+  }
+
+  if (viewport.currentPageIndex < startPageIndex) {
+    return startPageIndex;
+  }
+
+  return Math.max(0, endPageIndex);
+}
+
+export function resolveScrolledFollowScrollTop(
+  viewport: { clientHeight: number; currentScrollTop: number },
+  rect: Pick<DOMRect, "top" | "bottom">,
+  followPlayback = false,
+) {
+  if (!followPlayback || viewport.clientHeight <= 0) {
+    return viewport.currentScrollTop;
+  }
+
+  let nextScrollTop = viewport.currentScrollTop;
+  let nextTop = rect.top;
+  let nextBottom = rect.bottom;
+
+  while (nextTop < 0 && nextScrollTop > 0) {
+    const liveRect = { bottom: nextBottom, top: nextTop };
+    const leadPx = readScrolledFollowLeadPx(liveRect, viewport.clientHeight);
+    const linePx = readScrolledFollowLinePx(liveRect);
+    const scrollStep = Math.max(1, viewport.clientHeight - leadPx - linePx);
+    nextScrollTop = Math.max(0, nextScrollTop - scrollStep);
+    nextTop += scrollStep;
+    nextBottom += scrollStep;
+  }
+
+  while (nextBottom > viewport.clientHeight - readScrolledFollowLeadPx({ bottom: nextBottom, top: nextTop }, viewport.clientHeight)) {
+    const liveRect = { bottom: nextBottom, top: nextTop };
+    const leadPx = readScrolledFollowLeadPx(liveRect, viewport.clientHeight);
+    const linePx = readScrolledFollowLinePx(liveRect);
+    const scrollStep = Math.max(1, viewport.clientHeight - leadPx - linePx);
+    nextScrollTop += scrollStep;
+    nextTop -= scrollStep;
+    nextBottom -= scrollStep;
+  }
+
+  return nextScrollTop;
 }
 
 export function getNearestTtsBlockElement(node: Node | null) {
@@ -1333,6 +1419,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         }
       : null;
     let activeTtsSegment: ActiveTtsSegment | null = null;
+    let followTtsPlayback = false;
     let activeTtsElement: HTMLElement | null = null;
     let pointerSelecting = false;
     let restoreReadingSurfaceFocusOnRender = false;
@@ -1574,20 +1661,113 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         : null;
       const revealTarget = activeTtsElement ?? nextElement;
       const rect = preciseRect ?? revealTarget.getBoundingClientRect();
-      const viewportHeight = view.innerHeight || revealTarget.ownerDocument.documentElement.clientHeight || 0;
+      const container = getPaginatedContainer(element);
+      const frameElement = currentContents.window.frameElement;
+      const frameRect = isElementNode(frameElement) ? frameElement.getBoundingClientRect() : null;
+      const containerRect = container?.getBoundingClientRect() ?? null;
+      const viewportHeight =
+        (activePreferences.readingMode !== "paginated" ? container?.clientHeight : 0) ||
+        (frameRect?.height ?? 0) ||
+        view.innerHeight ||
+        revealTarget.ownerDocument.documentElement.clientHeight ||
+        0;
       const viewportWidth = view.innerWidth || revealTarget.ownerDocument.documentElement.clientWidth || 0;
+      const scrolledContainerRect =
+        container && frameRect && containerRect
+          ? {
+              bottom: frameRect.top - containerRect.top + rect.bottom,
+              top: frameRect.top - containerRect.top + rect.top,
+            }
+          : null;
       const shouldRevealPaginatedTarget =
-        activePreferences.readingMode === "paginated" && viewportWidth > 0 && (rect.left < 0 || rect.right > viewportWidth);
+        followTtsPlayback &&
+        activePreferences.readingMode === "paginated" &&
+        viewportWidth > 0 &&
+        resolvePaginatedFollowPageIndex(
+          {
+            clientWidth: container?.clientWidth ?? viewportWidth,
+            currentPageIndex: readPaginatedPageIndex(activePreferences.readingMode, container) ?? 0,
+          },
+          rect,
+          true,
+        ) !== (readPaginatedPageIndex(activePreferences.readingMode, container) ?? 0);
       const shouldRevealScrolledTarget =
         activePreferences.readingMode !== "paginated" &&
-        shouldAutoScrollTtsSegment(activePreferences.readingMode, rect, viewportHeight);
+        scrolledContainerRect &&
+        shouldAutoScrollTtsSegment(activePreferences.readingMode, scrolledContainerRect, viewportHeight, followTtsPlayback);
 
-      if (shouldRevealPaginatedTarget || shouldRevealScrolledTarget) {
-        revealTarget.scrollIntoView?.({
-          behavior: "auto",
-          block: "nearest",
-          inline: "nearest",
-        });
+      if (shouldRevealScrolledTarget && container && scrolledContainerRect) {
+        let nextScrollTop = resolveScrolledFollowScrollTop(
+          {
+            clientHeight: container.clientHeight,
+            currentScrollTop: container.scrollTop,
+          },
+          scrolledContainerRect,
+          followTtsPlayback,
+        );
+
+        while (nextScrollTop !== container.scrollTop) {
+          container.scrollTop = nextScrollTop;
+          await waitForLayoutFrame(element.ownerDocument);
+
+          const liveTarget = activeTtsElement ?? nextElement;
+          const liveRect = liveTarget.getBoundingClientRect();
+          const liveFrameRect = isElementNode(frameElement) ? frameElement.getBoundingClientRect() : null;
+          const liveContainerRect = container.getBoundingClientRect();
+          if (!liveFrameRect) {
+            break;
+          }
+
+          const liveScrolledRect = {
+            bottom: liveFrameRect.top - liveContainerRect.top + liveRect.bottom,
+            top: liveFrameRect.top - liveContainerRect.top + liveRect.top,
+          };
+          const resolvedScrollTop = resolveScrolledFollowScrollTop(
+            {
+              clientHeight: container.clientHeight,
+              currentScrollTop: container.scrollTop,
+            },
+            liveScrolledRect,
+            followTtsPlayback,
+          );
+
+          if (resolvedScrollTop === container.scrollTop) {
+            break;
+          }
+
+          nextScrollTop = resolvedScrollTop;
+        }
+
+        return;
+      }
+
+      if (shouldRevealPaginatedTarget) {
+        const pageContainer = getPaginatedContainer(element);
+        const pageWidth = pageContainer?.clientWidth || viewportWidth;
+
+        if (pageContainer && pageWidth > 0) {
+          const currentPageIndex = readPaginatedPageIndex(activePreferences.readingMode, pageContainer) ?? 0;
+          const targetPageIndex = resolvePaginatedFollowPageIndex(
+            {
+              clientWidth: pageWidth,
+              currentPageIndex,
+            },
+            rect,
+            followTtsPlayback,
+          );
+
+          if (targetPageIndex !== currentPageIndex) {
+            restorePaginatedPagePosition(activePreferences.readingMode, pageContainer, undefined, targetPageIndex);
+            await waitForSettledPaginatedContainer(element, pageWidth);
+            await waitForLayoutFrame(element.ownerDocument);
+            void syncDisplayedLocation();
+            const latestSegment = activeTtsSegment;
+            if (attempt < 4 && latestSegment) {
+              await applyActiveTtsSegment(latestSegment, attempt + 1);
+            }
+            return;
+          }
+        }
       }
     };
 
@@ -2769,6 +2949,12 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       },
       async setActiveTtsSegment(segment) {
         await applyActiveTtsSegment(segment);
+      },
+      async setTtsPlaybackFollow(enabled) {
+        followTtsPlayback = enabled;
+        if (enabled && activeTtsSegment) {
+          await applyActiveTtsSegment(activeTtsSegment);
+        }
       },
       async setFlow(nextFlow) {
         const preservedPageIndex = readPaginatedPageIndex(activePreferences.readingMode, getPaginatedContainer(element));

@@ -28,6 +28,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
   onTtsPause?: () => void;
+  onTtsFollowPlaybackChange?: (enabled: boolean) => void;
   onTtsRateChange?: (rate: number) => void;
   onTtsResume?: () => void;
   onTtsStartPointerDown?: () => void;
@@ -45,6 +46,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   ttsStartDisabled?: boolean;
   ttsCurrentText?: string;
   ttsError?: string;
+  ttsFollowPlayback?: boolean;
   ttsStatus?: "idle" | "loading" | "playing" | "paused" | "error";
   ttsVoice?: string;
   ttsVoices?: BrowserTtsVoice[];
@@ -71,6 +73,7 @@ export function RightPanel({
   onNoteDraftChange,
   onNoteSave,
   onTtsPause,
+  onTtsFollowPlaybackChange,
   onTtsRateChange,
   onTtsResume,
   onTtsStartPointerDown,
@@ -87,6 +90,7 @@ export function RightPanel({
   ttsStartDisabled,
   ttsCurrentText,
   ttsError,
+  ttsFollowPlayback,
   ttsRate,
   ttsStatus,
   ttsVoice,
@@ -100,6 +104,8 @@ export function RightPanel({
         <TtsStatusPanel
           currentText={ttsCurrentText}
           error={ttsError}
+          followPlayback={ttsFollowPlayback}
+          onFollowPlaybackChange={onTtsFollowPlaybackChange}
           onPause={onTtsPause}
           onRateChange={onTtsRateChange}
           onResume={onTtsResume}

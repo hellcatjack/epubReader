@@ -14,10 +14,12 @@ import {
   getPagePresentationKind,
   getNearestTtsBlockElement,
   readPaginatedPageIndex,
+  resolvePaginatedFollowPageIndex,
   resolveApproximateLocationProgress,
   resolveStoredLocationCfi,
   resolveLocationProgressSnapshot,
   resolveLocationProgress,
+  resolveScrolledFollowScrollTop,
   restorePaginatedPageOffset,
   restorePaginatedPagePosition,
   shouldAutoScrollTtsSegment,
@@ -850,22 +852,130 @@ describe("epubRuntime tts targeting helpers", () => {
     ).toEqual(["GENESIS", "Chapter 10"]);
   });
 
-  it("never auto-scrolls active tts markers inside paginated renditions", () => {
+  it("keeps paginated tts markers still when follow playback is disabled", () => {
     expect(
       shouldAutoScrollTtsSegment("paginated", {
         bottom: 980,
         top: 40,
-      } as DOMRect, 900),
+      } as DOMRect, 900, false),
     ).toBe(false);
   });
 
-  it("never auto-scrolls active tts markers in scrolled mode", () => {
+  it("keeps scrolled tts markers still when follow playback is disabled", () => {
     expect(
       shouldAutoScrollTtsSegment("scrolled", {
         bottom: 980,
         top: 40,
-      } as DOMRect, 900),
+      } as DOMRect, 900, false),
     ).toBe(false);
+  });
+
+  it("keeps scrolled tts markers still while they remain inside the current screen band", () => {
+    expect(
+      shouldAutoScrollTtsSegment(
+        "scrolled",
+        {
+          bottom: 560,
+          top: 420,
+        } as DOMRect,
+        900,
+        true,
+      ),
+    ).toBe(false);
+  });
+
+  it("requests a scrolled page move when the active marker enters the final readable line band", () => {
+    expect(
+      shouldAutoScrollTtsSegment(
+        "scrolled",
+        {
+          bottom: 884,
+          top: 856,
+        } as DOMRect,
+        900,
+        true,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps paginated follow playback on the current page while the active rect stays inside the page band", () => {
+    expect(
+      resolvePaginatedFollowPageIndex(
+        {
+          clientWidth: 824,
+          currentPageIndex: 1,
+        },
+        {
+          left: 860,
+          right: 1540,
+        } as DOMRect,
+        true,
+      ),
+    ).toBe(1);
+  });
+
+  it("advances paginated follow playback to the next page when the active rect moves into the next page band", () => {
+    expect(
+      resolvePaginatedFollowPageIndex(
+        {
+          clientWidth: 824,
+          currentPageIndex: 0,
+        },
+        {
+          left: 860,
+          right: 1080,
+        } as DOMRect,
+        true,
+      ),
+    ).toBe(1);
+  });
+
+  it("does not double-count the current page index when paginated rects are already document-absolute", () => {
+    expect(
+      resolvePaginatedFollowPageIndex(
+        {
+          clientWidth: 706,
+          currentPageIndex: 13,
+        },
+        {
+          left: 9207,
+          right: 9855,
+        } as DOMRect,
+        true,
+      ),
+    ).toBe(13);
+  });
+
+  it("keeps scrolled follow playback still while the active rect remains fully inside the current screen band", () => {
+    expect(
+      resolveScrolledFollowScrollTop(
+        {
+          clientHeight: 900,
+          currentScrollTop: 0,
+        },
+        {
+          top: 120,
+          bottom: 260,
+        } as DOMRect,
+        true,
+      ),
+    ).toBe(0);
+  });
+
+  it("advances scrolled follow playback by one screen minus two readable lines when the active rect enters the final readable line band", () => {
+    expect(
+      resolveScrolledFollowScrollTop(
+        {
+          clientHeight: 900,
+          currentScrollTop: 0,
+        },
+        {
+          top: 856,
+          bottom: 884,
+        } as DOMRect,
+        true,
+      ),
+    ).toBe(832);
   });
 
   it("restores the saved paginated page offset on the epub container", () => {

@@ -491,3 +491,35 @@ it("reapplies the active tts segment after a reading-mode flow change settles", 
     expect(secondHandle.setActiveTtsSegment).toHaveBeenCalledWith(activeSegment);
   });
 });
+
+it("forwards the follow playback setting to the runtime handle", async () => {
+  const setTtsPlaybackFollow = vi.fn(async () => undefined);
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
+      destroy() {
+        return undefined;
+      },
+      findCfiFromTextQuote: vi.fn(async () => null),
+      getTextFromCurrentLocation: vi.fn(async () => ""),
+      goTo: vi.fn(async () => undefined),
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setActiveTtsSegment: vi.fn(async () => undefined),
+      setFlow: vi.fn(async () => undefined),
+      setTtsPlaybackFollow,
+    })),
+  };
+
+  const { rerender } = render(<EpubViewport bookId="book-1" runtime={runtime} ttsFollowPlayback={false} />);
+
+  await vi.waitFor(() => {
+    expect(setTtsPlaybackFollow).toHaveBeenCalledWith(false);
+  });
+
+  rerender(<EpubViewport bookId="book-1" runtime={runtime} ttsFollowPlayback />);
+
+  await vi.waitFor(() => {
+    expect(setTtsPlaybackFollow).toHaveBeenLastCalledWith(true);
+  });
+});

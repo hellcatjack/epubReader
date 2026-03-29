@@ -73,3 +73,15 @@ it("captures the current selection on start tts pointer down before the button c
 
   expect(onStartPointerDown).toHaveBeenCalledTimes(1);
 });
+
+it("lets the reader toggle follow playback from the advanced tts section", async () => {
+  const user = userEvent.setup();
+  const onFollowPlaybackChange = vi.fn();
+
+  render(<TtsStatusPanel followPlayback={false} onFollowPlaybackChange={onFollowPlaybackChange} />);
+
+  await user.click(screen.getByRole("button", { name: /voice, speed, volume/i }));
+  await user.click(screen.getByRole("checkbox", { name: /follow tts playback/i }));
+
+  expect(onFollowPlaybackChange).toHaveBeenCalledWith(true);
+});

@@ -4,6 +4,8 @@ import type { BrowserTtsVoice } from "../../tts/browserTtsClient";
 type TtsStatusPanelProps = {
   currentText?: string;
   error?: string;
+  followPlayback?: boolean;
+  onFollowPlaybackChange?: (enabled: boolean) => void;
   onPause?: () => void;
   onRateChange?: (rate: number) => void;
   onResume?: () => void;
@@ -41,6 +43,8 @@ function formatStatusLabel(status: TtsStatusPanelProps["status"]) {
 export function TtsStatusPanel({
   currentText,
   error,
+  followPlayback = false,
+  onFollowPlaybackChange,
   onPause,
   onRateChange,
   onResume,
@@ -119,6 +123,15 @@ export function TtsStatusPanel({
         {showAdvancedControls ? (
           <div className="reader-tts-advanced-panel" id={advancedPanelId}>
             <div className="reader-tts-settings" role="group" aria-label="TTS settings">
+              <label className="reader-tts-field reader-tts-toggle">
+                <span>Follow TTS playback</span>
+                <input
+                  aria-label="Follow TTS playback"
+                  checked={followPlayback}
+                  onChange={(event) => onFollowPlaybackChange?.(event.target.checked)}
+                  type="checkbox"
+                />
+              </label>
               <label className="reader-tts-field reader-tts-voice">
                 <span>Voice</span>
                 <select

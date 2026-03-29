@@ -74,6 +74,7 @@ it("includes a configurable llm api url in default settings", () => {
     geminiModel: "gemini-2.5-flash",
     llmApiUrl: "http://localhost:8001/v1/chat/completions",
     localLlmModel: "",
+    ttsFollowPlayback: false,
     ttsRate: 1,
     ttsVoice: "",
     ttsVolume: 1,
@@ -113,6 +114,7 @@ it("persists browser tts settings and local llm provider configuration", async (
   const ttsVoice = await screen.findByRole("combobox", { name: /tts voice/i });
   const ttsRate = screen.getByLabelText(/tts rate/i);
   const ttsVolume = screen.getByLabelText(/tts volume/i);
+  const ttsFollowPlayback = screen.getByRole("checkbox", { name: /follow tts playback/i });
   const llmApiUrl = screen.getByLabelText(/llm api url/i);
   const localLlmModel = await screen.findByRole("combobox", { name: /local llm model/i });
   await screen.findByRole("option", { name: "phi-4-mini" });
@@ -154,6 +156,7 @@ it("persists browser tts settings and local llm provider configuration", async (
   await user.selectOptions(columnCount, "2");
   await user.selectOptions(fontFamily, "book");
   await user.selectOptions(ttsVoice, "Microsoft Andrew Online (Natural)");
+  await user.click(ttsFollowPlayback);
   await user.clear(llmApiUrl);
   await user.type(llmApiUrl, "http://localhost:1234/v1");
   await user.selectOptions(localLlmModel, "phi-4-mini");
@@ -183,6 +186,7 @@ it("persists browser tts settings and local llm provider configuration", async (
     columnCount: 1,
     fontFamily: "book",
     ttsRate: 1.15,
+    ttsFollowPlayback: true,
     ttsVoice: "Microsoft Andrew Online (Natural)",
     ttsVolume: 0.9,
   });

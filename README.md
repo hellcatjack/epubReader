@@ -48,6 +48,8 @@ The goal of this reader is to remove that loop as much as possible, so users can
   Context-aware LLM translation for better word and phrase disambiguation
 - 为桌面阅读设计的 TTS 控制与同步高亮，推荐在 Microsoft Edge 中获得最佳听书体验  
   Desktop-friendly TTS controls and synced highlighting, with the best listening experience recommended on Microsoft Edge
+- `Follow TTS playback` 可以在长时间听书时自动跟随当前位置：`paginated` 自动翻页，`scrolled` 按整屏阅读节奏推进  
+  `Follow TTS playback` can keep long listening sessions anchored to the current reading position: `paginated` turns pages automatically, while `scrolled` advances by full-screen reading steps
 - 同时支持 `paginated` 和 `scrolled` 两种阅读模式  
   Supports both `paginated` and `scrolled` reading modes
 - 本地优先的书签、笔记和高亮  
@@ -100,6 +102,19 @@ Both can be configured in:
 推荐使用 Microsoft Edge 来获得最佳 TTS 听书体验。当前项目的朗读链路基于浏览器原生 `speechSynthesis`，而在桌面版 Edge 中，英文自然语音、连续朗读与高亮同步通常表现最好。
 
 Microsoft Edge is recommended for the best TTS listening experience. The reader uses the browser-native `speechSynthesis` pipeline, and desktop Edge typically provides the best results for natural English voices, continuous playback, and highlight sync.
+
+## TTS 跟随与圣经支持 / TTS Follow Playback And Bible Support
+
+- `Follow TTS playback` 默认关闭，适合希望页面保持静止的用户。  
+  `Follow TTS playback` is off by default for users who prefer a completely static reading surface.
+- 开启后，`paginated` 模式会在当前朗读内容进入下一页时自动翻页，而不是持续小幅滚动。  
+  When enabled, `paginated` mode turns to the next page only when the spoken content moves into that page, instead of trying to scroll continuously.
+- 开启后，`scrolled` 模式会按整屏节奏推进，并保留顶部阅读缓冲，避免当前朗读行被顶出屏幕。  
+  When enabled, `scrolled` mode advances by full-screen reading steps with a top reading buffer, so the currently spoken line is not pushed off-screen.
+- 对圣经这类带大量小节编号和脚注编号的 EPUB，TTS 会自动忽略经文号与脚注号，减少朗读断裂感。  
+  For Bibles and similar EPUBs with dense verse markers and footnote markers, TTS automatically skips those markers to keep playback more natural.
+- 对像 ESV 这样正文与脚注位于同一超长文档内的书，自动翻页会优先保持正文与当前朗读段同步，不会把页面错误带到脚注总表。  
+  For books like the ESV where chapter text and footnote sections live inside the same long document, automatic follow paging keeps the visible page aligned with the spoken chapter text instead of drifting into the footnote appendix.
 
 ### Local LLM
 

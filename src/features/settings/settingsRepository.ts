@@ -26,6 +26,7 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
     targetLanguageCustomized: false,
     theme,
     ttsRate: 1,
+    ttsFollowPlayback: false,
     ttsVoice: "",
     ttsVolume: 1,
     fontScale: 1,
@@ -66,6 +67,7 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
     typeof record.maxLineWidth !== "number" ||
     typeof record.columnCount !== "number" ||
     typeof record.fontFamily !== "string" ||
+    typeof record.ttsFollowPlayback !== "boolean" ||
     typeof record.ttsRate !== "number" ||
     typeof record.ttsVolume !== "number"
   );

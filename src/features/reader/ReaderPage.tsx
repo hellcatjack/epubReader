@@ -134,11 +134,15 @@ function isAutoSpeakableSelection(text: string) {
   return /[\p{L}\p{N}]/u.test(normalized);
 }
 
-async function getContinuousTtsChunks(runtimeHandle: RuntimeRenderHandle, readingMode: ReadingMode) {
+async function getContinuousTtsChunks(
+  runtimeHandle: RuntimeRenderHandle,
+  readingMode: ReadingMode,
+  followPlayback = false,
+) {
   try {
     const ttsBlocks = await runtimeHandle.getTtsBlocksFromCurrentLocation?.();
     if (ttsBlocks?.length) {
-      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode);
+      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode, followPlayback);
     }
   } catch {
     // Fall back to flattened text extraction when paragraph-aware markers are unavailable.
@@ -156,13 +160,33 @@ function isHeadingTtsBlock(block: RuntimeTtsBlock) {
   return /^h[1-6]$/i.test(block.tagName ?? "");
 }
 
-function getContinuousTtsChunksFromBlocks(blocks: RuntimeTtsBlock[], readingMode: ReadingMode) {
+function splitChunkSegmentsIntoSingleMarkerChunks(chunks: ChunkSegment[]) {
+  return chunks.flatMap((chunk) =>
+    chunk.markers.map((marker) => ({
+      markers: [
+        {
+          ...marker,
+          end: marker.text.length,
+          start: 0,
+        },
+      ],
+      text: marker.text,
+    })),
+  );
+}
+
+function getContinuousTtsChunksFromBlocks(
+  blocks: RuntimeTtsBlock[],
+  readingMode: ReadingMode,
+  followPlayback = false,
+) {
   if (!blocks.length) {
     return [];
   }
 
   if (readingMode === "paginated") {
-    return blocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
+    const paginatedChunks = blocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
+    return followPlayback ? splitChunkSegmentsIntoSingleMarkerChunks(paginatedChunks) : paginatedChunks;
   }
 
   return chunkTextSegmentsFromBlocks(blocks, continuousTtsChunkOptions);
@@ -172,6 +196,7 @@ async function getContinuousTtsChunksFromTarget(
   runtimeHandle: RuntimeRenderHandle,
   readingMode: ReadingMode,
   target: string,
+  followPlayback = false,
 ) {
   if (!target.trim()) {
     return [];
@@ -188,11 +213,11 @@ async function getContinuousTtsChunksFromTarget(
       if (headingBlockCount > 0) {
         return [
           ...chunkTextSegmentsFromBlocks(ttsBlocks.slice(0, headingBlockCount), continuousTtsChunkOptions),
-          ...getContinuousTtsChunksFromBlocks(ttsBlocks.slice(headingBlockCount), readingMode),
+          ...getContinuousTtsChunksFromBlocks(ttsBlocks.slice(headingBlockCount), readingMode, followPlayback),
         ];
       }
 
-      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode);
+      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode, followPlayback);
     }
   } catch {
     return [];
@@ -205,6 +230,7 @@ async function getContinuousTtsChunksFromSelection(
   runtimeHandle: RuntimeRenderHandle,
   readingMode: ReadingMode,
   selection: ReaderSelection | null,
+  followPlayback = false,
 ) {
   const cfiRange = selection?.cfiRange?.trim() ?? "";
   if (!cfiRange) {
@@ -214,7 +240,7 @@ async function getContinuousTtsChunksFromSelection(
   try {
     const ttsBlocks = await runtimeHandle.getTtsBlocksFromSelectionStart?.(cfiRange);
     if (ttsBlocks?.length) {
-      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode);
+      return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode, followPlayback);
     }
   } catch {
     return [];
@@ -522,7 +548,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     setTtsStartReady(false);
 
-    void Promise.all([getContinuousTtsChunks(runtimeHandle, settings.readingMode), browserTtsClientRef.current.getVoices()])
+    void Promise.all([
+      getContinuousTtsChunks(runtimeHandle, settings.readingMode, settings.ttsFollowPlayback),
+      browserTtsClientRef.current.getVoices(),
+    ])
       .then(([chunks, voices]) => {
         if (ttsReadinessRequestRef.current !== requestId) {
           return;
@@ -793,7 +822,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
         const nextLocation = await runtimeHandle.getCurrentLocation?.();
         const nextSpineItemId = nextLocation?.spineItemId ?? currentLocationRef.current.spineItemId;
-        const nextChunks = await getContinuousTtsChunks(runtimeHandle, settingsRef.current.readingMode);
+        const nextChunks = await getContinuousTtsChunks(
+          runtimeHandle,
+          settingsRef.current.readingMode,
+          settingsRef.current.ttsFollowPlayback,
+        );
         const nextFirstMarkerCfi = nextChunks[0]?.markers[0]?.cfi ?? "";
         const nextFirstText = nextChunks[0]?.markers[0]?.text ?? nextChunks[0]?.text ?? "";
         const advanced =
@@ -1208,6 +1241,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     await updateSettings({ ttsVolume: volume });
   }
 
+  async function handleTtsFollowPlaybackChange(ttsFollowPlayback: boolean) {
+    void runtimeHandleValueRef.current?.setTtsPlaybackFollow?.(ttsFollowPlayback);
+    await updateSettings({ ttsFollowPlayback });
+  }
+
   function getRecentReleasedSelectionFallback() {
     if (Date.now() - lastReleasedSelectionAtRef.current > recentReleasedSelectionWindowMs) {
       return null;
@@ -1241,7 +1279,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       pendingPointerStartSelectionRef.current ??
       getRecentReleasedSelectionFallback();
     const selectionSnapshotChunks = latestSelection?.ttsBlocks?.length
-      ? getContinuousTtsChunksFromBlocks(latestSelection.ttsBlocks, settings.readingMode)
+      ? getContinuousTtsChunksFromBlocks(latestSelection.ttsBlocks, settings.readingMode, settings.ttsFollowPlayback)
       : [];
     const latestSelectionKey = getSelectionCacheKey(latestSelection);
     const cachedSelectionBlocks =
@@ -1251,10 +1289,14 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     pendingPointerStartSelectionRef.current = null;
     pendingPointerStartBlocksPromiseRef.current = null;
     const pointerSelectionDrivenChunks = pendingPointerStartBlocks.length
-      ? getContinuousTtsChunksFromBlocks(pendingPointerStartBlocks, settings.readingMode)
+      ? getContinuousTtsChunksFromBlocks(
+          pendingPointerStartBlocks,
+          settings.readingMode,
+          settings.ttsFollowPlayback,
+        )
       : [];
     const cachedSelectionDrivenChunks = cachedSelectionBlocks.length
-      ? getContinuousTtsChunksFromBlocks(cachedSelectionBlocks, settings.readingMode)
+      ? getContinuousTtsChunksFromBlocks(cachedSelectionBlocks, settings.readingMode, settings.ttsFollowPlayback)
       : [];
     const selectionDrivenChunks = pointerSelectionDrivenChunks.length
       ? pointerSelectionDrivenChunks
@@ -1262,7 +1304,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         ? selectionSnapshotChunks
       : cachedSelectionDrivenChunks.length
         ? cachedSelectionDrivenChunks
-      : await getContinuousTtsChunksFromSelection(runtimeHandle, settings.readingMode, latestSelection);
+      : await getContinuousTtsChunksFromSelection(
+          runtimeHandle,
+          settings.readingMode,
+          latestSelection,
+          settings.ttsFollowPlayback,
+        );
     const pendingStartTarget = pendingTtsStartTargetRef.current.trim();
     let targetDrivenChunks: ChunkSegment[] = [];
     if (!selectionDrivenChunks.length && pendingStartTarget) {
@@ -1271,13 +1318,18 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       } catch {
         // Fall back to the currently rendered location if the explicit target cannot be re-opened.
       }
-      targetDrivenChunks = await getContinuousTtsChunksFromTarget(runtimeHandle, settings.readingMode, pendingStartTarget);
+      targetDrivenChunks = await getContinuousTtsChunksFromTarget(
+        runtimeHandle,
+        settings.readingMode,
+        pendingStartTarget,
+        settings.ttsFollowPlayback,
+      );
     }
     const chunks = selectionDrivenChunks.length
       ? selectionDrivenChunks
       : targetDrivenChunks.length
         ? targetDrivenChunks
-        : await getContinuousTtsChunks(runtimeHandle, settings.readingMode);
+        : await getContinuousTtsChunks(runtimeHandle, settings.readingMode, settings.ttsFollowPlayback);
 
     if (!chunks.length) {
       setTtsState({
@@ -1579,6 +1631,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                 readerPreferences={readerPreferences}
                 readingMode={settings.readingMode}
                 runtime={runtime}
+                ttsFollowPlayback={settings.ttsFollowPlayback}
                 visibleAnnotations={visibleAnnotations}
               />
             ) : (
@@ -1614,6 +1667,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             onNoteDraftChange={setNoteDraft}
             onNoteSave={handleSaveNote}
             onTtsPause={handlePauseTts}
+            onTtsFollowPlaybackChange={handleTtsFollowPlaybackChange}
             onTtsRateChange={handleQuickTtsRateChange}
             onTtsResume={handleResumeTts}
             onTtsStartPointerDown={handlePrepareStartTts}
@@ -1629,6 +1683,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             translationProvider={settings.translationProvider}
             ttsCurrentText={ttsState.currentText}
             ttsError={ttsState.error}
+            ttsFollowPlayback={settings.ttsFollowPlayback}
             ttsRate={settings.ttsRate}
             ttsStartDisabled={!ttsStartReady}
             ttsStatus={ttsState.status}

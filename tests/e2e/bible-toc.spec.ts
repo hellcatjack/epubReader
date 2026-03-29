@@ -138,6 +138,150 @@ test("Bible tts skips verse and footnote markers when starting from Genesis 1", 
   expect(firstCall).not.toMatch(/^\d+\b/u);
 });
 
+test("Bible paginated follow playback keeps Genesis 10 on chapter text instead of drifting into footnotes", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: string[] = [];
+    let activeTimer: number | undefined;
+    let activeBoundaryTimer: number | undefined;
+    let activeEndTimer: number | undefined;
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        addEventListener() {
+          return undefined;
+        },
+        cancel() {
+          if (activeTimer) {
+            clearTimeout(activeTimer);
+            activeTimer = undefined;
+          }
+          if (activeBoundaryTimer) {
+            clearTimeout(activeBoundaryTimer);
+            activeBoundaryTimer = undefined;
+          }
+          if (activeEndTimer) {
+            clearTimeout(activeEndTimer);
+            activeEndTimer = undefined;
+          }
+        },
+        getVoices() {
+          return [
+            {
+              default: true,
+              lang: "en-US",
+              localService: false,
+              name: "Microsoft Ava Online (Natural)",
+              voiceURI: "Microsoft Ava Online (Natural)",
+            },
+          ];
+        },
+        pause() {
+          return undefined;
+        },
+        pending: false,
+        removeEventListener() {
+          return undefined;
+        },
+        resume() {
+          return undefined;
+        },
+        speak(utterance: MockSpeechSynthesisUtterance) {
+          calls.push(utterance.text);
+          activeTimer = window.setTimeout(() => {
+            utterance.onstart?.(new Event("start"));
+            activeBoundaryTimer = window.setTimeout(() => {
+              utterance.onboundary?.({ ...(new Event("boundary")), charIndex: 0 } as Event & { charIndex: number });
+            }, 80);
+            activeEndTimer = window.setTimeout(() => {
+              utterance.onend?.(new Event("end"));
+            }, 180);
+          }, 40);
+        },
+        speaking: false,
+      },
+    });
+
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await page.waitForTimeout(1200);
+  await page.getByRole("button", { name: /voice, speed, volume/i }).click();
+  await page.getByRole("checkbox", { name: /follow tts playback/i }).check();
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+    .toBeGreaterThan(4);
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const iframe = document.querySelector<HTMLIFrameElement>(".epub-root iframe");
+        const container = iframe?.closest(".epub-root")?.querySelector<HTMLElement>(".epub-container");
+        const doc = iframe?.contentDocument;
+        const currentText =
+          document.querySelector(".reader-tts-current p")?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+
+        if (!iframe || !container || !doc || !currentText || container.scrollLeft <= 100) {
+          return false;
+        }
+
+        const visibleLeft = container.scrollLeft;
+        const visibleRight = visibleLeft + container.clientWidth;
+        const visibleTexts = Array.from(doc.querySelectorAll("p, li"))
+          .map((node) => ({
+            rect: node.getBoundingClientRect(),
+            text: node.textContent?.replace(/\s+/g, " ").trim() ?? "",
+          }))
+          .filter(({ rect, text }) => text && rect.right > visibleLeft && rect.left < visibleRight)
+          .map(({ text }) => text);
+
+        const currentMatchesVisible = visibleTexts.some(
+          (text) => text.includes(currentText.slice(0, 60)) || currentText.includes(text.slice(0, 60)),
+        );
+        const footnoteVisible = visibleTexts.some((text) => /^\[\d+\]\s*\d+:\d+/.test(text));
+        return currentMatchesVisible && !footnoteVisible;
+      }),
+    )
+    .toBe(true);
+});
+
 test("Bible scrolled mode start tts continues from a selected Genesis 10 phrase instead of jumping to chapter start", async ({
   page,
 }) => {

@@ -13,6 +13,7 @@ export type SettingsRecord = {
   targetLanguageCustomized: boolean;
   theme: ThemeName;
   ttsRate: number;
+  ttsFollowPlayback: boolean;
   ttsVoice: string;
   ttsVolume: number;
   fontScale: number;
