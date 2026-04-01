@@ -1,10 +1,13 @@
 export type SelectionTranslationMode = "word" | "phrase" | "sentence";
+export type SingleWordClassHint = "noun" | "verb" | "unknown";
+type TranslationPromptProfile = "default" | "hunyuan_mt";
 
 type BuildSelectionTranslationPromptOptions = {
   sentenceContext?: string;
   strict?: boolean;
   targetLanguage: string;
   text: string;
+  textModel?: string;
 };
 
 type SelectionTranslationPrompt = {
@@ -33,6 +36,112 @@ function normalizeText(value: string | undefined) {
 
 function looksLikeSingleWord(value: string) {
   return /^[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*$/u.test(value);
+}
+
+function normalizeLookupToken(value: string) {
+  return normalizeText(value).toLowerCase().replace(/[’']/g, "'");
+}
+
+function tokenizeSentenceContext(value: string) {
+  return Array.from(value.matchAll(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)).map((match) => ({
+    token: match[0],
+  }));
+}
+
+const verbLeadInTokens = new Set([
+  "i",
+  "you",
+  "he",
+  "she",
+  "it",
+  "we",
+  "they",
+  "who",
+  "that",
+  "which",
+  "what",
+  "to",
+  "will",
+  "would",
+  "can",
+  "could",
+  "should",
+  "shall",
+  "may",
+  "might",
+  "must",
+  "do",
+  "does",
+  "did",
+  "not",
+]);
+
+const nounLeadInTokens = new Set([
+  "a",
+  "an",
+  "the",
+  "this",
+  "that",
+  "these",
+  "those",
+  "my",
+  "your",
+  "his",
+  "her",
+  "its",
+  "our",
+  "their",
+  "some",
+  "any",
+  "no",
+  "each",
+  "every",
+  "in",
+  "on",
+  "at",
+  "by",
+  "for",
+  "with",
+  "from",
+  "of",
+  "into",
+  "after",
+  "before",
+  "under",
+  "over",
+  "through",
+  "during",
+  "without",
+]);
+
+export function inferLikelySingleWordClass(text: string, sentenceContext?: string): SingleWordClassHint {
+  const normalizedText = normalizeText(text);
+  const normalizedSentence = sentenceContext?.trim();
+  if (!normalizedSentence || !looksLikeSingleWord(normalizedText)) {
+    return "unknown";
+  }
+
+  const target = normalizeLookupToken(normalizedText);
+  const tokens = tokenizeSentenceContext(normalizedSentence);
+  const matchIndex = tokens.findIndex((token) => normalizeLookupToken(token.token) === target);
+  if (matchIndex < 0) {
+    return "unknown";
+  }
+
+  const previousToken = normalizeLookupToken(tokens[matchIndex - 1]?.token ?? "");
+  if (!previousToken) {
+    return "unknown";
+  }
+
+  if (verbLeadInTokens.has(previousToken)) {
+    return "verb";
+  }
+
+  if (nounLeadInTokens.has(previousToken)) {
+    return "noun";
+  }
+
+  return "noun";
 }
 
 function buildWordGlossPrompt(text: string, sentenceContext: string, targetLanguage: string, strict = false) {
@@ -153,6 +262,130 @@ function buildSentencePrompt(text: string, targetLanguage: string) {
   ].join("\n");
 }
 
+function normalizeModelName(textModel?: string) {
+  const normalized = (textModel ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const withoutNamespace = normalized.split("/").at(-1) ?? normalized;
+  return withoutNamespace.split(":")[0]?.trim() ?? withoutNamespace;
+}
+
+function resolveTranslationPromptProfile(textModel?: string): TranslationPromptProfile {
+  return normalizeModelName(textModel) === "HY-MT1.5-7B-GGUF" ? "hunyuan_mt" : "default";
+}
+
+function buildHunyuanWordPrompt(text: string, sentenceContext: string, targetLanguage: string, strict = false) {
+  if (targetLanguage !== "zh-CN") {
+    return [
+      `Translate the selected word into ${describeLanguage(targetLanguage)} based on the sentence context, without extra explanation.`,
+      "Rules:",
+      "- The sentence is only for word-sense disambiguation",
+      "- Translate only the selected word itself",
+      "- Do not include adjacent nouns, objects, or complements",
+      strict
+        ? "- The previous answer included outside meaning. Return only the shortest core gloss for the selected word"
+        : "- Return only the shortest core gloss for the selected word",
+      "",
+      "Examples:",
+      "Selected word: earns",
+      "Sentence: If he earns rank, he'll lead.",
+      "Answer: earns",
+      "",
+      "Selected word: rank",
+      "Sentence: If he earns rank, he'll lead.",
+      "Answer: rank",
+      "",
+      `Selected word: ${text}`,
+      `Sentence: ${sentenceContext}`,
+      "Answer:",
+    ].join("\n");
+  }
+
+  return [
+    "请按当前句子语境翻译选中词，不要额外解释。",
+    "要求：",
+    "- 句子只用于判断词义",
+    "- 只翻译选中词本身",
+    "- 不要把相邻名词、宾语、补语翻进去",
+    strict ? "- 上一次答案包含了选区外含义，这次只输出该词最短核心词义" : "- 只输出该词最短核心词义",
+    "",
+    "示例：",
+    "选中词：earns",
+    "所在句子：If he earns rank, he'll lead.",
+    "答案：获得",
+    "",
+    "选中词：rank",
+    "所在句子：If he earns rank, he'll lead.",
+    "答案：军衔",
+    "",
+    `选中词：${text}`,
+    `所在句子：${sentenceContext}`,
+    "答案：",
+  ].join("\n");
+}
+
+function buildHunyuanDirectTranslationPrompt(text: string, targetLanguage: string) {
+  if (targetLanguage === "zh-CN") {
+    return [
+      "把下面的文本翻译成简体中文，不要额外解释。",
+      "",
+      text,
+    ].join("\n");
+  }
+
+  return [
+    `Translate the following segment into ${describeLanguage(targetLanguage)}, without additional explanation.`,
+    "",
+    text,
+  ].join("\n");
+}
+
+export function buildStandaloneWordTranslationPrompt(
+  text: string,
+  targetLanguage: string,
+  wordClass: SingleWordClassHint,
+): SelectionTranslationPrompt {
+  if (targetLanguage === "zh-CN") {
+    if (wordClass === "noun") {
+      return {
+        mode: "word",
+        prompt: ["把下面的英文名词翻译成简体中文，不要额外解释。", "", text].join("\n"),
+      };
+    }
+
+    if (wordClass === "verb") {
+      return {
+        mode: "word",
+        prompt: ["把下面的英文动词翻译成简体中文，不要额外解释。", "", text].join("\n"),
+      };
+    }
+  }
+
+  if (wordClass === "noun") {
+    return {
+      mode: "word",
+      prompt: [`Translate the following English noun into ${describeLanguage(targetLanguage)}, without additional explanation.`, "", text].join("\n"),
+    };
+  }
+
+  if (wordClass === "verb") {
+    return {
+      mode: "word",
+      prompt: [`Translate the following English verb into ${describeLanguage(targetLanguage)}, without additional explanation.`, "", text].join("\n"),
+    };
+  }
+
+  return {
+    mode: "word",
+    prompt:
+      targetLanguage === "zh-CN"
+        ? ["把下面的英文单词翻译成简体中文，不要额外解释。", "", text].join("\n")
+        : [`Translate the following English word into ${describeLanguage(targetLanguage)}, without additional explanation.`, "", text].join("\n"),
+  };
+}
+
 export function classifySelectionTranslationMode(text: string, sentenceContext?: string): SelectionTranslationMode {
   const normalizedText = normalizeText(text);
   const normalizedSentence = normalizeText(sentenceContext);
@@ -181,8 +414,24 @@ export function buildSelectionTranslationPrompt({
   strict = false,
   targetLanguage,
   text,
+  textModel,
 }: BuildSelectionTranslationPromptOptions): SelectionTranslationPrompt {
   const mode = classifySelectionTranslationMode(text, sentenceContext);
+  const profile = resolveTranslationPromptProfile(textModel);
+
+  if (profile === "hunyuan_mt") {
+    if (mode === "word" && sentenceContext) {
+      return {
+        mode,
+        prompt: buildHunyuanWordPrompt(text, sentenceContext, targetLanguage, strict),
+      };
+    }
+
+    return {
+      mode: "sentence",
+      prompt: buildHunyuanDirectTranslationPrompt(text, targetLanguage),
+    };
+  }
 
   if (mode === "word" && sentenceContext) {
     return {
@@ -233,6 +482,10 @@ export function shouldRetrySelectionGloss(output: string, mode: SelectionTransla
   }
 
   if (/[。！？.!?]/.test(cleaned)) {
+    return true;
+  }
+
+  if (mode === "word" && cleaned.length > 2 && /[得为成到进出上下入升衔级]/u.test(cleaned.slice(-1))) {
     return true;
   }
 

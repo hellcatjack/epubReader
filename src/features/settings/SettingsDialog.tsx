@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { APP_BUILD_ID } from "../../app/buildInfo";
 import type { ReaderFontFamily, ReadingMode, SettingsInput, ThemeName, TranslationProvider } from "../../lib/types/settings";
 import { geminiModelOptions, translationProviderOptions } from "../ai/providerOptions";
 import { useLocalLlmModels } from "../ai/useLocalLlmModels";
 import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
+import { resetLocalAppState } from "./resetLocalAppState";
 import { defaultSettings, getResolvedSettings, saveSettings } from "./settingsRepository";
 import "./settings.css";
 
@@ -36,6 +38,7 @@ export function SettingsDialog() {
   const [ttsVolumeInput, setTtsVolumeInput] = useState(String(defaultSettings.ttsVolume));
   const [ttsVoices, setTtsVoices] = useState<BrowserTtsVoice[]>([]);
   const [isReady, setIsReady] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [showAdvancedTypography, setShowAdvancedTypography] = useState(false);
   const [status, setStatus] = useState(
     "AI translation is configurable per provider. Microsoft Edge on desktop is recommended for the best TTS listening experience.",
@@ -124,6 +127,27 @@ export function SettingsDialog() {
     setTtsVolumeInput(String(nextTtsVolume));
     setStatus("Settings saved.");
   }
+
+  async function handleResetLocalAppData() {
+    setIsResetting(true);
+    setStatus("Resetting local app data...");
+    try {
+      await resetLocalAppState();
+    } catch {
+      setIsResetting(false);
+      setStatus("Reset failed. Please try again.");
+    }
+  }
+
+  const activeProviderLabel =
+    translationProviderOptions.find((provider) => provider.value === settings.translationProvider)?.label ??
+    settings.translationProvider;
+  const activeEndpointLabel =
+    settings.translationProvider === "local_llm" ? settings.llmApiUrl : "Gemini direct browser API";
+  const activeModelLabel =
+    settings.translationProvider === "local_llm"
+      ? settings.localLlmModel || "Default model"
+      : settings.geminiModel;
 
   return (
     <section aria-label="Reader settings" className="settings-dialog">
@@ -477,6 +501,49 @@ export function SettingsDialog() {
                 </label>
               </div>
             ) : null}
+          </section>
+          <section className="settings-section" aria-label="Local troubleshooting">
+            <header className="settings-section-header">
+              <div>
+                <p className="settings-section-eyebrow">Troubleshooting</p>
+                <h3>Local app state</h3>
+              </div>
+            </header>
+            <div className="settings-grid">
+              <div className="settings-field settings-field-wide settings-readonly-card">
+                <span>Current build</span>
+                <code>{APP_BUILD_ID}</code>
+              </div>
+              <div className="settings-field settings-field-wide settings-readonly-card">
+                <span>Current AI configuration</span>
+                <div className="settings-readonly-list">
+                  <p>
+                    <strong>Provider:</strong> {activeProviderLabel}
+                  </p>
+                  <p>
+                    <strong>Endpoint:</strong> {activeEndpointLabel}
+                  </p>
+                  <p>
+                    <strong>Model:</strong> {activeModelLabel}
+                  </p>
+                </div>
+              </div>
+              <div className="settings-field settings-field-wide settings-reset-card">
+                <span>Reset local app data</span>
+                <p>
+                  Clears cached assets, imported books, progress, annotations, and saved settings for this browser, then
+                  reloads the app.
+                </p>
+                <button
+                  type="button"
+                  className="settings-danger-button"
+                  disabled={isResetting}
+                  onClick={() => void handleResetLocalAppData()}
+                >
+                  {isResetting ? "Resetting..." : "Reset local app data"}
+                </button>
+              </div>
+            </div>
           </section>
         </>
       ) : (

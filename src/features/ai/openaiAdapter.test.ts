@@ -159,6 +159,194 @@ it("uses a sentence-slot replacement prompt for contextual single-word translati
   expect(requestBody.stop).toEqual(["，", ",", "\n"]);
 });
 
+it("uses Hunyuan sampling parameters for HY-MT1.5-7B-GGUF translation requests", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "安置" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    fetch: fakeFetch,
+    textModel: "HY-MT1.5-7B-GGUF",
+  });
+
+  await expect(
+    adapter.translateSelection("stick", {
+      sentenceContext: "Where else would you stick the oldest foster kid?",
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("安置");
+
+  const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(requestBody.temperature).toBe(0.7);
+  expect(requestBody.top_p).toBe(0.6);
+  expect(requestBody.top_k).toBe(20);
+  expect(requestBody.repetition_penalty).toBe(1.05);
+  expect(requestBody.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
+  expect(requestBody.prompt.startsWith("<|startoftext|>")).toBe(true);
+  expect(requestBody.prompt.endsWith("<|extra_0|>")).toBe(true);
+});
+
+it("keeps the default translation parameters for non-Hunyuan local models", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "安置" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    fetch: fakeFetch,
+    textModel: "local-reader-chat",
+  });
+
+  await expect(
+    adapter.translateSelection("stick", {
+      sentenceContext: "Where else would you stick the oldest foster kid?",
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("安置");
+
+  const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(requestBody.temperature).toBe(0.1);
+  expect(requestBody.top_p).toBeUndefined();
+  expect(requestBody.top_k).toBeUndefined();
+  expect(requestBody.repetition_penalty).toBeUndefined();
+});
+
+it("matches Hunyuan parameters for namespaced quantized model ids", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "安置" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    fetch: fakeFetch,
+    textModel: "tencent/HY-MT1.5-7B-GGUF:Q4_K_M",
+  });
+
+  await adapter.translateSelection("stick", {
+    sentenceContext: "Where else would you stick the oldest foster kid?",
+    targetLanguage: "zh-CN",
+  });
+
+  const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(requestBody.temperature).toBe(0.7);
+  expect(requestBody.top_p).toBe(0.6);
+  expect(requestBody.top_k).toBe(20);
+  expect(requestBody.repetition_penalty).toBe(1.05);
+  expect(requestBody.prompt.startsWith("<|startoftext|>")).toBe(true);
+  expect(requestBody.prompt.endsWith("<|extra_0|>")).toBe(true);
+});
+
+it("uses the stricter Hunyuan word retry prompt when a single-word answer absorbs adjacent meaning", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "获得晋升" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "获得" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    fetch: fakeFetch,
+    textModel: "HY-MT1.5-7B-GGUF",
+  });
+
+  await expect(
+    adapter.translateSelection("earns", {
+      sentenceContext: "If he earns rank, he'll lead.",
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("获得");
+
+  expect(fakeFetch).toHaveBeenCalledTimes(2);
+  const retryBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
+  expect(retryBody.prompt).toContain("上一次答案包含了选区外含义");
+  expect(retryBody.prompt).toContain("只输出该词最短核心词义");
+});
+
+it("falls back to a standalone noun translation prompt when a Hunyuan noun selection is mistranslated as a verb gloss", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "获得" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "等级" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    fetch: fakeFetch,
+    textModel: "HY-MT1.5-7B-GGUF",
+  });
+
+  await expect(
+    adapter.translateSelection("rank", {
+      sentenceContext: "If he earns rank, he'll lead.",
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("等级");
+
+  expect(fakeFetch).toHaveBeenCalledTimes(2);
+  const fallbackBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
+  expect(fallbackBody.prompt).toContain("把下面的英文名词翻译成简体中文");
+  expect(fallbackBody.prompt).toContain("rank");
+});
+
 it("translates multi-word selections directly without sentence-context glossing", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()

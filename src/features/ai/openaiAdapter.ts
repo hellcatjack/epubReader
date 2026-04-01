@@ -1,6 +1,8 @@
 import {
+  buildStandaloneWordTranslationPrompt,
   buildSelectionTranslationPrompt,
   cleanupSelectionTranslationOutput,
+  inferLikelySingleWordClass,
   shouldRetrySelectionGloss,
   type SelectionTranslationMode,
 } from "./selectionTranslation";
@@ -140,6 +142,47 @@ function getCompletionStop(mode: SelectionTranslationMode) {
   return ["，", ",", "\n"];
 }
 
+function normalizeModelName(textModel: string) {
+  const normalized = textModel.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const withoutNamespace = normalized.split("/").at(-1) ?? normalized;
+  return withoutNamespace.split(":")[0]?.trim() ?? withoutNamespace;
+}
+
+function isHunyuanMtModel(textModel: string) {
+  return normalizeModelName(textModel) === "HY-MT1.5-7B-GGUF";
+}
+
+function getCompletionSamplingOptions(textModel: string, mode: SelectionTranslationMode) {
+  if (isHunyuanMtModel(textModel)) {
+    return {
+      repetition_penalty: 1.05,
+      temperature: 0.7,
+      top_k: 20,
+      top_p: 0.6,
+    };
+  }
+
+  return {
+    temperature: mode === "sentence" ? 0.2 : 0.1,
+  };
+}
+
+function wrapCompletionPrompt(textModel: string, prompt: string) {
+  if (isHunyuanMtModel(textModel)) {
+    return `<|startoftext|>${prompt}<|extra_0|>`;
+  }
+
+  return prompt;
+}
+
+function looksLikeVerbOnlyGloss(value: string) {
+  return /^(获得|赢得|赚取|取得|得到|获取|晋升|提升|升职|升迁|升级|成为|当上)/u.test(value.trim());
+}
+
 async function requestCompletionText(
   fetchFn: FetchLike,
   endpoint: string,
@@ -157,9 +200,9 @@ async function requestCompletionText(
     body: JSON.stringify({
       max_tokens: getCompletionMaxTokens(mode),
       model: textModel,
-      prompt,
+      prompt: wrapCompletionPrompt(textModel, prompt),
       ...(getCompletionStop(mode) ? { stop: getCompletionStop(mode) } : {}),
-      temperature: mode === "sentence" ? 0.2 : 0.1,
+      ...getCompletionSamplingOptions(textModel, mode),
     }),
   });
 
@@ -179,6 +222,7 @@ async function requestSelectionTranslation(
     sentenceContext: context.sentenceContext,
     targetLanguage: context.targetLanguage,
     text,
+    textModel,
   });
   const initialOutput = await requestCompletionText(
     fetchFn,
@@ -188,9 +232,30 @@ async function requestSelectionTranslation(
     firstPass.mode,
     context.signal,
   );
+  const cleanedInitialOutput = cleanupSelectionTranslationOutput(initialOutput, firstPass.mode);
+  const inferredWordClass = inferLikelySingleWordClass(text, context.sentenceContext);
+
+  if (
+    isHunyuanMtModel(textModel) &&
+    firstPass.mode === "word" &&
+    inferredWordClass === "noun" &&
+    looksLikeVerbOnlyGloss(cleanedInitialOutput)
+  ) {
+    const fallbackPrompt = buildStandaloneWordTranslationPrompt(text, context.targetLanguage, inferredWordClass);
+    const fallbackOutput = await requestCompletionText(
+      fetchFn,
+      completionEndpoint,
+      textModel,
+      fallbackPrompt.prompt,
+      fallbackPrompt.mode,
+      context.signal,
+    );
+
+    return cleanupSelectionTranslationOutput(fallbackOutput, fallbackPrompt.mode);
+  }
 
   if (!shouldRetrySelectionGloss(initialOutput, firstPass.mode)) {
-    return cleanupSelectionTranslationOutput(initialOutput, firstPass.mode);
+    return cleanedInitialOutput;
   }
 
   const strictPass = buildSelectionTranslationPrompt({
@@ -198,6 +263,7 @@ async function requestSelectionTranslation(
     strict: true,
     targetLanguage: context.targetLanguage,
     text,
+    textModel,
   });
   const retryOutput = await requestCompletionText(
     fetchFn,

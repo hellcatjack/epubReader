@@ -111,6 +111,35 @@
   font: inherit;
 }
 
+.settings-readonly-card,
+.settings-reset-card {
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(79, 49, 24, 0.12);
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.settings-readonly-card code {
+  display: inline-block;
+  width: fit-content;
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.55rem;
+  background: rgba(79, 49, 24, 0.08);
+  color: #4f3118;
+  font-size: 0.9rem;
+}
+
+.settings-readonly-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.settings-readonly-list p,
+.settings-reset-card p {
+  margin: 0;
+  color: #654f3f;
+}
+
 .settings-field-color input[type="color"] {
   min-height: 3rem;
   padding: 0.35rem;
@@ -134,7 +163,8 @@
 }
 
 .settings-toggle,
-.settings-save-button {
+.settings-save-button,
+.settings-danger-button {
   border: 0;
   border-radius: 999px;
   cursor: pointer;
@@ -164,6 +194,18 @@
   padding: 0.75rem 1.1rem;
   background: #3f2514;
   color: #fffaf2;
+}
+
+.settings-danger-button {
+  width: fit-content;
+  padding: 0.7rem 1rem;
+  background: #8a2d1d;
+  color: #fff7f5;
+}
+
+.settings-danger-button[disabled] {
+  opacity: 0.7;
+  cursor: progress;
 }
 
 @media (max-width: 640px) {

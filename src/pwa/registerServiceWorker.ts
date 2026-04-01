@@ -4,7 +4,7 @@ type RegisterServiceWorkerOptions = {
   isDev?: boolean;
 };
 
-async function clearExistingServiceWorkers() {
+export async function clearExistingServiceWorkers() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return;
   }
@@ -13,7 +13,7 @@ async function clearExistingServiceWorkers() {
   await Promise.all(registrations.map((registration) => registration.unregister()));
 }
 
-async function clearExistingCaches() {
+export async function clearExistingCaches() {
   if (typeof caches === "undefined") {
     return;
   }

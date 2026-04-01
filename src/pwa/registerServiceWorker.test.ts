@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const registerProductionServiceWorkerMock = vi.fn();
+vi.mock("virtual:pwa-register", () => ({
+  registerSW: vi.fn(),
+}));
 
 vi.mock("./pwaRegister", () => ({
   registerProductionServiceWorker: (...args: unknown[]) => registerProductionServiceWorkerMock(...args),

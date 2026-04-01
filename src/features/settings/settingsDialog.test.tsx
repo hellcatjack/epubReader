@@ -1,11 +1,19 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { db, resetDb } from "../../lib/db/appDb";
 import { createDefaultSettings, defaultSettings, getSettings } from "./settingsRepository";
 import { SettingsDialog } from "./SettingsDialog";
+
+const { resetLocalAppStateMock } = vi.hoisted(() => ({
+  resetLocalAppStateMock: vi.fn(async () => undefined),
+}));
+
+vi.mock("./resetLocalAppState", () => ({
+  resetLocalAppState: resetLocalAppStateMock,
+}));
 
 const DEFAULT_TEST_LLM_API_URL = "http://localhost:8001/v1/chat/completions";
 
@@ -64,6 +72,7 @@ function createStoredSettings(overrides: Partial<typeof defaultSettings> = {}) {
 
 afterEach(async () => {
   vi.unstubAllGlobals();
+  resetLocalAppStateMock.mockReset();
   await resetDb();
 });
 
@@ -232,6 +241,30 @@ it("shows common settings first and reveals advanced typography on demand", asyn
   expect(await screen.findByLabelText(/paragraph spacing/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/page background/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/max line width/i)).toBeInTheDocument();
+});
+
+it("shows local troubleshooting details and lets the user reset local app data", async () => {
+  const user = userEvent.setup();
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+  await db.settings.put(
+    createStoredSettings({
+      llmApiUrl: "http://192.168.1.31:8001/v1/chat/completions",
+      localLlmModel: "tencent/HY-MT1.5-7B-GGUF:Q4_K_M",
+      translationProvider: "local_llm",
+    }),
+  );
+
+  render(<SettingsDialog />);
+
+  const troubleshooting = await screen.findByLabelText(/local troubleshooting/i);
+  expect(within(troubleshooting).getByText(/current build/i)).toBeInTheDocument();
+  expect(within(troubleshooting).getByText(/current ai configuration/i)).toBeInTheDocument();
+  expect(within(troubleshooting).getByText(/tencent\/HY-MT1\.5-7B-GGUF:Q4_K_M/i)).toBeInTheDocument();
+  expect(within(troubleshooting).getByText(/192\.168\.1\.31:8001/i)).toBeInTheDocument();
+
+  await user.click(within(troubleshooting).getByRole("button", { name: /reset local app data/i }));
+
+  expect(resetLocalAppStateMock).toHaveBeenCalledTimes(1);
 });
 
 it("shows single-column paginated mode in the settings UI without deleting the saved scrolled preference", async () => {

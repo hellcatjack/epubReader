@@ -2,6 +2,27 @@ import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { vi } from "vitest";
+
+const { usePwaStatusMock } = vi.hoisted(() => ({
+  usePwaStatusMock: vi.fn(() => ({
+    applyUpdate: vi.fn(async () => undefined),
+    updateAvailable: false,
+  })),
+}));
+
+vi.mock("virtual:pwa-register", () => ({
+  registerSW: vi.fn(),
+}));
+
+vi.mock("../pwa/usePwaStatus", () => ({
+  usePwaStatus: () => usePwaStatusMock(),
+}));
+
+vi.mock("../features/settings/resetLocalAppState", () => ({
+  resetLocalAppState: vi.fn(async () => undefined),
+}));
+
 import { App } from "./App";
 
 it("renders the shared app shell on the bookshelf route", () => {
@@ -43,4 +64,25 @@ it("does not expose the obsolete local translation spike route", () => {
 
   expect(screen.queryByRole("heading", { name: /local translation spike/i })).not.toBeInTheDocument();
   expect(container).toBeEmptyDOMElement();
+});
+
+it("shows a reload banner when a new version is ready", () => {
+  usePwaStatusMock.mockReturnValue({
+    applyUpdate: vi.fn(async () => undefined),
+    updateAvailable: true,
+  });
+
+  render(
+    <MemoryRouter initialEntries={["/"]}>
+      <App />
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByText(/a new version is ready/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /reload now/i })).toBeInTheDocument();
+
+  usePwaStatusMock.mockReturnValue({
+    applyUpdate: vi.fn(async () => undefined),
+    updateAvailable: false,
+  });
 });

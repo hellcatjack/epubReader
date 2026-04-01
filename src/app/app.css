@@ -1,0 +1,35 @@
+.app-update-banner {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 0.7rem 1rem;
+  background: linear-gradient(90deg, #1f5d57 0%, #275851 100%);
+  color: #f7f8f2;
+  box-shadow: 0 0.4rem 1rem rgba(15, 23, 42, 0.18);
+}
+
+.app-update-banner p {
+  margin: 0;
+}
+
+.app-update-banner button {
+  border: 1px solid rgba(247, 248, 242, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .app-update-banner {
+    align-items: stretch;
+    flex-direction: column;
+    text-align: center;
+  }
+}
