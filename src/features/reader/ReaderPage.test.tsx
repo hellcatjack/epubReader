@@ -2913,7 +2913,131 @@ it("prefers the explicit toc navigation target for the first start tts after cha
   await waitFor(() => {
     expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        text: "1 THIRD",
+        text: "1.",
+      }),
+    );
+  });
+
+  browserTts.finishCurrent();
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "THIRD",
+      }),
+    );
+  });
+});
+
+it("adds an audible pause after a chapter heading before continuing into the body text", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const getTtsBlocksFromTarget = vi.fn(async () => [
+    {
+      cfi: "epubcfi(/6/2!/4/4/1:0)",
+      spineItemId: "chap-10",
+      tagName: "h2",
+      text: "Nations Descended from Noah",
+    },
+    {
+      cfi: "epubcfi(/6/2!/4/6/1:0)",
+      spineItemId: "chap-10",
+      tagName: "p",
+      text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated, onTocChange }) => {
+                  onTocChange?.([
+                    {
+                      id: "gen-10",
+                      label: "Chapter 10",
+                      target: "OEBPS/ch004.xhtml#v01010001",
+                    },
+                  ]);
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/6/1:0)",
+                    progress: 0.18,
+                    sectionPath: ["GENESIS", "Chapter 10"],
+                    spineItemId: "chap-10",
+                    textQuote: "These are the generations of the sons of Noah, Shem, Ham, and Japheth.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(
+                      async () => "These are the generations of the sons of Noah, Shem, Ham, and Japheth.",
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/6/1:0)",
+                        spineItemId: "chap-10",
+                        text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth.",
+                      },
+                    ]),
+                    getTtsBlocksFromTarget,
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle & {
+                    getTtsBlocksFromTarget: (target: string) => Promise<Array<{ cfi: string; spineItemId: string; tagName?: string; text: string }>>;
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /^chapter 10$/i }));
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(getTtsBlocksFromTarget).toHaveBeenCalledWith("OEBPS/ch004.xhtml#v01010001");
+  });
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "Nations Descended from Noah.",
+      }),
+    );
+  });
+
+  browserTts.finishCurrent();
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
       }),
     );
   });
@@ -3023,7 +3147,17 @@ it("restores the pending toc tts start target after a same-tab refresh", async (
   await waitFor(() => {
     expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        text: "1 THIRD",
+        text: "1.",
+      }),
+    );
+  });
+
+  browserTts.finishCurrent();
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: "THIRD",
       }),
     );
   });
@@ -3546,6 +3680,259 @@ it("falls back to the most recent non-empty selection even if the iframe never p
     expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
       expect.objectContaining({
         text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
+      }),
+    );
+  });
+});
+
+it("prefers cfi-backed continuous selection chunks over exact selection snapshot blocks", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/18/1:0)",
+                    progress: 0.12,
+                    spineItemId: "chap-9",
+                    textQuote: "All the days of Noah were 950 years, and he died.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot: vi.fn(() => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "All the days of Noah were 950 years, and he died."),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/18/1:0)",
+                        spineItemId: "chap-9",
+                        text: "All the days of Noah were 950 years, and he died.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/18/1:37)",
+                        locatorText: "All the days of Noah were 950 years, and he died.",
+                        sourceEnd: 49,
+                        sourceStart: 37,
+                        spineItemId: "chap-9",
+                        text: "and he died.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/20/1:0)",
+                        spineItemId: "chap-10",
+                        tagName: "h2",
+                        text: "Nations Descended from Noah",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/22/1:0)",
+                        spineItemId: "chap-10",
+                        text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/18,/1:37,/1:49)",
+      isReleased: false,
+      spineItemId: "chap-9",
+      text: "and he died.",
+      ttsBlocks: [
+        {
+          cfi: "epubcfi(/6/2!/4/18/1:37)",
+          spineItemId: "chap-9",
+          text: "and he died.",
+        },
+      ],
+    });
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        text: "and he died.",
+      }),
+    );
+  });
+
+  browserTts.finishCurrent();
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        text: "Nations Descended from Noah.",
+      }),
+    );
+  });
+});
+
+it("keeps a chapter-heading pause when selection-start tts crosses into the next chapter", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/18/1:0)",
+                    progress: 0.12,
+                    sectionPath: ["GENESIS", "Chapter 9"],
+                    spineItemId: "chap-9",
+                    textQuote: "All the days of Noah were 950 years, and he died.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    clearSelection: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelection: vi.fn(async () => ({
+                      cfiRange: "epubcfi(/6/2!/4/18,/1:37,/1:49)",
+                      isReleased: true,
+                      spineItemId: "chap-9",
+                      text: "and he died.",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(async () => "All the days of Noah were 950 years, and he died."),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/18/1:0)",
+                        spineItemId: "chap-9",
+                        text: "All the days of Noah were 950 years, and he died.",
+                      },
+                    ]),
+                    getTtsBlocksFromSelectionStart: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/18/1:37)",
+                        locatorText: "All the days of Noah were 950 years, and he died.",
+                        sourceEnd: 49,
+                        sourceStart: 37,
+                        spineItemId: "chap-9",
+                        text: "and he died.",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/20/1:0)",
+                        spineItemId: "chap-10",
+                        tagName: "h2",
+                        text: "Nations Descended from Noah",
+                      },
+                      {
+                        cfi: "epubcfi(/6/2!/4/22/1:0)",
+                        spineItemId: "chap-10",
+                        text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        text: "and he died.",
+      }),
+    );
+  });
+
+  browserTts.finishCurrent();
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        text: "Nations Descended from Noah.",
+      }),
+    );
+  });
+
+  browserTts.finishCurrent();
+  await new Promise((resolve) => setTimeout(resolve, 220));
+  expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(2);
+
+  await new Promise((resolve) => setTimeout(resolve, 130));
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        text: "These are the generations of the sons of Noah, Shem, Ham, and Japheth. Sons were born to them after the flood.",
       }),
     );
   });

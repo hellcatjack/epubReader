@@ -104,6 +104,59 @@ describe("ttsQueue", () => {
     });
   });
 
+  it("waits for a chunk-specific pause before advancing to the next queued segment", async () => {
+    vi.useFakeTimers();
+    const client = createFakeBrowserTtsClient();
+    const queue = createTtsQueue({
+      client,
+    });
+
+    await queue.start({
+      chunks: [
+        {
+          markers: [{ end: "Nations Descended from Noah.".length, start: 0, text: "Nations Descended from Noah." }],
+          pauseAfterMs: 350,
+          text: "Nations Descended from Noah.",
+        },
+        "These are the generations of the sons of Noah.",
+      ],
+      request: {
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      },
+    });
+
+    expect(client.speakSelection).toHaveBeenNthCalledWith(
+      1,
+      "Nations Descended from Noah.",
+      expect.objectContaining({
+        rate: 1,
+        voiceId: "en-US-Natural-A",
+        volume: 1,
+      }),
+    );
+
+    client.finishCurrent();
+    vi.advanceTimersByTime(349);
+
+    expect(client.speakSelection).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+
+    await vi.waitFor(() => {
+      expect(client.speakSelection).toHaveBeenNthCalledWith(
+        2,
+        "These are the generations of the sons of Noah.",
+        expect.objectContaining({
+          rate: 1,
+          voiceId: "en-US-Natural-A",
+          volume: 1,
+        }),
+      );
+    });
+  });
+
   it("stops the queue on utterance error", async () => {
     const client = createFakeBrowserTtsClient();
     const queue = createTtsQueue({

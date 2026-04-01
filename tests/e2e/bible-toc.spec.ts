@@ -138,6 +138,417 @@ test("Bible tts skips verse and footnote markers when starting from Genesis 1", 
   expect(firstCall).not.toMatch(/^\d+\b/u);
 });
 
+test("Bible tts gives the Genesis 10 title its own utterance before the chapter body", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: string[] = [];
+    let currentUtterance:
+      | (SpeechSynthesisUtterance & {
+          onend?: ((event: Event) => void) | null;
+          onstart?: ((event: Event) => void) | null;
+        })
+      | undefined;
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        addEventListener() {
+          return undefined;
+        },
+        cancel() {
+          return undefined;
+        },
+        getVoices() {
+          return [
+            {
+              default: true,
+              lang: "en-US",
+              localService: false,
+              name: "Microsoft Ava Online (Natural)",
+              voiceURI: "Microsoft Ava Online (Natural)",
+            },
+          ];
+        },
+        pause() {
+          return undefined;
+        },
+        pending: false,
+        removeEventListener() {
+          return undefined;
+        },
+        resume() {
+          return undefined;
+        },
+        speak(utterance: MockSpeechSynthesisUtterance) {
+          currentUtterance = utterance;
+          calls.push(utterance.text);
+          window.setTimeout(() => {
+            utterance.onstart?.(new Event("start"));
+          }, 10);
+        },
+        speaking: false,
+      },
+    });
+
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+
+    Object.defineProperty(window, "__finishCurrentTts", {
+      configurable: true,
+      value: () => {
+        currentUtterance?.onend?.(new Event("end"));
+      },
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  const firstCall = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls[0] ?? "",
+  );
+
+  expect(firstCall).toBe("Nations Descended from Noah.");
+
+  await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+    .toBeGreaterThan(1);
+
+  const secondCall = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls[1] ?? "",
+  );
+
+  expect(secondCall.startsWith("These are the generations of the sons of Noah, Shem, Ham, and Japheth.")).toBe(true);
+});
+
+test("Bible scrolled tts leaves an audible pause after the Genesis 10 title before the body", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: string[] = [];
+    let currentUtterance:
+      | (SpeechSynthesisUtterance & {
+          onend?: ((event: Event) => void) | null;
+          onstart?: ((event: Event) => void) | null;
+        })
+      | undefined;
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        addEventListener() {
+          return undefined;
+        },
+        cancel() {
+          return undefined;
+        },
+        getVoices() {
+          return [
+            {
+              default: true,
+              lang: "en-US",
+              localService: false,
+              name: "Microsoft Ava Online (Natural)",
+              voiceURI: "Microsoft Ava Online (Natural)",
+            },
+          ];
+        },
+        pause() {
+          return undefined;
+        },
+        pending: false,
+        removeEventListener() {
+          return undefined;
+        },
+        resume() {
+          return undefined;
+        },
+        speak(utterance: MockSpeechSynthesisUtterance) {
+          currentUtterance = utterance;
+          calls.push(utterance.text);
+          window.setTimeout(() => {
+            utterance.onstart?.(new Event("start"));
+          }, 10);
+        },
+        speaking: false,
+      },
+    });
+
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+
+    Object.defineProperty(window, "__finishCurrentTts", {
+      configurable: true,
+      value: () => {
+        currentUtterance?.onend?.(new Event("end"));
+      },
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await page.getByRole("button", { name: /scrolled mode/i }).click();
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls[0] ?? ""))
+    .toBe("Nations Descended from Noah.");
+
+  await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
+  await page.waitForTimeout(220);
+
+  const callCountDuringPause = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length,
+  );
+  expect(callCountDuringPause).toBe(1);
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+    .toBeGreaterThan(1);
+
+  const secondCall = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls[1] ?? "",
+  );
+  expect(secondCall.startsWith("These are the generations of the sons of Noah, Shem, Ham, and Japheth.")).toBe(true);
+});
+
+test("Bible scrolled selection-start tts keeps the Genesis 10 heading pause when crossing from Chapter 9", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: string[] = [];
+    let currentUtterance:
+      | (SpeechSynthesisUtterance & {
+          onend?: ((event: Event) => void) | null;
+          onstart?: ((event: Event) => void) | null;
+        })
+      | undefined;
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: {
+        addEventListener() {
+          return undefined;
+        },
+        cancel() {
+          return undefined;
+        },
+        getVoices() {
+          return [
+            {
+              default: true,
+              lang: "en-US",
+              localService: false,
+              name: "Microsoft Ava Online (Natural)",
+              voiceURI: "Microsoft Ava Online (Natural)",
+            },
+          ];
+        },
+        pause() {
+          return undefined;
+        },
+        pending: false,
+        removeEventListener() {
+          return undefined;
+        },
+        resume() {
+          return undefined;
+        },
+        speak(utterance: MockSpeechSynthesisUtterance) {
+          currentUtterance = utterance;
+          calls.push(utterance.text);
+          window.setTimeout(() => {
+            utterance.onstart?.(new Event("start"));
+          }, 10);
+        },
+        speaking: false,
+      },
+    });
+
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+
+    Object.defineProperty(window, "__ttsCalls", {
+      configurable: true,
+      value: calls,
+      writable: false,
+    });
+
+    Object.defineProperty(window, "__finishCurrentTts", {
+      configurable: true,
+      value: () => {
+        currentUtterance?.onend?.(new Event("end"));
+      },
+      writable: false,
+    });
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await page.getByRole("button", { name: /scrolled mode/i }).click();
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 9", exact: true }).click();
+  await page.waitForTimeout(500);
+
+  await page.evaluate(() => {
+    const iframe = document.querySelector<HTMLIFrameElement>(".epub-root iframe");
+    const doc = iframe?.contentDocument;
+    const targetParagraph = Array.from(doc?.querySelectorAll("p") ?? []).find((paragraph) =>
+      paragraph.textContent?.includes("All the days of Noah were 950 years, and he died."),
+    );
+
+    if (!targetParagraph) {
+      throw new Error("missing Genesis 9 ending paragraph");
+    }
+
+    targetParagraph.scrollIntoView({ block: "center" });
+    const textNode = Array.from(targetParagraph.childNodes).find(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes("and he died."),
+    );
+
+    if (!textNode || !textNode.textContent) {
+      throw new Error("missing target text node");
+    }
+
+    const start = textNode.textContent.indexOf("and he died.");
+    const range = doc!.createRange();
+    range.setStart(textNode, start);
+    range.setEnd(textNode, start + "and he died.".length);
+
+    const selection = doc!.defaultView?.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+    .toBeGreaterThan(0);
+
+  let calls = await page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.slice());
+  expect(calls[0] ?? "").toBe("and he died.");
+
+  for (let attempt = 0; attempt < 4 && !calls.includes("Nations Descended from Noah."); attempt += 1) {
+    await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
+    await page.waitForTimeout(120);
+    calls = await page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.slice());
+  }
+
+  const headingIndex = calls.indexOf("Nations Descended from Noah.");
+  expect(headingIndex).toBeGreaterThanOrEqual(0);
+
+  await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
+  await page.waitForTimeout(220);
+
+  const callCountDuringPause = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length,
+  );
+  expect(callCountDuringPause).toBe(headingIndex + 1);
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+    .toBeGreaterThan(headingIndex + 1);
+
+  const thirdCall = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.at(-1) ?? "",
+  );
+  expect(thirdCall.startsWith("These are the generations of the sons of Noah, Shem, Ham, and Japheth.")).toBe(true);
+});
+
 test("Bible paginated follow playback keeps Genesis 10 on chapter text instead of drifting into footnotes", async ({ page }) => {
   await page.addInitScript(() => {
     const calls: string[] = [];

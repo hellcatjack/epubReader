@@ -181,6 +181,10 @@ function isTtsOmittableElement(element: Element) {
   return false;
 }
 
+function isTtsHeadingElement(element: Element | null | undefined) {
+  return /^h[1-6]$/i.test(element?.tagName ?? "");
+}
+
 function isWithinOmittableTtsElement(node: Node, root: Node) {
   let element = isElementNode(node) ? node : node.parentElement;
   while (element) {
@@ -2359,13 +2363,27 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         return [];
       }
 
+      const startCandidate = candidates[startIndex];
+      const startCandidateRange = doc.createRange();
+      startCandidateRange.selectNodeContents(startCandidate);
+      startCandidateRange.setStart(startNode, startOffset);
+      const startCandidateText = extractTtsBlockText(startCandidateRange.cloneContents());
+      const startCandidateSourceStart = getNormalizedTextOffset(startCandidate, startNode, startOffset);
+
+      let effectiveStartIndex = startIndex;
+      if (!isTtsHeadingElement(startCandidate) && startCandidateSourceStart === 0) {
+        while (effectiveStartIndex > 0 && isTtsHeadingElement(candidates[effectiveStartIndex - 1])) {
+          effectiveStartIndex -= 1;
+        }
+      }
+
       return candidates
-        .slice(startIndex)
+        .slice(effectiveStartIndex)
         .map((candidate, index) => {
           const cfi = getBlockCfi(contents, candidate);
           const fullText = extractTtsBlockText(candidate);
 
-          if (index > 0) {
+          if (effectiveStartIndex + index !== startIndex) {
             return {
               cfi,
               locatorText: fullText,
@@ -2377,19 +2395,14 @@ export const epubViewportRuntime: EpubViewportRuntime = {
             };
           }
 
-          const candidateRange = doc.createRange();
-          candidateRange.selectNodeContents(candidate);
-          candidateRange.setStart(startNode, startOffset);
-          const text = extractTtsBlockText(candidateRange.cloneContents());
-          const sourceStart = getNormalizedTextOffset(candidate, startNode, startOffset);
           return {
             cfi,
             locatorText: fullText,
-            sourceEnd: sourceStart + text.length,
-            sourceStart,
+            sourceEnd: startCandidateSourceStart + startCandidateText.length,
+            sourceStart: startCandidateSourceStart,
             spineItemId: currentSpineItemId,
             tagName: candidate.tagName.toLowerCase(),
-            text,
+            text: startCandidateText,
           };
         })
         .filter((block) => Boolean(block.text));

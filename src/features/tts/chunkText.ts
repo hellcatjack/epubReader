@@ -55,6 +55,7 @@ export type ChunkMarker = {
 
 export type ChunkSegment = {
   markers: ChunkMarker[];
+  pauseAfterMs?: number;
   text: string;
 };
 

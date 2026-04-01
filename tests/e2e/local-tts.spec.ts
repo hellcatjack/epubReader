@@ -1032,7 +1032,7 @@ test("paginated mode starts continuous tts from heading text on a chapter's firs
     () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
   );
 
-  expect(firstCallText).toBe(pageStartSnippet);
+  expect(firstCallText).toBe(`${pageStartSnippet}.`);
 });
 
 test("toc navigation uses the chapter target for the first start tts after jumping to a heading-led chapter", async ({
@@ -1154,7 +1154,7 @@ test("toc navigation uses the chapter target for the first start tts after jumpi
     () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
   );
 
-  expect(firstCallText).toBe("1 THIRD");
+  expect(firstCallText).toBe("1.");
 });
 
 test("same-tab refresh preserves the toc-driven tts start target", async ({ page }) => {
@@ -1273,7 +1273,7 @@ test("same-tab refresh preserves the toc-driven tts start target", async ({ page
     () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
   );
 
-  expect(firstCallText).toBe("1 THIRD");
+  expect(firstCallText).toBe("1.");
 });
 
 test("paginated mode starts continuous tts from the current long chapter page's first visible paragraph", async ({

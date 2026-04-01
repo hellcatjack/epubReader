@@ -72,6 +72,7 @@ type ReaderLocationState = {
 type LocationTargetIntent = "explicit" | "restored";
 
 const continuousTtsChunkOptions = { firstSegmentMax: 280, segmentMax: 500 } as const;
+const headingTransitionPauseMs = 350;
 const paginatedInitialMarkerFallbackMs = 700;
 const recentReleasedSelectionWindowMs = 5000;
 
@@ -162,7 +163,7 @@ function isHeadingTtsBlock(block: RuntimeTtsBlock) {
 
 function splitChunkSegmentsIntoSingleMarkerChunks(chunks: ChunkSegment[]) {
   return chunks.flatMap((chunk) =>
-    chunk.markers.map((marker) => ({
+    chunk.markers.map((marker, markerIndex) => ({
       markers: [
         {
           ...marker,
@@ -170,9 +171,44 @@ function splitChunkSegmentsIntoSingleMarkerChunks(chunks: ChunkSegment[]) {
           start: 0,
         },
       ],
+      pauseAfterMs: markerIndex === chunk.markers.length - 1 ? chunk.pauseAfterMs : undefined,
       text: marker.text,
     })),
   );
+}
+
+function endsWithAudiblePause(text: string) {
+  return /[.!?…:;。！？；：]\s*$/u.test(text.trim());
+}
+
+function addTerminalPauseToLastChunk(chunks: ChunkSegment[], pauseAfterMs?: number) {
+  if (!chunks.length) {
+    return chunks;
+  }
+
+  return chunks.map((chunk, index) =>
+    index === chunks.length - 1 && !endsWithAudiblePause(chunk.text)
+      ? {
+          ...chunk,
+          pauseAfterMs,
+          text: `${chunk.text}.`,
+        }
+      : index === chunks.length - 1 && pauseAfterMs
+        ? {
+            ...chunk,
+            pauseAfterMs,
+          }
+        : chunk,
+  );
+}
+
+function chunkBodyTtsBlocks(blocks: RuntimeTtsBlock[], readingMode: ReadingMode, followPlayback = false) {
+  if (readingMode === "paginated") {
+    const paginatedChunks = blocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
+    return followPlayback ? splitChunkSegmentsIntoSingleMarkerChunks(paginatedChunks) : paginatedChunks;
+  }
+
+  return chunkTextSegmentsFromBlocks(blocks, continuousTtsChunkOptions);
 }
 
 function getContinuousTtsChunksFromBlocks(
@@ -184,12 +220,45 @@ function getContinuousTtsChunksFromBlocks(
     return [];
   }
 
-  if (readingMode === "paginated") {
-    const paginatedChunks = blocks.flatMap((block) => chunkTextSegmentsFromBlocks([block], continuousTtsChunkOptions));
-    return followPlayback ? splitChunkSegmentsIntoSingleMarkerChunks(paginatedChunks) : paginatedChunks;
+  const structuredChunks: ChunkSegment[] = [];
+  let bodyStartIndex = 0;
+  let index = 0;
+
+  const flushBodyBlocks = (endIndex: number) => {
+    if (bodyStartIndex >= endIndex) {
+      return;
+    }
+
+    structuredChunks.push(...chunkBodyTtsBlocks(blocks.slice(bodyStartIndex, endIndex), readingMode, followPlayback));
+  };
+
+  while (index < blocks.length) {
+    if (!isHeadingTtsBlock(blocks[index])) {
+      index += 1;
+      continue;
+    }
+
+    flushBodyBlocks(index);
+
+    let headingEndIndex = index + 1;
+    while (headingEndIndex < blocks.length && isHeadingTtsBlock(blocks[headingEndIndex])) {
+      headingEndIndex += 1;
+    }
+
+    for (let headingIndex = index; headingIndex < headingEndIndex; headingIndex += 1) {
+      const headingChunks = chunkTextSegmentsFromBlocks([blocks[headingIndex]], continuousTtsChunkOptions);
+      const hasFollowingContent = headingIndex < headingEndIndex - 1 || headingEndIndex < blocks.length;
+      structuredChunks.push(
+        ...(hasFollowingContent ? addTerminalPauseToLastChunk(headingChunks, headingTransitionPauseMs) : headingChunks),
+      );
+    }
+
+    index = headingEndIndex;
+    bodyStartIndex = headingEndIndex;
   }
 
-  return chunkTextSegmentsFromBlocks(blocks, continuousTtsChunkOptions);
+  flushBodyBlocks(blocks.length);
+  return structuredChunks.length ? structuredChunks : chunkBodyTtsBlocks(blocks, readingMode, followPlayback);
 }
 
 async function getContinuousTtsChunksFromTarget(
@@ -205,18 +274,6 @@ async function getContinuousTtsChunksFromTarget(
   try {
     const ttsBlocks = await runtimeHandle.getTtsBlocksFromTarget?.(target);
     if (ttsBlocks?.length) {
-      let headingBlockCount = 0;
-      while (headingBlockCount < ttsBlocks.length && isHeadingTtsBlock(ttsBlocks[headingBlockCount])) {
-        headingBlockCount += 1;
-      }
-
-      if (headingBlockCount > 0) {
-        return [
-          ...chunkTextSegmentsFromBlocks(ttsBlocks.slice(0, headingBlockCount), continuousTtsChunkOptions),
-          ...getContinuousTtsChunksFromBlocks(ttsBlocks.slice(headingBlockCount), readingMode, followPlayback),
-        ];
-      }
-
       return getContinuousTtsChunksFromBlocks(ttsBlocks, readingMode, followPlayback);
     }
   } catch {
@@ -1278,7 +1335,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       selectedSelection ??
       pendingPointerStartSelectionRef.current ??
       getRecentReleasedSelectionFallback();
-    const selectionSnapshotChunks = latestSelection?.ttsBlocks?.length
+    const selectionSnapshotChunks = latestSelection?.ttsBlocks?.length && !(latestSelection?.cfiRange?.trim())
       ? getContinuousTtsChunksFromBlocks(latestSelection.ttsBlocks, settings.readingMode, settings.ttsFollowPlayback)
       : [];
     const latestSelectionKey = getSelectionCacheKey(latestSelection);

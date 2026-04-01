@@ -316,6 +316,18 @@ export function createTtsQueue({ client, onStateChange }: TtsQueueDeps) {
         },
         onEnd: () => {
           clearInitialMarkerFallback();
+          const pauseAfterMs = Math.max(0, chunk.pauseAfterMs ?? 0);
+          if (pauseAfterMs > 0) {
+            setTimeout(() => {
+              if (activeRunId !== runId) {
+                return;
+              }
+
+              void speakChunk(chunks, index + 1, request, activeRunId);
+            }, pauseAfterMs);
+            return;
+          }
+
           void speakChunk(chunks, index + 1, request, activeRunId);
         },
         onError: () => {
