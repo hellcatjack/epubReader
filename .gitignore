@@ -15,3 +15,4 @@ __pycache__/
 /tests/fixtures/local/
 /*.epub
 /column-highlight-test*.png
+.vercel
