@@ -19,7 +19,13 @@ import { createTtsQueue } from "../tts/ttsQueue";
 import { createPhoneticsService, getEligibleIpaWord } from "./phoneticsService";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
-import type { ActiveTtsSegment, EpubViewportRuntime, RuntimeRenderHandle, RuntimeTtsBlock } from "./epubRuntime";
+import type {
+  ActiveTtsSegment,
+  EpubViewportRuntime,
+  RuntimeRenderHandle,
+  RuntimeTtsBlock,
+  TtsSentenceNoteMetrics,
+} from "./epubRuntime";
 import {
   readRefreshProgressSnapshot,
   resolvePreferredProgress,
@@ -35,9 +41,15 @@ import { ReaderDrawer } from "./ReaderDrawer";
 import { RightPanel } from "./RightPanel";
 import { SelectionTranslationBubble } from "./SelectionTranslationBubble";
 import { SelectionPopover } from "./SelectionPopover";
+import { TtsSentenceTranslationNote } from "./TtsSentenceTranslationNote";
 import { TopBar } from "./TopBar";
 import { getEffectiveReaderPreferences, toReaderPreferences, type ReaderPreferences } from "./readerPreferences";
 import { selectionBridge, type ReaderSelection } from "./selectionBridge";
+import {
+  buildTtsSentenceTranslationCacheKey,
+  extractCurrentSpokenSentence,
+  isIgnorableSpokenSentence,
+} from "./ttsSentenceTranslation";
 import { findTocLabelBySpineItemId, findTocPathBySpineItemId } from "./tocTree";
 
 type ReaderPageProps = {
@@ -77,6 +89,13 @@ type FloatingSelectionTranslation = {
   translation: string;
 };
 
+type SpokenSentenceTranslationNoteState = {
+  left: number;
+  top: number;
+  translation: string;
+  width: number;
+};
+
 type LocationTargetIntent = "explicit" | "restored";
 
 const continuousTtsChunkOptions = { firstSegmentMax: 280, segmentMax: 500 } as const;
@@ -86,6 +105,11 @@ const recentReleasedSelectionWindowMs = 5000;
 const selectionTranslationBubbleDurationMs = 3000;
 const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
+const ttsSentenceNoteGapPx = 18;
+const ttsSentenceNoteMinimumLanePx = 150;
+const ttsSentenceNoteMaximumWidthPx = 280;
+const ttsSentenceNoteTopPaddingPx = 12;
+const ttsSentenceNoteEstimatedHeightPx = 196;
 
 function getSelectionCacheKey(selection: ReaderSelection | null) {
   const text = selection?.text.trim() ?? "";
@@ -94,6 +118,12 @@ function getSelectionCacheKey(selection: ReaderSelection | null) {
   }
 
   return [selection?.spineItemId ?? "", selection?.cfiRange ?? "", text].join("::");
+}
+
+function resolveContinuousTtsSpineItemId(chunks: ChunkSegment[], fallbackSpineItemId: string) {
+  return chunks.find((chunk) => chunk.markers.some((marker) => marker.spineItemId))?.markers.find((marker) => marker.spineItemId)
+    ?.spineItemId
+    ?? fallbackSpineItemId;
 }
 
 function useMediaQuery(query: string) {
@@ -368,6 +398,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const [translation, setTranslation] = useState("");
   const [translationError, setTranslationError] = useState("");
   const [floatingSelectionTranslation, setFloatingSelectionTranslation] = useState<FloatingSelectionTranslation | null>(null);
+  const [spokenSentenceTranslation, setSpokenSentenceTranslation] = useState("");
+  const [ttsSentenceNoteMetrics, setTtsSentenceNoteMetrics] = useState<TtsSentenceNoteMetrics | null>(null);
+  const [ttsSentenceTranslationNote, setTtsSentenceTranslationNote] = useState<SpokenSentenceTranslationNoteState | null>(
+    null,
+  );
   const [explanation, setExplanation] = useState("");
   const [explanationError, setExplanationError] = useState("");
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
@@ -438,6 +473,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const browserTtsClientRef = useRef(createBrowserTtsClient());
   const phoneticsServiceRef = useRef(phonetics ?? createPhoneticsService());
   const ttsQueueRef = useRef<ReturnType<typeof createTtsQueue> | null>(null);
+  const spokenSentenceTranslationCacheRef = useRef(new Map<string, string>());
+  const spokenSentenceTranslationRequestRef = useRef(0);
+  const readerStageRef = useRef<HTMLElement | null>(null);
 
   function ensureTtsQueue() {
     if (!ttsQueueRef.current) {
@@ -464,6 +502,61 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     return ttsQueueRef.current;
   }
+
+  const activeContinuousTtsSegment = useMemo<ActiveTtsSegment | null>(() => {
+    if (!(ttsState.mode === "continuous" && ttsState.status !== "idle" && ttsState.markerText && continuousSpineItemIdRef.current)) {
+      return null;
+    }
+
+    return {
+      cfi: ttsState.markerCfi || undefined,
+      locatorText: ttsState.markerLocatorText || undefined,
+      spineItemId: continuousSpineItemIdRef.current,
+      text: ttsState.markerText,
+      ...(typeof ttsState.markerStartOffset === "number" && ttsState.markerStartOffset >= 0
+        ? { startOffset: ttsState.markerStartOffset }
+        : {}),
+      ...(typeof ttsState.markerEndOffset === "number" && ttsState.markerEndOffset >= 0
+        ? { endOffset: ttsState.markerEndOffset }
+        : {}),
+    };
+  }, [
+    ttsState.markerCfi,
+    ttsState.markerEndOffset,
+    ttsState.markerLocatorText,
+    ttsState.markerStartOffset,
+    ttsState.markerText,
+    ttsState.mode,
+    ttsState.status,
+  ]);
+  const currentSpokenSentence = useMemo(() => {
+    if (!activeContinuousTtsSegment || ttsState.mode !== "continuous" || ttsState.status === "idle") {
+      return "";
+    }
+
+    const sentence = extractCurrentSpokenSentence({
+      fallbackText: ttsState.currentText || ttsState.markerText,
+      locatorText: ttsState.markerLocatorText || ttsState.currentText,
+      startOffset: ttsState.markerStartOffset,
+    });
+    return isIgnorableSpokenSentence(sentence) ? "" : sentence;
+  }, [
+    activeContinuousTtsSegment,
+    ttsState.currentText,
+    ttsState.markerLocatorText,
+    ttsState.markerStartOffset,
+    ttsState.markerText,
+    ttsState.mode,
+    ttsState.status,
+  ]);
+  const currentSpokenSentenceCacheKey =
+    bookId && (activeContinuousTtsSegment?.spineItemId || currentSpineItemId) && currentSpokenSentence
+      ? buildTtsSentenceTranslationCacheKey({
+          bookId,
+          sentence: currentSpokenSentence,
+          spineItemId: activeContinuousTtsSegment?.spineItemId || currentSpineItemId,
+        })
+      : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -771,6 +864,136 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       setFloatingSelectionTranslation(null);
     }
   }, [selectedSelection?.cfiRange, selectedSelection?.isReleased, selectedSelection?.text]);
+
+  useEffect(() => {
+    if (isTabletLayout || !activeContinuousTtsSegment || !runtimeHandle?.getTtsSentenceNoteMetrics) {
+      setTtsSentenceNoteMetrics(null);
+      return;
+    }
+
+    let frameId = 0;
+    const syncMetrics = () => {
+      const nextMetrics = runtimeHandle.getTtsSentenceNoteMetrics?.() ?? null;
+      setTtsSentenceNoteMetrics((current) =>
+        current &&
+        nextMetrics &&
+        current.activeRect.top === nextMetrics.activeRect.top &&
+        current.activeRect.left === nextMetrics.activeRect.left &&
+        current.activeRect.right === nextMetrics.activeRect.right &&
+        current.activeRect.bottom === nextMetrics.activeRect.bottom &&
+        current.readingRect.left === nextMetrics.readingRect.left &&
+        current.readingRect.right === nextMetrics.readingRect.right &&
+        current.readingRect.top === nextMetrics.readingRect.top &&
+        current.readingRect.bottom === nextMetrics.readingRect.bottom
+          ? current
+          : nextMetrics
+      );
+    };
+
+    frameId = window.requestAnimationFrame(syncMetrics);
+    window.addEventListener("resize", syncMetrics);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", syncMetrics);
+    };
+  }, [activeContinuousTtsSegment, isTabletLayout, runtimeHandle, ttsState.markerCfi, ttsState.markerText]);
+
+  useEffect(() => {
+    if (!currentSpokenSentenceCacheKey || !currentSpokenSentence || isTabletLayout) {
+      setSpokenSentenceTranslation("");
+      return;
+    }
+
+    const cached = spokenSentenceTranslationCacheRef.current.get(currentSpokenSentenceCacheKey);
+    if (cached) {
+      setSpokenSentenceTranslation(cached);
+      return;
+    }
+
+    const requestVersion = ++spokenSentenceTranslationRequestRef.current;
+    setSpokenSentenceTranslation("");
+
+    void ai
+      .translateSelection(currentSpokenSentence, {
+        targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
+      })
+      .then((result) => {
+        if (spokenSentenceTranslationRequestRef.current !== requestVersion) {
+          return;
+        }
+
+        spokenSentenceTranslationCacheRef.current.set(currentSpokenSentenceCacheKey, result);
+        setSpokenSentenceTranslation(result);
+      })
+      .catch(() => {
+        if (spokenSentenceTranslationRequestRef.current !== requestVersion) {
+          return;
+        }
+
+        setSpokenSentenceTranslation("");
+      });
+  }, [ai, currentSpokenSentence, currentSpokenSentenceCacheKey, isTabletLayout, settings.targetLanguage]);
+
+  useEffect(() => {
+    if (
+      isTabletLayout ||
+      !activeContinuousTtsSegment ||
+      ttsState.status === "idle" ||
+      !spokenSentenceTranslation.trim() ||
+      !ttsSentenceNoteMetrics ||
+      !readerStageRef.current
+    ) {
+      setTtsSentenceTranslationNote(null);
+      return;
+    }
+
+    const syncNote = () => {
+      const stageRect = readerStageRef.current?.getBoundingClientRect();
+      if (!stageRect) {
+        setTtsSentenceTranslationNote(null);
+        return;
+      }
+
+      const availableLaneWidth = stageRect.right - ttsSentenceNoteMetrics.readingRect.right - ttsSentenceNoteGapPx;
+      if (availableLaneWidth < ttsSentenceNoteMinimumLanePx) {
+        setTtsSentenceTranslationNote(null);
+        return;
+      }
+
+      const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
+      const left = Math.max(
+        ttsSentenceNoteGapPx,
+        ttsSentenceNoteMetrics.readingRect.right - stageRect.left + ttsSentenceNoteGapPx,
+      );
+      const maxTop = Math.max(
+        ttsSentenceNoteTopPaddingPx,
+        stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
+      );
+      const top = Math.min(
+        Math.max(ttsSentenceNoteTopPaddingPx, ttsSentenceNoteMetrics.activeRect.top - stageRect.top - 8),
+        maxTop,
+      );
+
+      setTtsSentenceTranslationNote((current) =>
+        current &&
+        current.left === left &&
+        current.top === top &&
+        current.translation === spokenSentenceTranslation &&
+        current.width === width
+          ? current
+          : {
+              left,
+              top,
+              translation: spokenSentenceTranslation,
+              width,
+            },
+      );
+    };
+
+    syncNote();
+    window.addEventListener("resize", syncNote);
+    return () => window.removeEventListener("resize", syncNote);
+  }, [activeContinuousTtsSegment, isTabletLayout, spokenSentenceTranslation, ttsSentenceNoteMetrics, ttsState.status]);
 
   useEffect(() => {
     if (!isTabletLayout || !runtimeHandle?.getCurrentSelectionSnapshot) {
@@ -1665,8 +1888,15 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       lastReleasedSelectionAtRef.current = 0;
     }
 
+    const runtimeLocation = await runtimeHandle.getCurrentLocation?.();
     activeSelectionSpeechRequestRef.current += 1;
-    startContinuousQueue(chunks, currentSpineItemId);
+    startContinuousQueue(
+      chunks,
+      resolveContinuousTtsSpineItemId(
+        chunks,
+        currentSpineItemId || runtimeLocation?.spineItemId || currentLocationRef.current.spineItemId,
+      ),
+    );
   }
 
   function handlePauseTts() {
@@ -1738,21 +1968,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     label: findTocLabelBySpineItemId(toc, bookmark.spineItemId) ?? `Saved location ${index + 1}`,
   }));
   const isCurrentLocationBookmarked = bookmarks.some((bookmark) => bookmark.cfi === currentLocation.cfi);
-  const activeContinuousTtsSegment: ActiveTtsSegment | null =
-    ttsState.mode === "continuous" && ttsState.status !== "idle" && ttsState.markerText && continuousSpineItemIdRef.current
-      ? {
-          cfi: ttsState.markerCfi || undefined,
-          locatorText: ttsState.markerLocatorText || undefined,
-          spineItemId: continuousSpineItemIdRef.current,
-          text: ttsState.markerText,
-          ...(typeof ttsState.markerStartOffset === "number" && ttsState.markerStartOffset >= 0
-            ? { startOffset: ttsState.markerStartOffset }
-            : {}),
-          ...(typeof ttsState.markerEndOffset === "number" && ttsState.markerEndOffset >= 0
-            ? { endOffset: ttsState.markerEndOffset }
-            : {}),
-        }
-      : null;
   const readerPreferences = useMemo(
     () => getEffectiveReaderPreferences(toReaderPreferences(settings)),
     [settings],
@@ -2000,7 +2215,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           }
         />
         <div className="reader-workspace">
-          <section className="reader-stage" aria-label="Reader stage">
+          <section className="reader-stage" aria-label="Reader stage" ref={readerStageRef}>
             {shouldRenderViewport ? (
               <EpubViewport
                 activeTtsSegment={activeContinuousTtsSegment}
@@ -2043,6 +2258,14 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                 </article>
               </section>
             )}
+            {!isTabletLayout && ttsSentenceTranslationNote ? (
+              <TtsSentenceTranslationNote
+                left={ttsSentenceTranslationNote.left}
+                top={ttsSentenceTranslationNote.top}
+                translation={ttsSentenceTranslationNote.translation}
+                width={ttsSentenceTranslationNote.width}
+              />
+            ) : null}
           </section>
           {!isTabletLayout ? rightPanel : null}
         </div>

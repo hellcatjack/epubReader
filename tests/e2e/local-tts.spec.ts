@@ -9,6 +9,213 @@ const paginatedPageStartFixturePath = "tests/fixtures/epub/paginated-page-start.
 const paginatedMultiChapterFixturePath = "tests/fixtures/epub/paginated-multi-chapter.epub";
 const paginatedTocHeadingFixturePath = "tests/fixtures/epub/paginated-toc-heading.epub";
 
+test("wide-screen continuous tts shows a spoken sentence translation note beside the reading text", async ({ page }) => {
+  await page.addInitScript(() => {
+    let activeStartTimer: number | undefined;
+    let activeBoundaryTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeStartTimer) {
+          clearTimeout(activeStartTimer);
+          activeStartTimer = undefined;
+        }
+        if (activeBoundaryTimer) {
+          clearTimeout(activeBoundaryTimer);
+          activeBoundaryTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        activeStartTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+          activeBoundaryTimer = window.setTimeout(() => {
+            utterance.onboundary?.(new Event("boundary") as Event & { charIndex: number });
+          }, 180);
+        }, 120);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+  });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        choices: [{ text: "当前句翻译" }],
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
+  await page.setViewportSize({ width: 2200, height: 1400 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  const note = page.getByRole("status", { name: /spoken sentence translation/i });
+  await expect(note).toBeVisible();
+  await expect(note).toContainText("当前句翻译");
+  const noteBox = await note.boundingBox();
+  const stageBox = await page.getByRole("region", { name: /reader stage/i }).boundingBox();
+  expect(noteBox?.x).toBeGreaterThanOrEqual(stageBox?.x ?? 0);
+  expect((noteBox?.x ?? 0) + (noteBox?.width ?? 0)).toBeLessThanOrEqual(
+    (stageBox?.x ?? 0) + (stageBox?.width ?? 0),
+  );
+});
+
+test("tablet-width continuous tts keeps the spoken sentence translation note disabled", async ({ page }) => {
+  await page.addInitScript(() => {
+    let activeStartTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeStartTimer) {
+          clearTimeout(activeStartTimer);
+          activeStartTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        activeStartTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+        }, 120);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+  });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        choices: [{ text: "当前句翻译" }],
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /tools/i }).click();
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  await expect(page.getByRole("status", { name: /spoken sentence translation/i })).toHaveCount(0);
+});
+
 test("browser tts supports selection playback and continuous reader controls", async ({ page }) => {
   await page.addInitScript(() => {
     const calls: Array<{ rate: number; text: string; voice: string | null; volume: number }> = [];

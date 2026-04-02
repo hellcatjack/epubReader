@@ -327,6 +327,219 @@ it("shows a temporary translation bubble on tablet-sized viewports", async () =>
   });
 });
 
+it("shows a spoken sentence translation note beside the reading text on wide screens during continuous tts", async () => {
+  const user = userEvent.setup();
+  installMatchMedia({ "(max-width: 1180px)": false });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => ""),
+    translateSelection: vi.fn(async () => "第一句翻译"),
+  };
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              ai={ai}
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/2/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chapter-10.xhtml",
+                    textQuote: "First paragraph.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation: vi.fn(async () => ({
+                      cfi: "epubcfi(/6/2!/4/2/1:0)",
+                      progress: 0.2,
+                      spineItemId: "chapter-10.xhtml",
+                      textQuote: "First paragraph.",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph. Second sentence."),
+                    getTtsSentenceNoteMetrics: vi.fn(() => ({
+                      activeRect: {
+                        bottom: 288,
+                        height: 28,
+                        left: 460,
+                        right: 720,
+                        top: 260,
+                        width: 260,
+                      },
+                      readingRect: {
+                        bottom: 940,
+                        height: 800,
+                        left: 120,
+                        right: 820,
+                        top: 140,
+                        width: 700,
+                      },
+                    })),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const readerStage = screen.getByRole("region", { name: /reader stage/i });
+  Object.defineProperty(readerStage, "getBoundingClientRect", {
+    configurable: true,
+    value: () =>
+      ({
+        bottom: 980,
+        height: 860,
+        left: 80,
+        right: 1180,
+        top: 120,
+        width: 1100,
+      }) as DOMRect,
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
+  expect(note).toHaveTextContent("第一句翻译");
+  expect(readerStage.contains(note)).toBe(true);
+});
+
+it("keeps the spoken sentence translation note hidden in tablet layout", async () => {
+  const user = userEvent.setup();
+  installMatchMedia({ "(max-width: 1180px)": true });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => ""),
+    translateSelection: vi.fn(async () => "第一句翻译"),
+  };
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              ai={ai}
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/2/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chapter-10.xhtml",
+                    textQuote: "First paragraph.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation: vi.fn(async () => ({
+                      cfi: "epubcfi(/6/2!/4/2/1:0)",
+                      progress: 0.2,
+                      spineItemId: "chapter-10.xhtml",
+                      textQuote: "First paragraph.",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph. Second sentence."),
+                    getTtsSentenceNoteMetrics: vi.fn(() => ({
+                      activeRect: {
+                        bottom: 288,
+                        height: 28,
+                        left: 460,
+                        right: 720,
+                        top: 260,
+                        width: 260,
+                      },
+                      readingRect: {
+                        bottom: 940,
+                        height: 800,
+                        left: 120,
+                        right: 820,
+                        top: 140,
+                        width: 700,
+                      },
+                    })),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const readerStage = screen.getByRole("region", { name: /reader stage/i });
+  Object.defineProperty(readerStage, "getBoundingClientRect", {
+    configurable: true,
+    value: () =>
+      ({
+        bottom: 980,
+        height: 860,
+        left: 80,
+        right: 1180,
+        top: 120,
+        width: 1100,
+      }) as DOMRect,
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /tools/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /tools/i }));
+  await user.click(await screen.findByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("status", { name: /spoken sentence translation/i })).not.toBeInTheDocument();
+  });
+});
+
 it("does not reuse the previous translation bubble content while a new tablet selection is still being dragged", async () => {
   installMatchMedia({ "(max-width: 1180px)": true });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");

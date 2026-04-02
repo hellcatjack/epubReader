@@ -57,6 +57,11 @@ export type RuntimeTtsBlock = {
   text: string;
 };
 
+export type TtsSentenceNoteMetrics = {
+  activeRect: ReaderSelectionRect;
+  readingRect: ReaderSelectionRect;
+};
+
 export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   clearSelection?(): Promise<void>;
@@ -101,6 +106,7 @@ export type RuntimeRenderHandle = {
   getTtsBlocksFromCurrentLocation?(): Promise<RuntimeTtsBlock[]>;
   getTtsBlocksFromSelectionStart?(cfiRange: string): Promise<RuntimeTtsBlock[]>;
   getTtsBlocksFromTarget?(target: string): Promise<RuntimeTtsBlock[]>;
+  getTtsSentenceNoteMetrics?(): TtsSentenceNoteMetrics | null;
   goTo(target: string): Promise<void>;
   next(): Promise<void>;
   prev(): Promise<void>;
@@ -1111,6 +1117,25 @@ function readScrolledFollowLinePx(rect: Pick<DOMRect, "top" | "bottom">) {
   return Math.min(40, Math.max(20, Math.round(segmentHeight)));
 }
 
+export function projectRectIntoViewport(
+  frameRect: Pick<DOMRect, "left" | "top">,
+  rect: Pick<DOMRect, "bottom" | "left" | "right" | "top">,
+): ReaderSelectionRect {
+  const top = frameRect.top + rect.top;
+  const left = frameRect.left + rect.left;
+  const right = frameRect.left + rect.right;
+  const bottom = frameRect.top + rect.bottom;
+
+  return {
+    bottom,
+    height: Math.max(0, bottom - top),
+    left,
+    right,
+    top,
+    width: Math.max(0, right - left),
+  };
+}
+
 export function shouldAutoScrollTtsSegment(
   readingMode: ReadingMode,
   rect: Pick<DOMRect, "top" | "bottom">,
@@ -1597,6 +1622,15 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     const applyCurrentReaderTheme = () => {
       rendition.themes.default(buildReaderTheme(activePreferences));
     };
+
+    const readRectMetrics = (rect: Pick<DOMRect, "bottom" | "left" | "right" | "top">): ReaderSelectionRect => ({
+      bottom: rect.bottom,
+      height: Math.max(0, rect.bottom - rect.top),
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      width: Math.max(0, rect.right - rect.left),
+    });
 
     let hostResizeObserver: ResizeObserver | null = null;
     let queuedHostResize: { height: number; width: number } | null = null;
@@ -3091,6 +3125,22 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       getTtsBlocksFromCurrentLocation,
       getTtsBlocksFromSelectionStart,
       getTtsBlocksFromTarget,
+      getTtsSentenceNoteMetrics() {
+        if (!activeTtsElement || !currentContents) {
+          return null;
+        }
+
+        const frameElement = currentContents.window.frameElement;
+        const frameRect = isElementNode(frameElement) ? frameElement.getBoundingClientRect() : null;
+        const activeRect = activeTtsElement.getBoundingClientRect();
+        const readingBlock = getNearestTtsBlockElement(activeTtsElement) ?? activeTtsElement;
+        const readingRect = readingBlock.getBoundingClientRect();
+
+        return {
+          activeRect: frameRect ? projectRectIntoViewport(frameRect, activeRect) : readRectMetrics(activeRect),
+          readingRect: frameRect ? projectRectIntoViewport(frameRect, readingRect) : readRectMetrics(readingRect),
+        };
+      },
       async goTo(target) {
         currentTarget = target;
         preferredPaginatedRestore =

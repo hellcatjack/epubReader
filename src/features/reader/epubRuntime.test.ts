@@ -14,6 +14,7 @@ import {
   getPagePresentationKind,
   getNearestTtsBlockElement,
   readPaginatedPageIndex,
+  projectRectIntoViewport,
   resolvePaginatedFollowPageIndex,
   resolveApproximateLocationProgress,
   resolveStoredLocationCfi,
@@ -928,6 +929,32 @@ describe("epubRuntime tts targeting helpers", () => {
         true,
       ),
     ).toBe(1);
+  });
+
+  it("projects an iframe-local active tts rect into viewport coordinates for sentence-note anchoring", () => {
+    expect(
+      projectRectIntoViewport(
+        {
+          bottom: 348,
+          left: 180,
+          right: 720,
+          top: 320,
+        } as DOMRect,
+        {
+          bottom: 208,
+          left: 24,
+          right: 144,
+          top: 180,
+        } as DOMRect,
+      ),
+    ).toEqual({
+      bottom: 528,
+      height: 28,
+      left: 204,
+      right: 324,
+      top: 500,
+      width: 120,
+    });
   });
 
   it("does not double-count the current page index when paginated rects are already document-absolute", () => {

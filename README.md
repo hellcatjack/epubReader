@@ -50,6 +50,8 @@ The goal of this reader is to remove that loop as much as possible, so users can
   Desktop-friendly TTS controls and synced highlighting, with the best listening experience recommended on Microsoft Edge
 - `Follow TTS playback` 可以在长时间听书时自动跟随当前位置：`paginated` 自动翻页，`scrolled` 按整屏阅读节奏推进  
   `Follow TTS playback` can keep long listening sessions anchored to the current reading position: `paginated` turns pages automatically, while `scrolled` advances by full-screen reading steps
+- 宽屏下，连续朗读时会在正文右侧留白显示当前正在朗读句子的中文翻译，不挤压正文，也不遮挡文字  
+  On wide screens, continuous TTS can show a Chinese translation note for the currently spoken sentence in the whitespace to the right of the text, without shrinking or covering the main reading column
 - 同时支持 `paginated` 和 `scrolled` 两种阅读模式  
   Supports both `paginated` and `scrolled` reading modes
 - 本地优先的书签、笔记和高亮  
@@ -115,6 +117,17 @@ Microsoft Edge is recommended for the best TTS listening experience. The reader 
   For Bibles and similar EPUBs with dense verse markers and footnote markers, TTS automatically skips those markers to keep playback more natural.
 - 对像 ESV 这样正文与脚注位于同一超长文档内的书，自动翻页会优先保持正文与当前朗读段同步，不会把页面错误带到脚注总表。  
   For books like the ESV where chapter text and footnote sections live inside the same long document, automatic follow paging keeps the visible page aligned with the spoken chapter text instead of drifting into the footnote appendix.
+
+### 正在朗读句子的中文侧注 / Spoken Sentence Translation Note
+
+- 仅在宽屏布局启用。  
+  Enabled only on wide-screen layouts.
+- 侧注贴在正文右侧留白，而不是右侧工具栏；如果正文右侧留白不够，就不会显示。  
+  The note is anchored in the whitespace to the right of the main reading text, not in the tools sidebar; if that lane is too narrow, the note stays hidden.
+- 它用于帮助读者在听书时快速理解当前句子，不会改变正文列宽，也不会挡住正文内容。  
+  It is meant to help readers understand the currently spoken sentence during playback without changing the text column width or covering the book content.
+- 平板与更窄的布局不会显示这块侧注，避免打断阅读。  
+  Tablet and narrower layouts do not show this note, to avoid cluttering the reading surface.
 
 ### Local LLM
 

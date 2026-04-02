@@ -478,11 +478,13 @@
   min-height: 0;
   align-items: stretch;
   overflow: hidden;
+  position: relative;
 }
 
 .reader-stage {
   min-height: 0;
   align-content: stretch;
+  position: relative;
 }
 
 .reader-tools {
@@ -730,6 +732,51 @@
   font-size: 0.98rem;
   line-height: 1.45;
   word-break: break-word;
+}
+
+.reader-tts-sentence-note {
+  position: absolute;
+  z-index: 12;
+  width: clamp(150px, 18vw, 280px);
+  max-width: calc(100% - 24px);
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(79, 49, 24, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 252, 248, 0.96);
+  box-shadow: 0 10px 30px rgb(15 23 42 / 0.12);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  transition: top 180ms ease, opacity 160ms ease;
+}
+
+.reader-tts-sentence-note-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a6647;
+}
+
+.reader-tts-sentence-note-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: #2f2118;
+}
+
+.reader-layout.theme-dark .reader-tts-sentence-note {
+  border-color: rgba(228, 191, 148, 0.16);
+  background: rgba(59, 40, 31, 0.96);
+}
+
+.reader-layout.theme-dark .reader-tts-sentence-note-label {
+  color: #cfa67d;
+}
+
+.reader-layout.theme-dark .reader-tts-sentence-note-text {
+  color: #f2e6d6;
 }
 
 .reader-mode-button[aria-pressed="true"] {
