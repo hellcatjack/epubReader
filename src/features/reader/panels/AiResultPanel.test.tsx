@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import { AiResultPanel } from "./AiResultPanel";
 
 describe("AiResultPanel", () => {
@@ -53,5 +54,29 @@ describe("AiResultPanel", () => {
     );
 
     expect(screen.getByText("Click Explain for deeper context.")).toBeInTheDocument();
+  });
+
+  it("shows a compact read aloud button beside the current selection", async () => {
+    const user = userEvent.setup();
+    const onReadAloud = vi.fn();
+
+    render(
+      <AiResultPanel
+        {...({
+          onReadAloud,
+          selectedText: "pressed",
+          translation: "按压",
+        } as Record<string, unknown>)}
+      />,
+    );
+
+    const selectionRow = screen.getByText("Selection").closest(".reader-ai-meta-row");
+    expect(selectionRow).not.toBeNull();
+    const button = screen.getByRole("button", { name: /read selection aloud/i });
+    expect(selectionRow).toContainElement(button);
+
+    await user.click(button);
+
+    expect(onReadAloud).toHaveBeenCalledTimes(1);
   });
 });

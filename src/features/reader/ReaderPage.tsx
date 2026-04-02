@@ -767,6 +767,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [isTabletLayout]);
 
   useEffect(() => {
+    if (selectedSelection?.isReleased === false) {
+      setFloatingSelectionTranslation(null);
+    }
+  }, [selectedSelection?.cfiRange, selectedSelection?.isReleased, selectedSelection?.text]);
+
+  useEffect(() => {
     if (!isTabletLayout || !runtimeHandle?.getCurrentSelectionSnapshot) {
       return;
     }
@@ -1809,6 +1815,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       onLocalLlmModelChange={handleLocalLlmModelChange}
       onNoteDraftChange={setNoteDraft}
       onNoteSave={handleSaveNote}
+      onSelectionReadAloud={handleReadAloud}
       onTtsPause={handlePauseTts}
       onTtsFollowPlaybackChange={handleTtsFollowPlaybackChange}
       onTtsRateChange={handleQuickTtsRateChange}

@@ -105,8 +105,17 @@
 }
 
 .reader-ai-meta-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.reader-ai-meta-main {
+  min-width: 0;
   display: grid;
   gap: 0.25rem;
+  flex: 1 1 auto;
 }
 
 .reader-ai-label {
@@ -121,6 +130,22 @@
   font-weight: 600;
   line-height: 1.45;
   word-break: break-word;
+}
+
+.reader-ai-inline-action {
+  flex: 0 0 auto;
+  align-self: center;
+  min-height: 1.95rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid rgba(79, 49, 24, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 253, 249, 0.96);
+  color: #3f2514;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .reader-ai-result {
@@ -191,6 +216,12 @@
 }
 
 .reader-layout.theme-dark .reader-ai-value {
+  color: #f4e2d0;
+}
+
+.reader-layout.theme-dark .reader-ai-inline-action {
+  border-color: rgba(228, 191, 148, 0.16);
+  background: rgba(59, 40, 31, 0.96);
   color: #f4e2d0;
 }
 
@@ -815,14 +846,19 @@
 }
 
 .reader-tts-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
+  display: block;
 }
 
 .reader-tts-header h2 {
   margin: 0;
+}
+
+.reader-tts-controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
 .reader-tts-badge {
@@ -897,6 +933,7 @@
   display: grid;
   gap: 0.45rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 1 1 20rem;
 }
 
 .reader-tts-actions button,

@@ -2,6 +2,7 @@ type AiResultPanelProps = {
   explanation?: string;
   explanationError?: string;
   ipa?: string;
+  onReadAloud?: () => void;
   selectedText?: string;
   translation?: string;
   translationError?: string;
@@ -11,6 +12,7 @@ export function AiResultPanel({
   explanation,
   explanationError,
   ipa,
+  onReadAloud,
   selectedText,
   translation,
   translationError,
@@ -26,8 +28,18 @@ export function AiResultPanel({
         <div className="reader-ai-meta">
           {selectedText ? (
             <div className="reader-ai-meta-row">
-              <span className="reader-ai-label">Selection</span>
-              <span className="reader-ai-value">{selectedText}</span>
+              <div className="reader-ai-meta-main">
+                <span className="reader-ai-label">Selection</span>
+                <span className="reader-ai-value">{selectedText}</span>
+              </div>
+              <button
+                aria-label="Read selection aloud"
+                className="reader-ai-inline-action"
+                onClick={onReadAloud}
+                type="button"
+              >
+                Play
+              </button>
             </div>
           ) : null}
           {ipa ? (

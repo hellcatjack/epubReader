@@ -74,6 +74,16 @@ it("captures the current selection on start tts pointer down before the button c
   expect(onStartPointerDown).toHaveBeenCalledTimes(1);
 });
 
+it("keeps the tts control buttons above the current text summary", () => {
+  render(<TtsStatusPanel currentText="Current paragraph" />);
+
+  const controls = screen.getByRole("group", { name: /tts controls/i });
+  const summary = screen.getByText("Current paragraph").closest(".reader-tts-current");
+
+  expect(summary).not.toBeNull();
+  expect(controls.compareDocumentPosition(summary as HTMLElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it("lets the reader toggle follow playback from the advanced tts section", async () => {
   const user = userEvent.setup();
   const onFollowPlaybackChange = vi.fn();

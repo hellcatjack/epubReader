@@ -27,6 +27,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onLocalLlmModelChange?: (value: string) => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
+  onSelectionReadAloud?: () => void;
   onTtsPause?: () => void;
   onTtsFollowPlaybackChange?: (enabled: boolean) => void;
   onTtsRateChange?: (rate: number) => void;
@@ -72,6 +73,7 @@ export function RightPanel({
   onLocalLlmModelChange,
   onNoteDraftChange,
   onNoteSave,
+  onSelectionReadAloud,
   onTtsPause,
   onTtsFollowPlaybackChange,
   onTtsRateChange,
@@ -127,6 +129,7 @@ export function RightPanel({
           explanation={explanation}
           explanationError={explanationError}
           ipa={aiIpa}
+          onReadAloud={onSelectionReadAloud}
           selectedText={selectedText}
           translation={translation}
           translationError={translationError}

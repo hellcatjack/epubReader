@@ -74,39 +74,41 @@ export function TtsStatusPanel({
 
   return (
     <section className="reader-panel reader-tts-panel" aria-label="TTS queue">
-      <div className="reader-tts-header">
-        <h2>TTS queue</h2>
+      <div className="reader-tts-controls-bar">
+        <div className="reader-tts-actions" role="group" aria-label="TTS controls">
+          <button
+            type="button"
+            onClick={onStart}
+            onMouseDown={(event) => {
+              onStartPointerDown?.();
+              event.preventDefault();
+            }}
+            disabled={startDisabled}
+          >
+            Start TTS
+          </button>
+          <button type="button" onClick={onPause}>
+            Pause TTS
+          </button>
+          <button type="button" onClick={onResume}>
+            Resume TTS
+          </button>
+          <button type="button" onClick={onStop}>
+            Stop TTS
+          </button>
+        </div>
         <span className="reader-tts-badge" data-status={status}>
           {formatStatusLabel(status)}
         </span>
+      </div>
+      <div className="reader-tts-header">
+        <h2>TTS queue</h2>
       </div>
       <div className="reader-tts-current reader-tts-current-compact">
         <span className="reader-tts-current-label">{currentText ? "Current" : "Ready"}</span>
         <p title={currentLabel}>{currentLabel}</p>
       </div>
       {error ? <p className="reader-tts-error">{error}</p> : null}
-      <div className="reader-tts-actions" role="group" aria-label="TTS controls">
-        <button
-          type="button"
-          onClick={onStart}
-          onMouseDown={(event) => {
-            onStartPointerDown?.();
-            event.preventDefault();
-          }}
-          disabled={startDisabled}
-        >
-          Start TTS
-        </button>
-        <button type="button" onClick={onPause}>
-          Pause TTS
-        </button>
-        <button type="button" onClick={onResume}>
-          Resume TTS
-        </button>
-        <button type="button" onClick={onStop}>
-          Stop TTS
-        </button>
-      </div>
       <div className="reader-tts-advanced">
         <button
           type="button"
