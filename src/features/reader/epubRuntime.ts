@@ -3,6 +3,7 @@ import { loadStoredBookFile } from "../bookshelf/bookFileRepository";
 import type { TocItem } from "../../lib/types/books";
 import type { ReadingMode } from "../../lib/types/settings";
 import { buildReaderTheme, defaultReaderPreferences, type ReaderPreferences, toEpubFlow } from "./readerPreferences";
+import type { ReaderSelectionRect } from "./selectionBridge";
 import { findTocPathBySpineItemId, getTocTarget, getTocTargetSpineItemId } from "./tocTree";
 
 export type RuntimeRenderArgs = {
@@ -28,6 +29,7 @@ export type RuntimeRenderArgs = {
   onSelectionChange?: (selection: {
     cfiRange: string;
     isReleased?: boolean;
+    selectionRect?: ReaderSelectionRect;
     sentenceContext?: string;
     spineItemId: string;
     text: string;
@@ -64,6 +66,7 @@ export type RuntimeRenderHandle = {
       | {
         cfiRange: string;
         isReleased: boolean;
+        selectionRect?: ReaderSelectionRect;
         sentenceContext?: string;
         spineItemId: string;
         text: string;
@@ -75,6 +78,7 @@ export type RuntimeRenderHandle = {
     | {
         cfiRange: string;
         isReleased: boolean;
+        selectionRect?: ReaderSelectionRect;
         sentenceContext?: string;
         spineItemId: string;
         text: string;
@@ -328,6 +332,26 @@ function getVisibleRect(rect: DOMRect, viewportWidth: number, viewportHeight: nu
     left: visibleLeft,
     top: visibleTop,
     width: visibleRight - visibleLeft,
+  };
+}
+
+function toSelectionViewportRect(contents: Contents, range: Range): ReaderSelectionRect | undefined {
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) {
+    return undefined;
+  }
+
+  const frameElement = isElementNode(contents.window.frameElement) ? contents.window.frameElement : null;
+  const offsetLeft = frameElement?.getBoundingClientRect().left ?? 0;
+  const offsetTop = frameElement?.getBoundingClientRect().top ?? 0;
+
+  return {
+    bottom: offsetTop + rect.bottom,
+    height: rect.height,
+    left: offsetLeft + rect.left,
+    right: offsetLeft + rect.right,
+    top: offsetTop + rect.top,
+    width: rect.width,
   };
 }
 
@@ -1574,6 +1598,83 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       rendition.themes.default(buildReaderTheme(activePreferences));
     };
 
+    let hostResizeObserver: ResizeObserver | null = null;
+    let queuedHostResize: { height: number; width: number } | null = null;
+    let hostResizeSyncInFlight = false;
+    let isRenditionReadyForHostResize = false;
+    let lastObservedHostSize = {
+      height: Math.round(element.clientHeight),
+      width: Math.round(element.clientWidth),
+    };
+
+    const hasRenderableViewport = () => Boolean(currentContents || element.querySelector("iframe"));
+
+    const syncRenditionToHostResize = async (width: number, height: number) => {
+      if (isDestroyed || width <= 0 || height <= 0 || !hasRenderableViewport()) {
+        return;
+      }
+
+      await waitForLayoutFrame(element.ownerDocument);
+      if (isDestroyed || !hasRenderableViewport()) {
+        return;
+      }
+
+      const container = getPaginatedContainer(element);
+      const preservedPageIndex = readPaginatedPageIndex(activePreferences.readingMode, container);
+      const preservedPageOffset = readPaginatedPageOffset(activePreferences.readingMode, container);
+      const preservedScrollTop = readScrolledViewportOffset(activePreferences.readingMode, container);
+
+      rendition.resize(width, height);
+      await waitForLayoutFrame(element.ownerDocument);
+      syncCurrentContents();
+
+      if (!hasRenderableViewport()) {
+        await rendition.display(currentTarget || undefined);
+        await waitForLayoutFrame(element.ownerDocument);
+        syncCurrentContents();
+      }
+
+      if (!hasRenderableViewport()) {
+        return;
+      }
+
+      if (activePreferences.readingMode === "paginated") {
+        await settlePaginatedPosition(activePreferences.readingMode, preservedPageOffset, preservedPageIndex);
+        await settleDisplayedPaginatedLocation(activePreferences.readingMode);
+      } else {
+        await settleScrolledPosition(activePreferences.readingMode, preservedScrollTop);
+      }
+
+      await syncDisplayedLocation();
+    };
+
+    const queueHostResizeSync = (width: number, height: number) => {
+      if (width <= 0 || height <= 0) {
+        return;
+      }
+
+      queuedHostResize = {
+        height,
+        width,
+      };
+
+      if (!isRenditionReadyForHostResize || hostResizeSyncInFlight) {
+        return;
+      }
+
+      hostResizeSyncInFlight = true;
+
+      void (async () => {
+        while (queuedHostResize && !isDestroyed) {
+          const nextSize = queuedHostResize;
+          queuedHostResize = null;
+          await syncRenditionToHostResize(nextSize.width, nextSize.height);
+        }
+      })().finally(() => {
+        hostResizeSyncInFlight = false;
+      });
+    };
+
     const findSegmentElement = async (contents: Contents, segment: ActiveTtsSegment) => {
       if (segment.cfi) {
         try {
@@ -1904,6 +2005,10 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
     const attachSelectionLifecycle = (contents: Contents) => {
       const doc = contents.document;
+      const view = contents.window;
+      const hostView =
+        (isElementNode(view.frameElement) ? view.frameElement.ownerDocument?.defaultView : null) ??
+        (typeof window !== "undefined" ? window : null);
       if (selectionDocumentCleanups.has(doc)) {
         return;
       }
@@ -1987,6 +2092,14 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       doc.addEventListener("touchstart", handlePointerDown, true);
       doc.addEventListener("touchend", handlePointerUp, true);
       doc.addEventListener("keydown", handlePaginatedArrowKey, true);
+      view.addEventListener("mouseup", handlePointerUp, true);
+      view.addEventListener("pointerup", handlePointerUp, true);
+      view.addEventListener("touchend", handlePointerUp, true);
+      view.addEventListener("blur", handlePointerUp, true);
+      hostView?.addEventListener("mouseup", handlePointerUp, true);
+      hostView?.addEventListener("pointerup", handlePointerUp, true);
+      hostView?.addEventListener("touchend", handlePointerUp, true);
+      hostView?.addEventListener("blur", handlePointerUp, true);
       doc.addEventListener("wheel", handlePaginatedWheel, {
         capture: true,
         passive: false,
@@ -1999,6 +2112,14 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         doc.removeEventListener("touchstart", handlePointerDown, true);
         doc.removeEventListener("touchend", handlePointerUp, true);
         doc.removeEventListener("keydown", handlePaginatedArrowKey, true);
+        view.removeEventListener("mouseup", handlePointerUp, true);
+        view.removeEventListener("pointerup", handlePointerUp, true);
+        view.removeEventListener("touchend", handlePointerUp, true);
+        view.removeEventListener("blur", handlePointerUp, true);
+        hostView?.removeEventListener("mouseup", handlePointerUp, true);
+        hostView?.removeEventListener("pointerup", handlePointerUp, true);
+        hostView?.removeEventListener("touchend", handlePointerUp, true);
+        hostView?.removeEventListener("blur", handlePointerUp, true);
         doc.removeEventListener("wheel", handlePaginatedWheel, true);
       });
     };
@@ -2419,6 +2540,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       const selection = {
         cfiRange,
         isReleased: !pointerSelecting,
+        selectionRect: range ? toSelectionViewportRect(contents, range) : undefined,
         sentenceContext: range ? extractSentenceContextFromRange(range) : text,
         spineItemId: currentSpineItemId,
         text,
@@ -2448,7 +2570,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         const ttsBlocks = getTtsBlocksFromSelectionRange(contents, range);
         return {
           cfiRange: contents.cfiFromRange(range),
-          isReleased: true,
+          isReleased: !pointerSelecting,
+          selectionRect: toSelectionViewportRect(contents, range),
           sentenceContext: extractSentenceContextFromRange(range),
           spineItemId: currentSpineItemId,
           text,
@@ -2750,6 +2873,13 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         restoreReadingSurfaceFocusOnRender = false;
         void restoreReadingSurfaceFocus(currentContents ?? contents);
       }
+
+      if (queuedHostResize && isRenditionReadyForHostResize && !hostResizeSyncInFlight) {
+        const nextWidth = queuedHostResize.width;
+        const nextHeight = queuedHostResize.height;
+        queuedHostResize = null;
+        queueHostResizeSync(nextWidth, nextHeight);
+      }
     };
 
     rendition.on("selected", handleSelection);
@@ -2786,6 +2916,29 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       passive: false,
     });
 
+    if (typeof ResizeObserver !== "undefined") {
+      hostResizeObserver = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry || isDestroyed) {
+          return;
+        }
+
+        const width = Math.round(entry.contentRect.width);
+        const height = Math.round(entry.contentRect.height);
+        if (width <= 0 || height <= 0) {
+          return;
+        }
+
+        if (width === lastObservedHostSize.width && height === lastObservedHostSize.height) {
+          return;
+        }
+
+        lastObservedHostSize = { height, width };
+        queueHostResizeSync(width, height);
+      });
+      hostResizeObserver.observe(element);
+    }
+
     const navigation = await book.loaded.navigation;
     currentToc = buildTocItems(navigation.toc);
     onTocChange?.(currentToc);
@@ -2809,6 +2962,12 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     await settlePaginatedPosition(flow, initialPageOffset, initialPageIndex);
     await settleScrolledPosition(flow, initialScrollTop);
     await syncDisplayedLocation();
+    isRenditionReadyForHostResize = true;
+    const pendingInitialHostResize = queuedHostResize as { height: number; width: number } | null;
+    if (pendingInitialHostResize) {
+      queuedHostResize = null;
+      queueHostResizeSync(pendingInitialHostResize.width, pendingInitialHostResize.height);
+    }
 
     return {
       async applyPreferences(preferences) {
@@ -2824,12 +2983,15 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       },
       destroy() {
         isDestroyed = true;
+        isRenditionReadyForHostResize = false;
         resetPaginatedWheelDelta();
         clearActiveTtsRetry();
         clearActiveTtsSegment();
         onPagePresentationChange?.("prose");
         selectionDocumentCleanups.forEach((cleanup) => cleanup());
         selectionDocumentCleanups.clear();
+        hostResizeObserver?.disconnect();
+        hostResizeObserver = null;
         element.removeEventListener("wheel", handleHostPaginatedWheel, true);
         rendition.off("selected", handleSelection);
         rendition.off("relocated", handleRelocated);

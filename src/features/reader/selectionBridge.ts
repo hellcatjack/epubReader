@@ -1,8 +1,18 @@
 import type { RuntimeTtsBlock } from "./epubRuntime";
 
+export type ReaderSelectionRect = {
+  bottom: number;
+  height: number;
+  left: number;
+  right: number;
+  top: number;
+  width: number;
+};
+
 export type ReaderSelection = {
   cfiRange?: string;
   isReleased?: boolean;
+  selectionRect?: ReaderSelectionRect;
   sentenceContext?: string;
   spineItemId?: string;
   text: string;

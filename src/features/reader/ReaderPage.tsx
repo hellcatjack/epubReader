@@ -31,7 +31,9 @@ import {
   writeRefreshTtsStartTargetSnapshot,
 } from "./refreshTtsStartTargetSnapshot";
 import { LeftRail } from "./LeftRail";
+import { ReaderDrawer } from "./ReaderDrawer";
 import { RightPanel } from "./RightPanel";
+import { SelectionTranslationBubble } from "./SelectionTranslationBubble";
 import { SelectionPopover } from "./SelectionPopover";
 import { TopBar } from "./TopBar";
 import { getEffectiveReaderPreferences, toReaderPreferences, type ReaderPreferences } from "./readerPreferences";
@@ -69,12 +71,21 @@ type ReaderLocationState = {
   textQuote: string;
 };
 
+type FloatingSelectionTranslation = {
+  anchorRect: NonNullable<ReaderSelection["selectionRect"]>;
+  selectionText: string;
+  translation: string;
+};
+
 type LocationTargetIntent = "explicit" | "restored";
 
 const continuousTtsChunkOptions = { firstSegmentMax: 280, segmentMax: 500 } as const;
 const headingTransitionPauseMs = 350;
 const paginatedInitialMarkerFallbackMs = 700;
 const recentReleasedSelectionWindowMs = 5000;
+const selectionTranslationBubbleDurationMs = 3000;
+const tabletStableSelectionTranslateDelayMs = 1000;
+const tabletReaderMediaQuery = "(max-width: 1180px)";
 
 function getSelectionCacheKey(selection: ReaderSelection | null) {
   const text = selection?.text.trim() ?? "";
@@ -83,6 +94,36 @@ function getSelectionCacheKey(selection: ReaderSelection | null) {
   }
 
   return [selection?.spineItemId ?? "", selection?.cfiRange ?? "", text].join("::");
+}
+
+function useMediaQuery(query: string) {
+  const getMatches = () =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query).matches : false;
+  const [matches, setMatches] = useState(getMatches);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return undefined;
+    }
+
+    const mediaQueryList = window.matchMedia(query);
+    const handleChange = (event: MediaQueryListEvent) => setMatches(event.matches);
+    setMatches(mediaQueryList.matches);
+
+    if (typeof mediaQueryList.addEventListener === "function") {
+      mediaQueryList.addEventListener("change", handleChange);
+      return () => mediaQueryList.removeEventListener("change", handleChange);
+    }
+
+    mediaQueryList.addListener(handleChange);
+    return () => mediaQueryList.removeListener(handleChange);
+  }, [query]);
+
+  return matches;
+}
+
+function normalizeSelectionText(text?: string | null) {
+  return text?.trim() ?? "";
 }
 
 function sliceChunksFromMarker(chunks: ChunkSegment[], chunkIndex: number, markerIndex: number) {
@@ -309,6 +350,7 @@ async function getContinuousTtsChunksFromSelection(
 export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPageProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const shellContext = useOutletContext<ReaderAppShellContext | null>() ?? null;
+  const isTabletLayout = useMediaQuery(tabletReaderMediaQuery);
   const [initialCfi, setInitialCfi] = useState<string>();
   const [initialProgress, setInitialProgress] = useState<ProgressRecord | null>(null);
   const [isProgressReady, setIsProgressReady] = useState(!bookId);
@@ -325,6 +367,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const [aiIpa, setAiIpa] = useState("");
   const [translation, setTranslation] = useState("");
   const [translationError, setTranslationError] = useState("");
+  const [floatingSelectionTranslation, setFloatingSelectionTranslation] = useState<FloatingSelectionTranslation | null>(null);
   const [explanation, setExplanation] = useState("");
   const [explanationError, setExplanationError] = useState("");
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
@@ -342,6 +385,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const [noteOpen, setNoteOpen] = useState(false);
   const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
   const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
+  const [isContentsDrawerOpen, setIsContentsDrawerOpen] = useState(false);
+  const [isToolsDrawerOpen, setIsToolsDrawerOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
   const [isSettingsReady, setIsSettingsReady] = useState(false);
   const [ttsVoices, setTtsVoices] = useState<BrowserTtsVoice[]>([]);
@@ -371,6 +416,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const runtimeHandleValueRef = useRef<RuntimeRenderHandle | null>(null);
   const aiRequestVersionRef = useRef(0);
   const lastAutoTranslatedSelectionKeyRef = useRef("");
+  const suppressedTabletAutoTranslateSelectionKeyRef = useRef("");
   const activeSelectionSpeechRequestRef = useRef(0);
   const continuousSpineItemIdRef = useRef("");
   const continuousChunksRef = useRef<ChunkSegment[]>([]);
@@ -516,6 +562,13 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   useEffect(() => {
     currentLocationRef.current = currentLocation;
   }, [currentLocation]);
+
+  useEffect(() => {
+    if (!isTabletLayout) {
+      setIsContentsDrawerOpen(false);
+      setIsToolsDrawerOpen(false);
+    }
+  }, [isTabletLayout]);
 
   useEffect(() => {
     runtimeHandleValueRef.current = runtimeHandle;
@@ -688,6 +741,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     const unsubscribe = selectionBridge.subscribe((selection) => {
       setSelectedSelection(selection);
 
+      if (!selection?.text.trim() || selection?.isReleased === false) {
+        setFloatingSelectionTranslation(null);
+      }
+
       if (selection?.text.trim()) {
         lastReleasedSelectionRef.current = selection;
         lastReleasedSelectionAtRef.current = Date.now();
@@ -704,8 +761,127 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, []);
 
   useEffect(() => {
+    if (!isTabletLayout) {
+      setFloatingSelectionTranslation(null);
+    }
+  }, [isTabletLayout]);
+
+  useEffect(() => {
+    if (!isTabletLayout || !runtimeHandle?.getCurrentSelectionSnapshot) {
+      return;
+    }
+
+    const snapshot = runtimeHandle.getCurrentSelectionSnapshot();
+    if (!snapshot?.text.trim()) {
+      return;
+    }
+
+    suppressedTabletAutoTranslateSelectionKeyRef.current = getSelectionCacheKey(snapshot);
+    selectionBridge.publish(snapshot);
+  }, [isTabletLayout, runtimeHandle]);
+
+  useEffect(() => {
+    if (!floatingSelectionTranslation) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFloatingSelectionTranslation(null);
+    }, selectionTranslationBubbleDurationMs);
+
+    const dismiss = () => setFloatingSelectionTranslation(null);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("pointerdown", dismiss, true);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("pointerdown", dismiss, true);
+    };
+  }, [floatingSelectionTranslation]);
+
+  useEffect(() => {
+    if (isContentsDrawerOpen || isToolsDrawerOpen) {
+      setFloatingSelectionTranslation(null);
+    }
+  }, [isContentsDrawerOpen, isToolsDrawerOpen]);
+
+  function resolveSelectionForTabletBubble(selection: ReaderSelection | null | undefined, expectedText: string) {
+    const normalizedExpectedText = normalizeSelectionText(expectedText);
+    if (!normalizedExpectedText) {
+      return null;
+    }
+
+    const selectionBridgeSnapshot = selectionBridge.read();
+    const runtimeSnapshot = runtimeHandleValueRef.current?.getCurrentSelectionSnapshot?.() ?? null;
+    const recentReleasedSelection =
+      Date.now() - lastReleasedSelectionAtRef.current <= recentReleasedSelectionWindowMs ? lastReleasedSelectionRef.current : null;
+    const expectedSelectionKey = getSelectionCacheKey(selection ?? null);
+    const recentSelectionKey = expectedSelectionKey ? expectedSelectionKey : getSelectionCacheKey(recentReleasedSelection);
+
+    const candidates = [selection, runtimeSnapshot, selectionBridgeSnapshot, recentReleasedSelection].filter(
+      (candidate): candidate is ReaderSelection => Boolean(candidate),
+    );
+
+    return (
+      candidates.find((candidate) => {
+        if (!candidate.selectionRect) {
+          return false;
+        }
+
+        const candidateText = normalizeSelectionText(candidate.text);
+        if (candidateText !== normalizedExpectedText) {
+          return false;
+        }
+
+        if (!recentSelectionKey) {
+          return true;
+        }
+
+        const candidateKey = getSelectionCacheKey(candidate);
+        return candidateKey ? candidateKey === recentSelectionKey : true;
+      }) ?? null
+    );
+  }
+
+  useEffect(() => {
+    const nextSelectionText = selectedSelection?.text.trim() ?? "";
+    const bubbleSelection = resolveSelectionForTabletBubble(selectedSelection, nextSelectionText);
+    const selectionRect = bubbleSelection?.selectionRect;
+    if (
+      !isTabletLayout ||
+      selectedSelection?.isReleased === false ||
+      !translation.trim() ||
+      !selectionRect ||
+      !nextSelectionText
+    ) {
+      return;
+    }
+
+    setFloatingSelectionTranslation((current) => {
+      if (
+        current &&
+        current.translation === translation &&
+        current.selectionText === normalizeSelectionText(bubbleSelection?.text) &&
+        current.anchorRect.top === selectionRect.top &&
+        current.anchorRect.left === selectionRect.left &&
+        current.anchorRect.width === selectionRect.width &&
+        current.anchorRect.height === selectionRect.height
+      ) {
+        return current;
+      }
+
+      return {
+        anchorRect: selectionRect,
+        selectionText: normalizeSelectionText(bubbleSelection?.text) || nextSelectionText,
+        translation,
+      };
+    });
+  }, [isTabletLayout, selectedSelection, translation]);
+
+  useEffect(() => {
     const nextText = selectedSelection?.text.trim() ?? "";
-    if (!nextText || selectedSelection?.isReleased === false) {
+    if (!nextText) {
       return;
     }
 
@@ -713,16 +889,59 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       "::",
     );
 
+    if (suppressedTabletAutoTranslateSelectionKeyRef.current === selectionKey) {
+      suppressedTabletAutoTranslateSelectionKeyRef.current = "";
+      return;
+    }
+
+    if (selectedSelection?.isReleased === false) {
+      if (!isTabletLayout) {
+        return;
+      }
+
+      const timeoutId = window.setTimeout(() => {
+        const bridgeSelection = selectionBridge.read();
+        const bridgeSelectionKey = getSelectionCacheKey(bridgeSelection);
+        if (
+          bridgeSelectionKey !== selectionKey ||
+          bridgeSelection?.isReleased !== false ||
+          lastAutoTranslatedSelectionKeyRef.current === selectionKey
+        ) {
+          return;
+        }
+
+        const runtimeSelection = runtimeHandleValueRef.current?.getCurrentSelectionSnapshot?.() ?? null;
+        const latestSelection =
+          getSelectionCacheKey(runtimeSelection) === selectionKey && runtimeSelection?.selectionRect
+            ? runtimeSelection
+            : bridgeSelection;
+        const latestText = latestSelection?.text.trim() ?? "";
+
+        if (
+          !latestText ||
+          !latestSelection?.selectionRect ||
+          getSelectionCacheKey(latestSelection) !== selectionKey
+        ) {
+          return;
+        }
+
+        lastAutoTranslatedSelectionKeyRef.current = selectionKey;
+        void requestTranslation(latestText, latestSelection?.sentenceContext, latestSelection);
+      }, tabletStableSelectionTranslateDelayMs);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
     if (lastAutoTranslatedSelectionKeyRef.current === selectionKey) {
       return;
     }
 
     lastAutoTranslatedSelectionKeyRef.current = selectionKey;
-    void requestTranslation(nextText, selectedSelection?.sentenceContext);
+    void requestTranslation(nextText, selectedSelection?.sentenceContext, selectedSelection);
     if (isAutoSpeakableSelection(nextText)) {
       void startSelectionSpeech(nextText);
     }
-  }, [selectedSelection]);
+  }, [isTabletLayout, selectedSelection]);
 
   useEffect(() => {
     if (!bookId || !currentSpineItemId) {
@@ -970,19 +1189,21 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     });
   }
 
-  async function requestTranslation(text: string, sentenceContext?: string) {
+  async function requestTranslation(text: string, sentenceContext?: string, selectionForBubble?: ReaderSelection | null) {
     const nextText = text.trim();
     if (!nextText) {
       return;
     }
 
     const requestVersion = ++aiRequestVersionRef.current;
+    const requestSelectionKey = getSelectionCacheKey(selectionForBubble ?? null);
     const ipaWord = getEligibleIpaWord(nextText);
     setTranslationError("");
     setExplanation("");
     setExplanationError("");
     setAiIpa("");
     setTranslation("");
+    setFloatingSelectionTranslation(null);
 
     try {
       const [result, ipa] = await Promise.all([
@@ -995,13 +1216,28 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
+      if (selectionForBubble?.isReleased === false && requestSelectionKey) {
+        const currentSelectionKey = getSelectionCacheKey(selectionBridge.read());
+        if (currentSelectionKey !== requestSelectionKey) {
+          return;
+        }
+      }
       setTranslation(result);
       setAiIpa(ipa ?? "");
+      const bubbleSelection = isTabletLayout ? resolveSelectionForTabletBubble(selectionForBubble, nextText) : null;
+      if (isTabletLayout && bubbleSelection?.selectionRect) {
+        setFloatingSelectionTranslation({
+          anchorRect: bubbleSelection.selectionRect,
+          selectionText: normalizeSelectionText(bubbleSelection.text) || nextText,
+          translation: result,
+        });
+      }
     } catch (error) {
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
       setTranslationError(`Translate failed: ${String(error)}`);
+      setFloatingSelectionTranslation(null);
     }
   }
 
@@ -1127,7 +1363,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }
 
   async function handleTranslate() {
-    await requestTranslation(selectedText, selectedSelection?.sentenceContext);
+    await requestTranslation(selectedText, selectedSelection?.sentenceContext, selectedSelection);
   }
 
   async function handleExplain() {
@@ -1312,13 +1548,19 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }
 
   function handlePrepareStartTts() {
-    const latestSelection =
-      runtimeHandleValueRef.current?.getCurrentSelectionSnapshot?.() ??
-      selectionBridge.read() ??
-      selectedSelection ??
-      getRecentReleasedSelectionFallback();
+    const runtimeSelection = runtimeHandleValueRef.current?.getCurrentSelectionSnapshot?.() ?? null;
+    const bridgeSelection = selectionBridge.read();
+    const immediateSelection = runtimeSelection ?? bridgeSelection ?? selectedSelection;
+    const recentReleasedSelection = getRecentReleasedSelectionFallback();
+    const latestSelection = immediateSelection ?? recentReleasedSelection;
+    const latestSelectionKey = getSelectionCacheKey(latestSelection);
     pendingPointerStartSelectionRef.current = latestSelection?.text.trim() ? latestSelection : null;
-    pendingPointerStartBlocksPromiseRef.current = runtimeHandleValueRef.current?.getTtsBlocksFromCurrentSelection?.() ?? null;
+    pendingPointerStartBlocksPromiseRef.current =
+      immediateSelection?.text.trim() || !latestSelection?.text.trim()
+        ? (runtimeHandleValueRef.current?.getTtsBlocksFromCurrentSelection?.() ?? null)
+        : latestSelectionKey && cachedSelectionBlocksKeyRef.current === latestSelectionKey
+          ? cachedSelectionBlocksPromiseRef.current
+          : null;
   }
 
   async function handleStartTts() {
@@ -1534,6 +1776,65 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [currentLocation.sectionPath, currentSpineItemId, toc]);
   const shouldRenderViewport = Boolean(bookId) && isProgressReady && isSettingsReady;
   const nextInitialCfi = locationTarget ?? initialCfi;
+  const leftRail = (
+    <LeftRail
+      bookmarks={bookmarkItems}
+      currentSpineItemId={currentSpineItemId}
+      highlights={highlights}
+      notes={notes}
+      onNavigateToBookmark={handleNavigateToBookmark}
+      onRemoveHighlight={handleRemoveHighlight}
+      onNavigateToTocItem={handleNavigateToLocation}
+      toc={toc}
+    />
+  );
+  const rightPanel = (
+    <RightPanel
+      apiKey={settings.apiKey}
+      aiIpa={aiIpa}
+      annotationCount={visibleAnnotations.length}
+      appearance={readerPreferences}
+      aria-label="Reader tools"
+      explanation={explanation}
+      explanationError={explanationError}
+      geminiModel={settings.geminiModel}
+      llmApiUrl={settings.llmApiUrl}
+      localLlmModel={settings.localLlmModel}
+      noteDraft={noteDraft}
+      noteOpen={noteOpen}
+      onApiKeyChange={handleApiKeyChange}
+      onAppearanceChange={handleAppearanceChange}
+      onGeminiModelChange={handleGeminiModelChange}
+      onLlmApiUrlChange={handleLlmApiUrlChange}
+      onLocalLlmModelChange={handleLocalLlmModelChange}
+      onNoteDraftChange={setNoteDraft}
+      onNoteSave={handleSaveNote}
+      onTtsPause={handlePauseTts}
+      onTtsFollowPlaybackChange={handleTtsFollowPlaybackChange}
+      onTtsRateChange={handleQuickTtsRateChange}
+      onTtsResume={handleResumeTts}
+      onTtsStartPointerDown={handlePrepareStartTts}
+      onTtsStart={handleStartTts}
+      onTtsStop={handleStopTts}
+      onTtsVoiceChange={handleTtsVoiceChange}
+      onTtsVolumeChange={handleTtsVolumeChange}
+      onTranslationProviderChange={handleTranslationProviderChange}
+      readerStatus={readerStatus}
+      selectedText={selectedText}
+      translation={translation}
+      translationError={translationError}
+      translationProvider={settings.translationProvider}
+      ttsCurrentText={ttsState.currentText}
+      ttsError={ttsState.error}
+      ttsFollowPlayback={settings.ttsFollowPlayback}
+      ttsRate={settings.ttsRate}
+      ttsStartDisabled={!ttsStartReady}
+      ttsStatus={ttsState.status}
+      ttsVoice={settings.ttsVoice}
+      ttsVoices={ttsVoices}
+      ttsVolume={settings.ttsVolume}
+    />
+  );
 
   function navigateToLocation(target: string) {
     pendingTtsStartTargetRef.current = target;
@@ -1572,6 +1873,20 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     });
   }
 
+  function handleNavigateToLocation(target: string) {
+    navigateToLocation(target);
+    if (isTabletLayout) {
+      setIsContentsDrawerOpen(false);
+    }
+  }
+
+  function handleNavigateToBookmark(target: string) {
+    navigateToLocation(target);
+    if (isTabletLayout) {
+      setIsContentsDrawerOpen(false);
+    }
+  }
+
   useEffect(() => {
     if (!runtimeHandle || typeof runtimeHandle.applyPreferences !== "function") {
       appliedPreferencesRuntimeRef.current = null;
@@ -1594,17 +1909,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [readerPreferences, readerPreferencesSignature, runtimeHandle]);
 
   return (
-    <main className={`reader-layout theme-${settings.theme}`} style={readerStyle}>
-      <LeftRail
-        bookmarks={bookmarkItems}
-        currentSpineItemId={currentSpineItemId}
-        highlights={highlights}
-        notes={notes}
-        onNavigateToBookmark={navigateToLocation}
-        onRemoveHighlight={handleRemoveHighlight}
-        onNavigateToTocItem={navigateToLocation}
-        toc={toc}
-      />
+    <main className={`reader-layout theme-${settings.theme}${isTabletLayout ? " reader-layout-tablet" : ""}`} style={readerStyle}>
+      {!isTabletLayout ? leftRail : null}
       <section className="reader-center" aria-label="Reading workspace">
         <TopBar
           canToggleBookmark={Boolean(bookId && currentLocation.cfi && currentLocation.spineItemId)}
@@ -1618,34 +1924,62 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           readingMode={settings.readingMode}
           sectionPath={currentSectionPath}
           systemActions={
-            shellContext ? (
-              <div aria-label="Reader system actions" className="reader-system-actions-group" role="group">
-                <button
-                  aria-expanded={shellContext.isLibraryOpen}
-                  className="reader-shell-action-button"
-                  onClick={shellContext.onLibraryClick}
-                  type="button"
-                >
-                  Library
-                </button>
-                <button
-                  className="reader-shell-action-button"
-                  disabled={shellContext.isImporting}
-                  onClick={shellContext.onImportClick}
-                  type="button"
-                >
-                  {shellContext.isImporting ? "Importing EPUB..." : "Import EPUB"}
-                </button>
-                <button
-                  aria-expanded={shellContext.isSettingsOpen}
-                  className="reader-shell-action-button"
-                  onClick={shellContext.onSettingsClick}
-                  type="button"
-                >
-                  Settings
-                </button>
-              </div>
-            ) : null
+            <>
+              {isTabletLayout ? (
+                <div aria-label="Reader panel actions" className="reader-system-actions-group" role="group">
+                  <button
+                    aria-expanded={isContentsDrawerOpen}
+                    className="reader-shell-action-button"
+                    onClick={() => {
+                      setIsContentsDrawerOpen((current) => !current);
+                      setIsToolsDrawerOpen(false);
+                    }}
+                    type="button"
+                  >
+                    Contents
+                  </button>
+                  <button
+                    aria-expanded={isToolsDrawerOpen}
+                    className="reader-shell-action-button"
+                    onClick={() => {
+                      setIsToolsDrawerOpen((current) => !current);
+                      setIsContentsDrawerOpen(false);
+                    }}
+                    type="button"
+                  >
+                    Tools
+                  </button>
+                </div>
+              ) : null}
+              {shellContext ? (
+                <div aria-label="Reader system actions" className="reader-system-actions-group" role="group">
+                  <button
+                    aria-expanded={shellContext.isLibraryOpen}
+                    className="reader-shell-action-button"
+                    onClick={shellContext.onLibraryClick}
+                    type="button"
+                  >
+                    Library
+                  </button>
+                  <button
+                    className="reader-shell-action-button"
+                    disabled={shellContext.isImporting}
+                    onClick={shellContext.onImportClick}
+                    type="button"
+                  >
+                    {shellContext.isImporting ? "Importing EPUB..." : "Import EPUB"}
+                  </button>
+                  <button
+                    aria-expanded={shellContext.isSettingsOpen}
+                    className="reader-shell-action-button"
+                    onClick={shellContext.onSettingsClick}
+                    type="button"
+                  >
+                    Settings
+                  </button>
+                </div>
+              ) : null}
+            </>
           }
           selectionActions={
             <SelectionPopover
@@ -1703,52 +2037,39 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
               </section>
             )}
           </section>
-          <RightPanel
-            apiKey={settings.apiKey}
-            aiIpa={aiIpa}
-            annotationCount={visibleAnnotations.length}
-            appearance={readerPreferences}
-            aria-label="Reader tools"
-            explanation={explanation}
-            explanationError={explanationError}
-            geminiModel={settings.geminiModel}
-            llmApiUrl={settings.llmApiUrl}
-            localLlmModel={settings.localLlmModel}
-            noteDraft={noteDraft}
-            noteOpen={noteOpen}
-            onApiKeyChange={handleApiKeyChange}
-            onAppearanceChange={handleAppearanceChange}
-            onGeminiModelChange={handleGeminiModelChange}
-            onLlmApiUrlChange={handleLlmApiUrlChange}
-            onLocalLlmModelChange={handleLocalLlmModelChange}
-            onNoteDraftChange={setNoteDraft}
-            onNoteSave={handleSaveNote}
-            onTtsPause={handlePauseTts}
-            onTtsFollowPlaybackChange={handleTtsFollowPlaybackChange}
-            onTtsRateChange={handleQuickTtsRateChange}
-            onTtsResume={handleResumeTts}
-            onTtsStartPointerDown={handlePrepareStartTts}
-            onTtsStart={handleStartTts}
-            onTtsStop={handleStopTts}
-            onTtsVoiceChange={handleTtsVoiceChange}
-            onTtsVolumeChange={handleTtsVolumeChange}
-            onTranslationProviderChange={handleTranslationProviderChange}
-            readerStatus={readerStatus}
-            selectedText={selectedText}
-            translation={translation}
-            translationError={translationError}
-            translationProvider={settings.translationProvider}
-            ttsCurrentText={ttsState.currentText}
-            ttsError={ttsState.error}
-            ttsFollowPlayback={settings.ttsFollowPlayback}
-            ttsRate={settings.ttsRate}
-            ttsStartDisabled={!ttsStartReady}
-            ttsStatus={ttsState.status}
-            ttsVoice={settings.ttsVoice}
-            ttsVoices={ttsVoices}
-            ttsVolume={settings.ttsVolume}
-          />
+          {!isTabletLayout ? rightPanel : null}
         </div>
+        {isTabletLayout ? (
+          <ReaderDrawer
+            eyebrow="Contents"
+            label="Contents drawer"
+            onClose={() => setIsContentsDrawerOpen(false)}
+            open={isContentsDrawerOpen}
+            side="left"
+            title="Table of contents"
+          >
+            {leftRail}
+          </ReaderDrawer>
+        ) : null}
+        {isTabletLayout ? (
+          <ReaderDrawer
+            eyebrow="Tools"
+            label="Reader tools drawer"
+            onClose={() => setIsToolsDrawerOpen(false)}
+            open={isToolsDrawerOpen}
+            side="right"
+            title="Reader tools"
+          >
+            {rightPanel}
+          </ReaderDrawer>
+        ) : null}
+        {isTabletLayout && floatingSelectionTranslation ? (
+          <SelectionTranslationBubble
+            anchorRect={floatingSelectionTranslation.anchorRect}
+            selectionText={floatingSelectionTranslation.selectionText}
+            translation={floatingSelectionTranslation.translation}
+          />
+        ) : null}
       </section>
     </main>
   );

@@ -190,6 +190,68 @@ test("paginated mode keeps the prose page width stable across desktop resizes un
   expect(compactDesktop).toBeLessThan(mediumDesktop - 24);
 });
 
+test("tablet-sized viewports prioritize the reader surface and move contents and tools into drawers", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await expect(page.locator(".reader-layout > .reader-rail")).toHaveCount(0);
+  await expect(page.locator(".reader-workspace > .reader-tools")).toHaveCount(0);
+
+  await expect(page.getByRole("button", { name: /contents/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /tools/i })).toBeVisible();
+
+  const topbarHeight = await page.getByRole("banner").evaluate((node) => node.getBoundingClientRect().height);
+  const proseWidth = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().width);
+
+  expect(topbarHeight).toBeLessThanOrEqual(88);
+  expect(proseWidth).toBeGreaterThanOrEqual(720);
+
+  await page.getByRole("button", { name: /contents/i }).click();
+  const contentsDrawer = page.getByRole("dialog", { name: /contents drawer/i });
+  await expect(contentsDrawer).toBeVisible();
+  await contentsDrawer.getByRole("button", { name: /close contents/i }).click();
+  await expect(contentsDrawer).not.toBeVisible();
+
+  await page.getByRole("button", { name: /tools/i }).click();
+  await expect(page.getByRole("dialog", { name: /reader tools drawer/i })).toBeVisible();
+});
+
+test("scrolled mode restores the iframe width after resizing from tablet width back to desktop", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  const readWidths = () =>
+    page.locator(".epub-root iframe").evaluate((node) => {
+      const root = node.closest(".epub-root");
+      return {
+        iframeWidth: node.getBoundingClientRect().width,
+        rootWidth: root?.getBoundingClientRect().width ?? 0,
+      };
+    });
+
+  const initial = await readWidths();
+  expect(initial.rootWidth).toBeGreaterThanOrEqual(800);
+  expect(initial.iframeWidth).toBeGreaterThan(initial.rootWidth * 0.9);
+
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.waitForTimeout(300);
+
+  const tablet = await readWidths();
+  expect(tablet.rootWidth).toBeGreaterThan(initial.rootWidth);
+  expect(tablet.iframeWidth).toBeGreaterThan(tablet.rootWidth * 0.9);
+
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  await page.waitForTimeout(300);
+
+  const restored = await readWidths();
+  expect(restored.rootWidth).toBeGreaterThanOrEqual(initial.rootWidth - 24);
+  expect(restored.iframeWidth).toBeGreaterThan(restored.rootWidth * 0.9);
+});
+
 test("paginated mode turns pages with arrow keys when focus is in the reading surface or top bar", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/");

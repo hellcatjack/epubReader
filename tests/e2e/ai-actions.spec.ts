@@ -5,12 +5,14 @@ const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
 
 async function selectWordCountInIframe(page: Page, count: number) {
   await page.waitForFunction((nextCount) => {
-    const frame = document.querySelector<HTMLIFrameElement>(".epub-root iframe");
-    const doc = frame?.contentDocument;
-    const paragraph = doc?.querySelector("p");
-    const text = paragraph?.textContent?.trim() ?? "";
-    const words = [...text.matchAll(/[A-Za-z]+(?:['-][A-Za-z]+)*/g)];
-    return words.length >= nextCount;
+    const frames = Array.from(document.querySelectorAll<HTMLIFrameElement>(".epub-root iframe"));
+    return frames.some((frame) => {
+      const doc = frame.contentDocument;
+      const paragraph = doc?.querySelector("p");
+      const text = paragraph?.textContent?.trim() ?? "";
+      const words = [...text.matchAll(/[A-Za-z]+(?:['-][A-Za-z]+)*/g)];
+      return words.length >= nextCount;
+    });
   }, count);
 
   return await page.locator(".epub-root iframe").evaluateAll((frames, nextCount) => {
@@ -47,6 +49,17 @@ async function selectWordCountInIframe(page: Page, count: number) {
 
     return "";
   }, count);
+}
+
+async function startDragInIframe(page: Page) {
+  await page.locator(".epub-root iframe").evaluateAll((frames) => {
+    for (const frame of frames) {
+      const doc = frame.contentDocument;
+      const paragraph = doc?.querySelector("p");
+      paragraph?.dispatchEvent(new Event("mousedown", { bubbles: true }));
+      frame.contentWindow?.dispatchEvent(new Event("mousedown"));
+    }
+  });
 }
 
 test("ai actions translate explain and save a note for selected text", async ({ page }) => {
@@ -135,4 +148,135 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   await page.getByRole("textbox", { name: /note body/i }).fill("Remember this sentence");
   await page.getByRole("button", { name: /save note/i }).click();
   await expect(page.getByLabel("Saved notes")).toContainText("Remember this sentence");
+});
+
+test("tablet-sized viewports show a temporary translation bubble near the selection", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ text: "中文翻译" }],
+      }),
+    });
+  });
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: "中文解释" } }],
+      }),
+    });
+  });
+  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+    });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await selectWordCountInIframe(page, 1);
+
+  const bubble = page.getByRole("status", { name: "Selection translation" });
+  await expect(bubble).toContainText("中文翻译");
+  await page.waitForTimeout(3200);
+  await expect(bubble).not.toBeVisible();
+});
+
+test("tablet-sized viewports dismiss the previous translation bubble as soon as a new drag selection starts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ text: "中文翻译" }],
+      }),
+    });
+  });
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: "中文解释" } }],
+      }),
+    });
+  });
+  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+    });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await selectWordCountInIframe(page, 1);
+
+  const bubble = page.getByRole("status", { name: "Selection translation" });
+  await expect(bubble).toContainText("中文翻译");
+
+  await startDragInIframe(page);
+
+  await expect(bubble).toHaveCount(0);
+});
+
+test("resizing an already translated desktop selection into tablet mode surfaces it as a temporary bubble", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ text: "迁移后的翻译" }],
+      }),
+    });
+  });
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: "中文解释" } }],
+      }),
+    });
+  });
+  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+    });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await selectWordCountInIframe(page, 1);
+  await expect(page.locator(".reader-ai-surface-primary")).toContainText("迁移后的翻译");
+  await expect(page.getByRole("status", { name: "Selection translation" })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.waitForTimeout(300);
+
+  await expect(page.getByRole("status", { name: "Selection translation" })).toContainText("迁移后的翻译");
 });

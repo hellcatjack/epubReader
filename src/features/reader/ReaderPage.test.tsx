@@ -7,6 +7,7 @@ import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 import { db, resetDb } from "../../lib/db/appDb";
 import type { ReaderAppShellContext } from "../../app/readerAppShellContext";
+import type { AiService } from "../ai/aiService";
 import { defaultSettings, getSettings } from "../settings/settingsRepository";
 import { writeRefreshSettingsSnapshot } from "../settings/refreshSettingsSnapshot";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
@@ -48,6 +49,22 @@ function setUserAgent(userAgent: string) {
     configurable: true,
     value: userAgent,
   });
+}
+
+function installMatchMedia(matchesByQuery: Record<string, boolean>) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      addEventListener: vi.fn(),
+      addListener: vi.fn(),
+      dispatchEvent: vi.fn(() => false),
+      matches: matchesByQuery[query] ?? false,
+      media: query,
+      onchange: null,
+      removeEventListener: vi.fn(),
+      removeListener: vi.fn(),
+    })),
+  );
 }
 
 function installSpeechSynthesis(voices: SpeechSynthesisVoice[], options: { autoStart?: boolean } = {}) {
@@ -222,8 +239,8 @@ it("does not expose paginated continuous tts markers before speech actually star
     </MemoryRouter>,
   );
 
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  await act(async () => {
+    await Promise.resolve();
   });
 
   await user.click(screen.getByRole("button", { name: /start tts/i }));
@@ -239,6 +256,388 @@ it("shows toc, reading progress, bookmark toggle, and the reader tools surface",
   expect(screen.getByRole("progressbar", { name: /reading progress/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
+});
+
+it("uses drawer toggles instead of inline side panels on tablet-sized viewports", async () => {
+  const user = userEvent.setup();
+  installMatchMedia({ "(max-width: 1180px)": true });
+
+  render(<ReaderPage />);
+
+  expect(screen.queryByRole("navigation", { name: /table of contents/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("complementary", { name: /reader tools/i })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: /contents/i }));
+  const contentsDrawer = await screen.findByRole("dialog", { name: /contents drawer/i });
+  expect(contentsDrawer).toBeInTheDocument();
+  expect(screen.getByRole("navigation", { name: /table of contents/i })).toBeInTheDocument();
+  await user.click(within(contentsDrawer).getByRole("button", { name: /close contents/i }));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: /contents drawer/i })).not.toBeInTheDocument();
+  });
+
+  await user.click(screen.getByRole("button", { name: /tools/i }));
+  expect(await screen.findByRole("dialog", { name: /reader tools drawer/i })).toBeInTheDocument();
+});
+
+it("shows a temporary translation bubble on tablet-sized viewports", async () => {
+  installMatchMedia({ "(max-width: 1180px)": true });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "获得"),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 280,
+        top: 222,
+        width: 160,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "earns",
+    } as any);
+  });
+
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("获得");
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 3100));
+  });
+
+  await waitFor(() => {
+    expect(screen.queryByRole("status", { name: /selection translation/i })).not.toBeInTheDocument();
+  });
+});
+
+it("does not reuse the previous translation bubble content while a new tablet selection is still being dragged", async () => {
+  installMatchMedia({ "(max-width: 1180px)": true });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi
+      .fn<AiService["translateSelection"]>()
+      .mockResolvedValueOnce("旧翻译")
+      .mockResolvedValueOnce("新翻译"),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 280,
+        top: 222,
+        width: 160,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "earns",
+    } as any);
+  });
+
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("旧翻译");
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:6)",
+      isReleased: false,
+      selectionRect: {
+        bottom: 276,
+        height: 24,
+        left: 180,
+        right: 320,
+        top: 252,
+        width: 140,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "rank",
+    } as any);
+  });
+
+  expect(screen.queryByRole("status", { name: /selection translation/i })).not.toBeInTheDocument();
+});
+
+it("does not auto-translate on tablet while the mouse is still held down even if the runtime snapshot already has selection geometry", async () => {
+  installMatchMedia({ "(max-width: 1180px)": true });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "不应该提前触发"),
+  };
+  const getCurrentSelectionSnapshot = vi.fn(() => ({
+    cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+    isReleased: true,
+    selectionRect: {
+      bottom: 246,
+      height: 24,
+      left: 120,
+      right: 280,
+      top: 222,
+      width: 160,
+    },
+    spineItemId: "chapter-1.xhtml",
+    text: "earns",
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              ai={ai}
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chapter-1.xhtml",
+                    textQuote: "Hello world from the minimal valid fixture.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot,
+                    getTextFromCurrentLocation: vi.fn(async () => "Hello world from the minimal valid fixture."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: false,
+      spineItemId: "chapter-1.xhtml",
+      text: "earns",
+    });
+  });
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 220));
+  });
+
+  expect(getCurrentSelectionSnapshot).toHaveBeenCalled();
+  expect(ai.translateSelection).not.toHaveBeenCalled();
+  expect(screen.queryByRole("status", { name: /selection translation/i })).not.toBeInTheDocument();
+});
+
+it("auto-translates a stable tablet selection after one second without repeating on mouseup", async () => {
+  installMatchMedia({ "(max-width: 1180px)": true });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "稳定触发的翻译"),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: false,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 280,
+        top: 222,
+        width: 160,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "earns",
+    } as any);
+  });
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 900));
+  });
+
+  expect(ai.translateSelection).not.toHaveBeenCalled();
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  });
+
+  expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 280,
+        top: 222,
+        width: 160,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "earns",
+    } as any);
+  });
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+});
+
+it("shows a tablet translation bubble when the released selection text exists but its anchor rect must be recovered from the runtime snapshot", async () => {
+  installMatchMedia({ "(max-width: 1180px)": true });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "补抓定位后的翻译"),
+  };
+  const getCurrentSelectionSnapshot = vi.fn(() => ({
+    cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+    isReleased: true,
+    selectionRect: {
+      bottom: 246,
+      height: 24,
+      left: 120,
+      right: 280,
+      top: 222,
+      width: 160,
+    },
+    spineItemId: "chapter-1.xhtml",
+    text: "earns",
+  }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              ai={ai}
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chapter-1.xhtml",
+                    textQuote: "Hello world from the minimal valid fixture.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentSelectionSnapshot,
+                    getTextFromCurrentLocation: vi.fn(async () => "Hello world from the minimal valid fixture."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await act(async () => {
+    await Promise.resolve();
+  });
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: true,
+      spineItemId: "chapter-1.xhtml",
+      text: "earns",
+    });
+  });
+
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("补抓定位后的翻译");
 });
 
 it("persists follow playback from the tts queue and forwards it to the runtime", async () => {

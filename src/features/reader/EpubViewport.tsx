@@ -123,14 +123,14 @@ export function EpubViewport({
         initialPreferences: readerPreferences,
         onRelocated: ({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote }) => {
           void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
-          onLocationChange?.({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote });
-        },
-        onPagePresentationChange: setPageKind,
-        onSelectionChange: ({ cfiRange, isReleased, sentenceContext, spineItemId, text }) => {
-          selectionBridge.publish(text ? { cfiRange, isReleased, sentenceContext, spineItemId, text } : null);
-        },
-        onTocChange,
-      });
+        onLocationChange?.({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote });
+      },
+      onPagePresentationChange: setPageKind,
+      onSelectionChange: ({ cfiRange, isReleased, selectionRect, sentenceContext, spineItemId, text }) => {
+        selectionBridge.publish(text ? { cfiRange, isReleased, selectionRect, sentenceContext, spineItemId, text } : null);
+      },
+      onTocChange,
+    });
 
       if (cancelled) {
         handle.destroy();

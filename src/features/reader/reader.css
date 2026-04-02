@@ -599,6 +599,108 @@
   border: 1px solid rgba(79, 49, 24, 0.12);
 }
 
+.reader-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.reader-drawer-backdrop[data-side="left"] {
+  justify-content: flex-start;
+}
+
+.reader-drawer-backdrop[data-side="right"] {
+  justify-content: flex-end;
+}
+
+.reader-drawer {
+  box-sizing: border-box;
+  width: min(25rem, calc(100vw - 1rem));
+  height: 100%;
+  padding: 1rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #fbf6ee 0%, #f2e8d8 100%);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
+}
+
+.reader-drawer-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.reader-drawer-eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.reader-drawer-header h2 {
+  margin: 0;
+}
+
+.reader-drawer-body {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.reader-drawer .reader-rail,
+.reader-drawer .reader-tools {
+  height: auto;
+  min-height: 0;
+  position: static;
+  top: auto;
+  overflow: visible;
+}
+
+.reader-drawer .reader-rail {
+  grid-template-rows: auto;
+}
+
+.reader-drawer .reader-tools-scroll {
+  overflow: visible;
+}
+
+.reader-selection-translation-bubble {
+  position: fixed;
+  z-index: 48;
+  width: min(20rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(79, 49, 24, 0.14);
+  border-radius: 0.95rem;
+  background: rgba(255, 252, 248, 0.96);
+  box-shadow: 0 16px 40px rgba(41, 27, 17, 0.16);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.reader-selection-translation-text,
+.reader-selection-translation-value {
+  margin: 0;
+}
+
+.reader-selection-translation-text {
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a6647;
+}
+
+.reader-selection-translation-value {
+  margin-top: 0.28rem;
+  color: #2f2118;
+  font-size: 0.98rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 .reader-mode-button[aria-pressed="true"] {
   background: #ba6a2f;
 }
@@ -1076,4 +1178,103 @@
     min-height: min(70dvh, 38rem);
   }
 
+}
+
+@media (max-width: 1180px) {
+  .reader-layout-tablet {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+
+  .reader-layout-tablet .reader-center {
+    height: calc(100dvh - 1.5rem);
+  }
+
+  .reader-layout-tablet .reader-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.6rem 0.75rem;
+  }
+
+  .reader-layout-tablet .reader-topbar-status {
+    gap: 0.55rem;
+    width: auto;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .reader-layout-tablet .reader-topbar-actions {
+    width: auto;
+    max-width: 100%;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .reader-layout-tablet .reader-topbar-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .reader-layout-tablet .reader-topbar-actions > * {
+    flex: 0 0 auto;
+  }
+
+  .reader-layout-tablet .reader-topbar-label {
+    display: none;
+  }
+
+  .reader-layout-tablet .reader-topbar-metric {
+    gap: 0.35rem;
+  }
+
+  .reader-layout-tablet .reader-progress {
+    width: clamp(5.25rem, 13vw, 7rem);
+    height: 0.62rem;
+  }
+
+  .reader-layout-tablet .reader-progress-value {
+    font-size: 0.76rem;
+  }
+
+  .reader-layout-tablet .reader-current-section {
+    font-size: 0.84rem;
+  }
+
+  .reader-layout-tablet .reader-current-section-current {
+    max-width: min(20rem, 48vw);
+  }
+
+  .reader-layout-tablet .reader-system-actions-group,
+  .reader-layout-tablet .reader-mode-toggle,
+  .reader-layout-tablet .reader-page-controls,
+  .reader-layout-tablet .reader-system-actions {
+    flex-wrap: nowrap;
+  }
+
+  .reader-layout-tablet .reader-bookmark-button,
+  .reader-layout-tablet .reader-mode-button,
+  .reader-layout-tablet .reader-page-button,
+  .reader-layout-tablet .reader-shell-action-button,
+  .reader-layout-tablet .selection-action {
+    padding: 0.42rem 0.72rem;
+    font-size: 0.84rem;
+  }
+
+  .reader-layout-tablet .reader-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reader-layout-tablet .epub-viewport {
+    padding: 0.8rem;
+  }
+
+  .reader-layout-tablet .epub-root,
+  .reader-layout-tablet .reader-page-card {
+    min-height: min(74dvh, 42rem);
+  }
 }
