@@ -153,7 +153,7 @@ function normalizeModelName(textModel: string) {
 }
 
 function isHunyuanMtModel(textModel: string) {
-  return normalizeModelName(textModel) === "HY-MT1.5-7B-GGUF";
+  return normalizeModelName(textModel).includes("HY-MT1.5");
 }
 
 function getCompletionSamplingOptions(textModel: string, mode: SelectionTranslationMode) {
@@ -173,7 +173,7 @@ function getCompletionSamplingOptions(textModel: string, mode: SelectionTranslat
 
 function wrapCompletionPrompt(textModel: string, prompt: string) {
   if (isHunyuanMtModel(textModel)) {
-    return `<|startoftext|>${prompt}<|extra_0|>`;
+    return `<｜hy_begin▁of▁sentence｜><｜hy_User｜>${prompt}<｜hy_Assistant｜>`;
   }
 
   return prompt;

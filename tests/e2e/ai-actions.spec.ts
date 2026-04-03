@@ -287,6 +287,49 @@ test("tablet-sized viewports dismiss the previous translation bubble as soon as 
   await expect(bubble).toHaveCount(0);
 });
 
+test("clicking the translation bubble dismisses it", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ text: "中文翻译" }],
+      }),
+    });
+  });
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: "中文解释" } }],
+      }),
+    });
+  });
+  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+    });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await selectWordCountInIframe(page, 1);
+
+  const bubble = page.getByRole("status", { name: "Selection translation" });
+  await expect(bubble).toContainText("中文翻译");
+
+  await bubble.click();
+
+  await expect(bubble).toHaveCount(0);
+});
+
 test("resizing an already translated desktop multi-word selection into tablet mode keeps its translation bubble visible", async ({
   page,
 }) => {

@@ -272,8 +272,12 @@ function normalizeModelName(textModel?: string) {
   return withoutNamespace.split(":")[0]?.trim() ?? withoutNamespace;
 }
 
+function isHunyuanMtModelName(textModel?: string) {
+  return normalizeModelName(textModel).includes("HY-MT1.5");
+}
+
 function resolveTranslationPromptProfile(textModel?: string): TranslationPromptProfile {
-  return normalizeModelName(textModel) === "HY-MT1.5-7B-GGUF" ? "hunyuan_mt" : "default";
+  return isHunyuanMtModelName(textModel) ? "hunyuan_mt" : "default";
 }
 
 function buildHunyuanWordPrompt(text: string, sentenceContext: string, targetLanguage: string, strict = false) {

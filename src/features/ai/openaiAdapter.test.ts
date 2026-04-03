@@ -191,8 +191,8 @@ it("uses Hunyuan sampling parameters for HY-MT1.5-7B-GGUF translation requests",
   expect(requestBody.top_k).toBe(20);
   expect(requestBody.repetition_penalty).toBe(1.05);
   expect(requestBody.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
-  expect(requestBody.prompt.startsWith("<|startoftext|>")).toBe(true);
-  expect(requestBody.prompt.endsWith("<|extra_0|>")).toBe(true);
+  expect(requestBody.prompt.startsWith("<｜hy_begin▁of▁sentence｜><｜hy_User｜>")).toBe(true);
+  expect(requestBody.prompt.endsWith("<｜hy_Assistant｜>")).toBe(true);
 });
 
 it("keeps the default translation parameters for non-Hunyuan local models", async () => {
@@ -257,8 +257,41 @@ it("matches Hunyuan parameters for namespaced quantized model ids", async () => 
   expect(requestBody.top_p).toBe(0.6);
   expect(requestBody.top_k).toBe(20);
   expect(requestBody.repetition_penalty).toBe(1.05);
-  expect(requestBody.prompt.startsWith("<|startoftext|>")).toBe(true);
-  expect(requestBody.prompt.endsWith("<|extra_0|>")).toBe(true);
+  expect(requestBody.prompt.startsWith("<｜hy_begin▁of▁sentence｜><｜hy_User｜>")).toBe(true);
+  expect(requestBody.prompt.endsWith("<｜hy_Assistant｜>")).toBe(true);
+});
+
+it("matches Hunyuan parameters for HY-MT1.5 1.8B quantized model ids", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ text: "安置" }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    fetch: fakeFetch,
+    textModel: "tencent/HY-MT1.5-1.8B-GGUF:Q8_0",
+  });
+
+  await adapter.translateSelection("stick", {
+    sentenceContext: "Where else would you stick the oldest foster kid?",
+    targetLanguage: "zh-CN",
+  });
+
+  const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(requestBody.temperature).toBe(0.7);
+  expect(requestBody.top_p).toBe(0.6);
+  expect(requestBody.top_k).toBe(20);
+  expect(requestBody.repetition_penalty).toBe(1.05);
+  expect(requestBody.prompt.startsWith("<｜hy_begin▁of▁sentence｜><｜hy_User｜>")).toBe(true);
+  expect(requestBody.prompt.endsWith("<｜hy_Assistant｜>")).toBe(true);
 });
 
 it("uses the stricter Hunyuan word retry prompt when a single-word answer absorbs adjacent meaning", async () => {

@@ -114,6 +114,18 @@ describe("selectionTranslation", () => {
     expect(prompt.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
   });
 
+  it("matches the Hunyuan profile for HY-MT1.5 1.8B model ids", () => {
+    const prompt = buildSelectionTranslationPrompt({
+      sentenceContext: "Where else would you stick the oldest foster kid?",
+      targetLanguage: "zh-CN",
+      text: "stick",
+      textModel: "tencent/HY-MT1.5-1.8B-GGUF:Q8_0",
+    });
+
+    expect(prompt.mode).toBe("word");
+    expect(prompt.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
+  });
+
   it("adds stronger word-boundary instructions to the Hunyuan single-word prompt", () => {
     const prompt = buildSelectionTranslationPrompt({
       sentenceContext: "If he earns rank, he'll lead.",

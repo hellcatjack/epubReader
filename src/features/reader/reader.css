@@ -710,7 +710,8 @@
   background: rgba(255, 252, 248, 0.96);
   box-shadow: 0 16px 40px rgba(41, 27, 17, 0.16);
   backdrop-filter: blur(12px);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .reader-selection-translation-text,

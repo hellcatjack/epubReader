@@ -102,6 +102,7 @@ const continuousTtsChunkOptions = { firstSegmentMax: 280, segmentMax: 500 } as c
 const headingTransitionPauseMs = 350;
 const paginatedInitialMarkerFallbackMs = 700;
 const recentReleasedSelectionWindowMs = 5000;
+const selectionSpeechTranslationFallbackMs = 600;
 const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
 const ttsSentenceNoteGapPx = 18;
@@ -1191,11 +1192,46 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       return;
     }
 
+    if (isAutoSpeakableSelection(nextText)) {
+      let isActive = true;
+      let translationStarted = false;
+
+      const beginTranslation = () => {
+        if (!isActive || translationStarted) {
+          return;
+        }
+
+        const currentSelection =
+          selectionBridge.read() ?? runtimeHandleValueRef.current?.getCurrentSelectionSnapshot?.() ?? selectedSelection;
+        if (getSelectionCacheKey(currentSelection) !== selectionKey) {
+          return;
+        }
+
+        translationStarted = true;
+        lastAutoTranslatedSelectionKeyRef.current = selectionKey;
+        void requestTranslation(nextText, selectedSelection?.sentenceContext, selectedSelection);
+      };
+
+      const translationFallbackId = window.setTimeout(beginTranslation, selectionSpeechTranslationFallbackMs);
+      void startSelectionSpeech(nextText, {
+        onPlaybackError: () => {
+          window.clearTimeout(translationFallbackId);
+          beginTranslation();
+        },
+        onPlaybackStart: () => {
+          window.clearTimeout(translationFallbackId);
+          beginTranslation();
+        },
+      });
+
+      return () => {
+        isActive = false;
+        window.clearTimeout(translationFallbackId);
+      };
+    }
+
     lastAutoTranslatedSelectionKeyRef.current = selectionKey;
     void requestTranslation(nextText, selectedSelection?.sentenceContext, selectedSelection);
-    if (isAutoSpeakableSelection(nextText)) {
-      void startSelectionSpeech(nextText);
-    }
   }, [isTabletLayout, selectedSelection]);
 
   useEffect(() => {
@@ -1538,7 +1574,13 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
   }
 
-  async function startSelectionSpeech(text: string) {
+  async function startSelectionSpeech(
+    text: string,
+    options?: {
+      onPlaybackError?: () => void;
+      onPlaybackStart?: () => void;
+    },
+  ) {
     const nextText = text.trim();
     if (!nextText) {
       return;
@@ -1565,6 +1607,23 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     try {
       await browserTtsClientRef.current.speakSelection(nextText, {
+        onStart: () => {
+          if (activeSelectionSpeechRequestRef.current !== requestId) {
+            return;
+          }
+
+          options?.onPlaybackStart?.();
+          setTtsState({
+            chunkIndex: -1,
+            currentText: nextText,
+            error: "",
+            markerCfi: "",
+            markerIndex: -1,
+            markerText: "",
+            mode: "selection",
+            status: "playing",
+          });
+        },
         onEnd: () => {
           if (activeSelectionSpeechRequestRef.current !== requestId) {
             return;
@@ -1586,6 +1645,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             return;
           }
 
+          options?.onPlaybackError?.();
           setTtsState({
             chunkIndex: -1,
             currentText: nextText,
@@ -1601,25 +1661,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         voiceId: settings.ttsVoice,
         volume: settings.ttsVolume,
       });
-
-      if (activeSelectionSpeechRequestRef.current !== requestId) {
-        return;
-      }
-      setTtsState({
-        chunkIndex: -1,
-        currentText: nextText,
-        error: "",
-        markerCfi: "",
-        markerIndex: -1,
-        markerText: "",
-        mode: "selection",
-        status: "playing",
-      });
     } catch (error) {
       if (activeSelectionSpeechRequestRef.current !== requestId) {
         return;
       }
 
+      options?.onPlaybackError?.();
       setTtsState({
         chunkIndex: -1,
         currentText: nextText,
@@ -2337,7 +2384,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           </ReaderDrawer>
         ) : null}
         {floatingSelectionTranslation ? (
-          <SelectionTranslationBubble anchorRect={floatingSelectionTranslation.anchorRect} translation={floatingSelectionTranslation.translation} />
+          <SelectionTranslationBubble
+            anchorRect={floatingSelectionTranslation.anchorRect}
+            onDismiss={() => setFloatingSelectionTranslation(null)}
+            translation={floatingSelectionTranslation.translation}
+          />
         ) : null}
       </section>
     </main>

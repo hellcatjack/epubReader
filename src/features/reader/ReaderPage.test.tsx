@@ -374,6 +374,63 @@ it("also shows a translation bubble for single-word selections on tablet-sized v
   expect(bubble).toHaveTextContent("获得");
 });
 
+it("defers auto-selection translation until selection speech has actually started", async () => {
+  installMatchMedia({ "(max-width: 1180px)": false });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
+  const speech = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ], { autoStart: false });
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "迁移后的翻译"),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 360,
+        height: 120,
+        left: 120,
+        right: 540,
+        top: 240,
+        width: 420,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "If he earns rank, he'll lead.",
+    } as any);
+  });
+
+  await waitFor(() => {
+    expect((speech.speechSynthesis.speak as ReturnType<typeof vi.fn>)).toHaveBeenCalled();
+  });
+
+  expect(ai.translateSelection).not.toHaveBeenCalled();
+  expect(screen.queryByRole("status", { name: /selection translation/i })).not.toBeInTheDocument();
+
+  act(() => {
+    speech.startCurrent();
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledWith("If he earns rank, he'll lead.", {
+      sentenceContext: undefined,
+      targetLanguage: "zh-CN",
+    });
+  });
+
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("迁移后的翻译");
+});
+
 it("shows a spoken sentence translation note beside the reading text on wide screens during continuous tts", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": false });

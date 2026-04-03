@@ -24,7 +24,13 @@ afterEach(async () => {
   await resetDb();
 });
 
-function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
+function installSpeechSynthesis(
+  voices: SpeechSynthesisVoice[],
+  options: {
+    autoStart?: boolean;
+  } = {},
+) {
+  const { autoStart = true } = options;
   let currentUtterance: SpeechSynthesisUtterance | undefined;
   const speechSynthesis = {
     addEventListener: vi.fn(),
@@ -36,7 +42,9 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[]) {
     resume: vi.fn(),
     speak: vi.fn((utterance: SpeechSynthesisUtterance) => {
       currentUtterance = utterance;
-      currentUtterance.onstart?.(new Event("start") as SpeechSynthesisEvent);
+      if (autoStart) {
+        currentUtterance.onstart?.(new Event("start") as SpeechSynthesisEvent);
+      }
     }),
     speaking: false,
   } as unknown as SpeechSynthesis;
@@ -300,20 +308,20 @@ it("clears the previous reading assistant translation and ipa when a multi-word 
   expect(screen.queryByText("/prest/")).not.toBeInTheDocument();
 });
 
-it("ignores stale ipa responses after the selection changes", async () => {
+it("does not start stale ipa requests before delayed auto-translation begins", async () => {
   installEdgeDesktopUserAgent();
-  installSpeechSynthesis([
-    {
-      default: true,
-      lang: "en-US",
-      localService: false,
-      name: "Microsoft Ava Online (Natural)",
-      voiceURI: "Microsoft Ava Online (Natural)",
-    },
-  ]);
-  let resolveFirstLookup:
-    | ((value: { json: () => Promise<Array<{ phonetics: Array<{ text: string }> }>>; ok: boolean }) => void)
-    | undefined;
+  const speech = installSpeechSynthesis(
+    [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ],
+    { autoStart: false },
+  );
   let phoneticRequestCount = 0;
   const fetchSpy = vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
@@ -325,12 +333,6 @@ it("ignores stale ipa responses after the selection changes", async () => {
     }
 
     phoneticRequestCount += 1;
-    if (phoneticRequestCount === 1) {
-      return new Promise((resolve) => {
-        resolveFirstLookup = resolve;
-      });
-    }
-
     return Promise.resolve({
       json: async () => [{ phonetics: [{ text: "/sekənd/" }] }],
       ok: true,
@@ -351,19 +353,22 @@ it("ignores stale ipa responses after the selection changes", async () => {
   act(() => {
     selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:4)", isReleased: true, spineItemId: "chap-1", text: "second" });
   });
-
-  await waitFor(() => {
-    expect(phoneticRequestCount).toBe(2);
+  act(() => {
+    speech.startCurrent();
   });
 
-  resolveFirstLookup?.({
-    json: async () => [{ phonetics: [{ text: "/prest/" }] }],
-    ok: true,
+  await waitFor(() => {
+    expect(phoneticRequestCount).toBe(1);
   });
 
   expect(await screen.findByText("第二个")).toBeInTheDocument();
   expect(await screen.findByText("/sekənd/")).toBeInTheDocument();
   expect(screen.queryByText("/prest/")).not.toBeInTheDocument();
+  expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  expect(ai.translateSelection).toHaveBeenCalledWith("second", {
+    sentenceContext: undefined,
+    targetLanguage: "zh-CN",
+  });
 });
 
 it("keeps translation visible when explain fails", async () => {
