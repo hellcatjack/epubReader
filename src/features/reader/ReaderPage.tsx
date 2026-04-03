@@ -86,7 +86,6 @@ type ReaderLocationState = {
 
 type FloatingSelectionTranslation = {
   anchorRect: NonNullable<ReaderSelection["selectionRect"]>;
-  selectionText: string;
   translation: string;
 };
 
@@ -103,7 +102,6 @@ const continuousTtsChunkOptions = { firstSegmentMax: 280, segmentMax: 500 } as c
 const headingTransitionPauseMs = 350;
 const paginatedInitialMarkerFallbackMs = 700;
 const recentReleasedSelectionWindowMs = 5000;
-const selectionTranslationBubbleDurationMs = 3000;
 const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
 const ttsSentenceNoteGapPx = 18;
@@ -155,6 +153,10 @@ function useMediaQuery(query: string) {
 
 function normalizeSelectionText(text?: string | null) {
   return text?.trim() ?? "";
+}
+
+function isSingleWordSelection(text: string) {
+  return Boolean(getEligibleIpaWord(text));
 }
 
 function sliceChunksFromMarker(chunks: ChunkSegment[], chunkIndex: number, markerIndex: number) {
@@ -1033,16 +1035,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       return undefined;
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setFloatingSelectionTranslation(null);
-    }, selectionTranslationBubbleDurationMs);
-
     const dismiss = () => setFloatingSelectionTranslation(null);
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("pointerdown", dismiss, true);
 
     return () => {
-      window.clearTimeout(timeoutId);
       window.removeEventListener("scroll", dismiss, true);
       window.removeEventListener("pointerdown", dismiss, true);
     };
@@ -1054,7 +1051,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
   }, [isContentsDrawerOpen, isToolsDrawerOpen]);
 
-  function resolveSelectionForTabletBubble(selection: ReaderSelection | null | undefined, expectedText: string) {
+  function resolveSelectionForFloatingBubble(selection: ReaderSelection | null | undefined, expectedText: string) {
     const normalizedExpectedText = normalizeSelectionText(expectedText);
     if (!normalizedExpectedText) {
       return null;
@@ -1094,11 +1091,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
   useEffect(() => {
     const nextSelectionText = selectedSelection?.text.trim() ?? "";
-    const bubbleSelection = resolveSelectionForTabletBubble(selectedSelection, nextSelectionText);
+    const bubbleSelection = resolveSelectionForFloatingBubble(selectedSelection, nextSelectionText);
     const selectionRect = bubbleSelection?.selectionRect;
+    const shouldShowBubble = isTabletLayout || !isSingleWordSelection(nextSelectionText);
     if (
-      !isTabletLayout ||
       selectedSelection?.isReleased === false ||
+      !shouldShowBubble ||
       !translation.trim() ||
       !selectionRect ||
       !nextSelectionText
@@ -1110,7 +1108,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (
         current &&
         current.translation === translation &&
-        current.selectionText === normalizeSelectionText(bubbleSelection?.text) &&
         current.anchorRect.top === selectionRect.top &&
         current.anchorRect.left === selectionRect.left &&
         current.anchorRect.width === selectionRect.width &&
@@ -1121,11 +1118,21 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
       return {
         anchorRect: selectionRect,
-        selectionText: normalizeSelectionText(bubbleSelection?.text) || nextSelectionText,
         translation,
       };
     });
   }, [isTabletLayout, selectedSelection, translation]);
+
+  useEffect(() => {
+    const nextText = selectedSelection?.text.trim() ?? "";
+    if (!nextText || isSingleWordSelection(nextText)) {
+      return;
+    }
+
+    setTranslation("");
+    setTranslationError("");
+    setAiIpa("");
+  }, [selectedSelection?.cfiRange, selectedSelection?.isReleased, selectedSelection?.text]);
 
   useEffect(() => {
     const nextText = selectedSelection?.text.trim() ?? "";
@@ -1190,6 +1197,14 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       void startSelectionSpeech(nextText);
     }
   }, [isTabletLayout, selectedSelection]);
+
+  useEffect(() => {
+    if (!floatingSelectionTranslation) {
+      return;
+    }
+
+    setFloatingSelectionTranslation(null);
+  }, [currentLocation.cfi, currentLocation.pageIndex, currentLocation.pageOffset, currentLocation.scrollTop, settings.readingMode]);
 
   useEffect(() => {
     if (!bookId || !currentSpineItemId) {
@@ -1446,6 +1461,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     const requestVersion = ++aiRequestVersionRef.current;
     const requestSelectionKey = getSelectionCacheKey(selectionForBubble ?? null);
     const ipaWord = getEligibleIpaWord(nextText);
+    const singleWordSelection = isSingleWordSelection(nextText);
     setTranslationError("");
     setExplanation("");
     setExplanationError("");
@@ -1470,13 +1486,18 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           return;
         }
       }
-      setTranslation(result);
-      setAiIpa(ipa ?? "");
-      const bubbleSelection = isTabletLayout ? resolveSelectionForTabletBubble(selectionForBubble, nextText) : null;
-      if (isTabletLayout && bubbleSelection?.selectionRect) {
+      if (singleWordSelection) {
+        setTranslation(result);
+        setAiIpa(ipa ?? "");
+        if (!isTabletLayout) {
+          return;
+        }
+      }
+
+      const bubbleSelection = resolveSelectionForFloatingBubble(selectionForBubble, nextText);
+      if (bubbleSelection?.selectionRect) {
         setFloatingSelectionTranslation({
           anchorRect: bubbleSelection.selectionRect,
-          selectionText: normalizeSelectionText(bubbleSelection.text) || nextText,
           translation: result,
         });
       }
@@ -1484,7 +1505,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (aiRequestVersionRef.current !== requestVersion) {
         return;
       }
-      setTranslationError(`Translate failed: ${String(error)}`);
+      if (singleWordSelection) {
+        setTranslationError(`Translate failed: ${String(error)}`);
+      }
       setFloatingSelectionTranslation(null);
     }
   }
@@ -2313,12 +2336,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             {rightPanel}
           </ReaderDrawer>
         ) : null}
-        {isTabletLayout && floatingSelectionTranslation ? (
-          <SelectionTranslationBubble
-            anchorRect={floatingSelectionTranslation.anchorRect}
-            selectionText={floatingSelectionTranslation.selectionText}
-            translation={floatingSelectionTranslation.translation}
-          />
+        {floatingSelectionTranslation ? (
+          <SelectionTranslationBubble anchorRect={floatingSelectionTranslation.anchorRect} translation={floatingSelectionTranslation.translation} />
         ) : null}
       </section>
     </main>

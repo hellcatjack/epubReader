@@ -5,6 +5,7 @@ import { afterEach, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { db, resetDb } from "../../lib/db/appDb";
+import type { AiService } from "../ai/aiService";
 import { saveSettings } from "../settings/settingsRepository";
 import { ReaderPage } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
@@ -106,17 +107,17 @@ it("automatically translates and auto-reads a new selection while keeping explai
   act(() => {
     selectionBridge.publish({
       cfiRange: "epubcfi(/6/2!/4/1:0)",
-      sentenceContext: "She said hello world softly before leaving the room.",
+      sentenceContext: "She said hello softly before leaving the room.",
       spineItemId: "chap-1",
-      text: "Hello world",
+      text: "Hello",
     });
   });
 
   await waitFor(() => {
     expect(ai.translateSelection).toHaveBeenCalledWith(
-      "Hello world",
+      "Hello",
       expect.objectContaining({
-        sentenceContext: "She said hello world softly before leaving the room.",
+        sentenceContext: "She said hello softly before leaving the room.",
         targetLanguage: "zh-CN",
       }),
     );
@@ -130,7 +131,7 @@ it("automatically translates and auto-reads a new selection while keeping explai
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
   expect(ai.explainSelection).toHaveBeenCalledWith(
-    "Hello world",
+    "Hello",
     expect.objectContaining({ targetLanguage: "zh-CN" }),
   );
   expect(await screen.findByText("A short contextual explanation")).toBeInTheDocument();
@@ -139,7 +140,7 @@ it("automatically translates and auto-reads a new selection while keeping explai
 
   await user.click(screen.getByRole("button", { name: /add note/i }));
   expect(screen.getByRole("textbox", { name: /note body/i })).toBeInTheDocument();
-  expect(screen.getAllByText(/hello world/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/hello/i).length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: /read aloud/i })).toBeInTheDocument();
 });
 
@@ -215,15 +216,88 @@ it("does not show ipa for a multi-word selection", async () => {
     selectionBridge.publish({
       cfiRange: "epubcfi(/6/2!/4/1:0)",
       isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 280,
+        top: 222,
+        width: 160,
+      },
       spineItemId: "chap-1",
       text: "The thing",
     });
   });
 
-  expect(await screen.findByText("事情是这样的")).toBeInTheDocument();
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("事情是这样的");
+  expect(screen.getByLabelText("Translation result")).not.toHaveTextContent("事情是这样的");
   expect(screen.queryByText(/^IPA$/i)).not.toBeInTheDocument();
   const phoneticCalls = fetchSpy.mock.calls.filter(([input]) => !String(input).endsWith("/v1/models"));
   expect(phoneticCalls).toHaveLength(0);
+});
+
+it("clears the previous reading assistant translation and ipa when a multi-word selection is translated in a bubble", async () => {
+  installChromeDesktopUserAgent();
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      json: async () => [{ phonetics: [{ text: "/prest/" }] }],
+      ok: true,
+    })),
+  );
+  const ai = {
+    translateSelection: vi
+      .fn<AiService["translateSelection"]>()
+      .mockResolvedValueOnce("按压")
+      .mockResolvedValueOnce("事情是这样的"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "pressed",
+    });
+  });
+
+  expect(await screen.findByText("按压")).toBeInTheDocument();
+  expect(await screen.findByText("/prest/")).toBeInTheDocument();
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:8)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 332,
+        top: 222,
+        width: 212,
+      },
+      spineItemId: "chap-1",
+      text: "The thing",
+    });
+  });
+
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("事情是这样的");
+  expect(screen.getByLabelText("Translation result")).not.toHaveTextContent("按压");
+  expect(screen.getByLabelText("Translation result")).not.toHaveTextContent("事情是这样的");
+  expect(screen.queryByText("/prest/")).not.toBeInTheDocument();
 });
 
 it("ignores stale ipa responses after the selection changes", async () => {

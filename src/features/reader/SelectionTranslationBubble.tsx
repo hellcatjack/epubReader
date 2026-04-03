@@ -3,12 +3,11 @@ import type { ReaderSelectionRect } from "./selectionBridge";
 
 type SelectionTranslationBubbleProps = {
   anchorRect: ReaderSelectionRect;
-  selectionText: string;
   translation: string;
 };
 
 const bubbleWidth = 320;
-const bubbleHeight = 92;
+const bubbleHeight = 72;
 const viewportInset = 16;
 const bubbleOffset = 12;
 
@@ -30,7 +29,6 @@ function buildBubbleStyle(anchorRect: ReaderSelectionRect): CSSProperties {
 
 export function SelectionTranslationBubble({
   anchorRect,
-  selectionText,
   translation,
 }: SelectionTranslationBubbleProps) {
   return (
@@ -40,7 +38,6 @@ export function SelectionTranslationBubble({
       role="status"
       style={buildBubbleStyle(anchorRect)}
     >
-      <p className="reader-selection-translation-text">{selectionText}</p>
       <p className="reader-selection-translation-value">{translation}</p>
     </div>
   );

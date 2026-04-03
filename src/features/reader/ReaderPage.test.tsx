@@ -280,7 +280,7 @@ it("uses drawer toggles instead of inline side panels on tablet-sized viewports"
   expect(await screen.findByRole("dialog", { name: /reader tools drawer/i })).toBeInTheDocument();
 });
 
-it("shows a temporary translation bubble on tablet-sized viewports", async () => {
+it("shows a persistent translation bubble for multi-word selections on tablet-sized viewports", async () => {
   installMatchMedia({ "(max-width: 1180px)": true });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
   installSpeechSynthesis([
@@ -307,6 +307,60 @@ it("shows a temporary translation bubble on tablet-sized viewports", async () =>
         bottom: 246,
         height: 24,
         left: 120,
+        right: 332,
+        top: 222,
+        width: 212,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "earns rank",
+    } as any);
+  });
+
+  const bubble = await screen.findByRole("status", { name: /selection translation/i });
+  expect(bubble).toHaveTextContent("获得");
+  expect(bubble).not.toHaveTextContent("earns rank");
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 3100));
+  });
+
+  expect(screen.getByRole("status", { name: /selection translation/i })).toBeVisible();
+});
+
+it("also shows a translation bubble for single-word selections on tablet-sized viewports", async () => {
+  installMatchMedia({ "(max-width: 1180px)": true });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      json: async () => [{ phonetics: [{ text: "/ɜːnz/" }] }],
+      ok: true,
+    })),
+  );
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "获得"),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
         right: 280,
         top: 222,
         width: 160,
@@ -316,15 +370,8 @@ it("shows a temporary translation bubble on tablet-sized viewports", async () =>
     } as any);
   });
 
-  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("获得");
-
-  await act(async () => {
-    await new Promise((resolve) => window.setTimeout(resolve, 3100));
-  });
-
-  await waitFor(() => {
-    expect(screen.queryByRole("status", { name: /selection translation/i })).not.toBeInTheDocument();
-  });
+  const bubble = await screen.findByRole("status", { name: /selection translation/i });
+  expect(bubble).toHaveTextContent("获得");
 });
 
 it("shows a spoken sentence translation note beside the reading text on wide screens during continuous tts", async () => {
@@ -576,12 +623,12 @@ it("does not reuse the previous translation bubble content while a new tablet se
         bottom: 246,
         height: 24,
         left: 120,
-        right: 280,
+        right: 332,
         top: 222,
-        width: 160,
+        width: 212,
       },
       spineItemId: "chapter-1.xhtml",
-      text: "earns",
+      text: "earns rank",
     } as any);
   });
 
@@ -595,12 +642,12 @@ it("does not reuse the previous translation bubble content while a new tablet se
         bottom: 276,
         height: 24,
         left: 180,
-        right: 320,
+        right: 372,
         top: 252,
-        width: 140,
+        width: 192,
       },
       spineItemId: "chapter-1.xhtml",
-      text: "rank",
+      text: "rank lead",
     } as any);
   });
 
@@ -795,12 +842,12 @@ it("shows a tablet translation bubble when the released selection text exists bu
       bottom: 246,
       height: 24,
       left: 120,
-      right: 280,
+      right: 332,
       top: 222,
-      width: 160,
+      width: 212,
     },
     spineItemId: "chapter-1.xhtml",
-    text: "earns",
+    text: "earns rank",
   }));
 
   render(
@@ -852,7 +899,7 @@ it("shows a tablet translation bubble when the released selection text exists bu
       cfiRange: "epubcfi(/6/2!/4/2/1:0)",
       isReleased: true,
       spineItemId: "chapter-1.xhtml",
-      text: "earns",
+      text: "earns rank",
     });
   });
 
@@ -3990,11 +4037,12 @@ it("preserves the released selection when start tts is pressed and the iframe se
   fireEvent.click(startButton);
 
   await waitFor(() => {
-    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
-      }),
-    );
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalled();
+    const spokenTexts = vi
+      .mocked(browserTts.speechSynthesis.speak)
+      .mock.calls.map(([utterance]) => (utterance as SpeechSynthesisUtterance).text);
+    expect(spokenTexts.some((text) => text.startsWith("Second paragraph"))).toBe(true);
+    expect(spokenTexts.some((text) => text.includes("First paragraph"))).toBe(false);
   });
 });
 

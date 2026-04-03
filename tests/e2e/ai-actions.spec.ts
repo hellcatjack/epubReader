@@ -132,14 +132,19 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   expect(selectedPhrase.split(/\s+/).length).toBe(2);
   await expect(aiMeta).toContainText(selectedPhrase);
   await expect(aiMeta).not.toContainText("/ipa/");
+  await expect(translationSurface).not.toContainText("中文翻译");
+  const desktopBubble = page.getByRole("status", { name: "Selection translation" });
+  await expect(desktopBubble).toContainText("中文翻译");
+  await expect(desktopBubble).not.toContainText(selectedPhrase);
 
   const selected = await selectTextInIframe(page);
   expect(selected.length).toBeGreaterThan(0);
 
-  await expect(translationSurface).toContainText("中文翻译");
+  await expect(translationSurface).not.toContainText("中文翻译");
+  await expect(desktopBubble).toContainText("中文翻译");
 
   await page.getByRole("button", { name: "Explain" }).click();
-  await expect(translationSurface).toContainText("中文翻译");
+  await expect(translationSurface).not.toContainText("中文翻译");
   await expect(explanationSurface).toContainText("中文解释");
   await expect(explanationSurface).toContainText("English explanation");
   await expect(explanationSurface).not.toContainText("Click Explain for deeper context.");
@@ -153,7 +158,7 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   await expect(page.getByLabel("Saved notes")).toContainText("Remember this sentence");
 });
 
-test("tablet-sized viewports show a temporary translation bubble near the selection", async ({ page }) => {
+test("tablet-sized viewports show a persistent translation bubble for multi-word selections", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 1366 });
 
   await page.route("http://localhost:8001/v1/completions", async (route) => {
@@ -186,12 +191,55 @@ test("tablet-sized viewports show a temporary translation bubble near the select
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
-  await selectWordCountInIframe(page, 1);
+  const selectedPhrase = await selectWordCountInIframe(page, 2);
+  expect(selectedPhrase.split(/\s+/).length).toBe(2);
 
   const bubble = page.getByRole("status", { name: "Selection translation" });
   await expect(bubble).toContainText("中文翻译");
+  await expect(bubble).not.toContainText(selectedPhrase);
   await page.waitForTimeout(3200);
-  await expect(bubble).not.toBeVisible();
+  await expect(bubble).toBeVisible();
+});
+
+test("tablet-sized viewports also show a translation bubble for single-word selections", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ text: "中文翻译" }],
+      }),
+    });
+  });
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: "中文解释" } }],
+      }),
+    });
+  });
+  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+    });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  const selectedWord = await selectWordCountInIframe(page, 1);
+  expect(selectedWord.length).toBeGreaterThan(0);
+
+  const bubble = page.getByRole("status", { name: "Selection translation" });
+  await expect(bubble).toContainText("中文翻译");
+  await expect(bubble).not.toContainText(selectedWord);
 });
 
 test("tablet-sized viewports dismiss the previous translation bubble as soon as a new drag selection starts", async ({
@@ -229,7 +277,7 @@ test("tablet-sized viewports dismiss the previous translation bubble as soon as 
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
-  await selectWordCountInIframe(page, 1);
+  await selectWordCountInIframe(page, 2);
 
   const bubble = page.getByRole("status", { name: "Selection translation" });
   await expect(bubble).toContainText("中文翻译");
@@ -239,7 +287,7 @@ test("tablet-sized viewports dismiss the previous translation bubble as soon as 
   await expect(bubble).toHaveCount(0);
 });
 
-test("resizing an already translated desktop selection into tablet mode surfaces it as a temporary bubble", async ({
+test("resizing an already translated desktop multi-word selection into tablet mode keeps its translation bubble visible", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1200 });
@@ -274,9 +322,10 @@ test("resizing an already translated desktop selection into tablet mode surfaces
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
-  await selectWordCountInIframe(page, 1);
-  await expect(page.locator(".reader-ai-surface-primary")).toContainText("迁移后的翻译");
-  await expect(page.getByRole("status", { name: "Selection translation" })).toHaveCount(0);
+  const selectedPhrase = await selectWordCountInIframe(page, 2);
+  expect(selectedPhrase.split(/\s+/).length).toBe(2);
+  await expect(page.locator(".reader-ai-surface-primary")).not.toContainText("迁移后的翻译");
+  await expect(page.getByRole("status", { name: "Selection translation" })).toContainText("迁移后的翻译");
 
   await page.setViewportSize({ width: 1024, height: 1366 });
   await page.waitForTimeout(300);
