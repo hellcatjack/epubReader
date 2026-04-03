@@ -26,6 +26,7 @@ it("renders a page background color input and emits updates", () => {
         paragraphSpacing: 0.85,
         readingMode: "scrolled",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }}
     />,
   );
@@ -36,6 +37,38 @@ it("renders a page background color input and emits updates", () => {
   fireEvent.change(input, { target: { value: "#c0ffee" } });
 
   expect(onChange).toHaveBeenCalledWith({ contentBackgroundColor: "#c0ffee" });
+});
+
+it("renders a now reading text size input and emits updates", () => {
+  const onChange = vi.fn();
+
+  render(
+    <AppearancePanel
+      onChange={onChange}
+      preferences={{
+        columnCount: 1,
+        contentPadding: 32,
+        contentBackgroundColor: "#f6edde",
+        fontFamily: "book",
+        fontScale: 1,
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "scrolled",
+        theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
+      }}
+    />,
+  );
+
+  const input = screen.getByLabelText(/now reading text size/i);
+  expect(input).toHaveValue(1);
+
+  fireEvent.change(input, { target: { value: "1.3" } });
+
+  expect(onChange).toHaveBeenCalledWith({ ttsSentenceTranslationFontScale: 1.3 });
 });
 
 it("renders an llm api url input and emits direct updates", () => {
@@ -74,6 +107,7 @@ it("renders an llm api url input and emits direct updates", () => {
         paragraphSpacing: 0.85,
         readingMode: "scrolled",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }}
     />,
   );
@@ -112,6 +146,7 @@ it("switches to gemini byok controls inside the appearance panel", () => {
         paragraphSpacing: 0.85,
         readingMode: "scrolled",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }}
       translationProvider="gemini_byok"
     />,

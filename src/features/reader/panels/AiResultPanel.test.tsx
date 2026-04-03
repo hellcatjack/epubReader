@@ -29,6 +29,22 @@ describe("AiResultPanel", () => {
     expect(screen.getByText(/English explanation:/)).toBeInTheDocument();
   });
 
+  it("keeps the ipa label and value grouped in the left-aligned meta column", () => {
+    render(
+      <AiResultPanel
+        {...({
+          ipa: "/prest/",
+          selectedText: "pressed",
+          translation: "按压",
+        } as Record<string, unknown>)}
+      />,
+    );
+
+    const ipaRow = screen.getByText("IPA").closest(".reader-ai-meta-row");
+    expect(ipaRow?.querySelector(".reader-ai-meta-main")).not.toBeNull();
+    expect(ipaRow?.querySelector(".reader-ai-meta-main")?.textContent).toContain("/prest/");
+  });
+
   it("omits the ipa row for non-single-word translation results", () => {
     render(
       <AiResultPanel

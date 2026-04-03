@@ -26,8 +26,7 @@
 }
 
 .reader-layout.theme-dark .reader-panel,
-.reader-layout.theme-dark .reader-topbar,
-.reader-layout.theme-dark .epub-viewport {
+.reader-layout.theme-dark .reader-topbar {
   color: #f2e6d6;
   background-color: rgba(48, 33, 26, 0.92);
 }
@@ -761,7 +760,7 @@
 
 .reader-tts-sentence-note-text {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: calc(0.95rem * var(--reader-tts-sentence-note-text-scale, 1));
   line-height: 1.45;
   color: #2f2118;
 }
@@ -790,15 +789,7 @@
   padding: 1.5rem;
   border-radius: 1.4rem;
   border: 1px solid rgba(79, 49, 24, 0.1);
-  background:
-    linear-gradient(180deg, rgba(246, 236, 219, 0.82), rgba(255, 249, 239, 0.95)),
-    repeating-linear-gradient(
-      90deg,
-      rgba(121, 82, 43, 0.035) 0,
-      rgba(121, 82, 43, 0.035) 0.35rem,
-      transparent 0.35rem,
-      transparent 1.15rem
-    );
+  background: var(--reader-page-background, #fffdf9);
 }
 
 .epub-viewport {
@@ -809,15 +800,7 @@
   padding: 1rem;
   border-radius: 1.4rem;
   border: 1px solid rgba(79, 49, 24, 0.1);
-  background:
-    linear-gradient(180deg, rgba(246, 236, 219, 0.82), rgba(255, 249, 239, 0.95)),
-    repeating-linear-gradient(
-      90deg,
-      rgba(121, 82, 43, 0.035) 0,
-      rgba(121, 82, 43, 0.035) 0.35rem,
-      transparent 0.35rem,
-      transparent 1.15rem
-    );
+  background: var(--reader-page-background, #fffdf9);
 }
 
 .epub-root {

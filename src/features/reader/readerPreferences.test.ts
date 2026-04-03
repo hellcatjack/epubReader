@@ -22,6 +22,7 @@ describe("readerPreferences", () => {
         paragraphSpacing: 1.1,
         readingMode: "paginated",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }),
     ).toMatchObject({
       body: {
@@ -84,6 +85,7 @@ describe("readerPreferences", () => {
         paragraphSpacing: 1.1,
         readingMode: "paginated",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }).body,
     ).not.toHaveProperty("column-count");
   });
@@ -103,6 +105,7 @@ describe("readerPreferences", () => {
         paragraphSpacing: 1.1,
         readingMode: "paginated",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }).columnCount,
     ).toBe(1);
   });
@@ -122,6 +125,7 @@ describe("readerPreferences", () => {
         paragraphSpacing: 0.85,
         readingMode: "scrolled",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }).body["max-width"],
     ).toBe("960px");
 
@@ -139,6 +143,7 @@ describe("readerPreferences", () => {
         paragraphSpacing: 0.85,
         readingMode: "paginated",
         theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
       }).body["max-width"],
     ).toBe("760px");
   });

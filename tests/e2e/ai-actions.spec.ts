@@ -122,6 +122,9 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   await expect(aiMeta).toContainText(selectedWord);
   await expect(aiMeta).toContainText("IPA");
   await expect(aiMeta).toContainText("/ipa/");
+  const ipaLabelBox = await aiMeta.locator(".reader-ai-meta-row").nth(1).locator(".reader-ai-label").boundingBox();
+  const ipaValueBox = await aiMeta.locator(".reader-ai-meta-row").nth(1).locator(".reader-ai-value").boundingBox();
+  expect(Math.abs((ipaValueBox?.x ?? 0) - (ipaLabelBox?.x ?? 0))).toBeLessThanOrEqual(8);
   await expect(translationSurface).toContainText("中文翻译");
   await expect(explanationSurface).toContainText("Click Explain for deeper context.");
 

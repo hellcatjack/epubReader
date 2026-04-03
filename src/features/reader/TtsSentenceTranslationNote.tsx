@@ -1,4 +1,5 @@
 type TtsSentenceTranslationNoteProps = {
+  fontScale?: number;
   label?: string;
   left: number;
   width?: number;
@@ -7,6 +8,7 @@ type TtsSentenceTranslationNoteProps = {
 };
 
 export function TtsSentenceTranslationNote({
+  fontScale = 1,
   label = "Now reading",
   left,
   width,
@@ -19,10 +21,11 @@ export function TtsSentenceTranslationNote({
       className="reader-tts-sentence-note"
       role="status"
       style={{
+        "--reader-tts-sentence-note-text-scale": String(fontScale),
         insetInlineStart: `${left}px`,
         top: `${top}px`,
         ...(typeof width === "number" ? { width: `${width}px` } : {}),
-      }}
+      } as React.CSSProperties}
     >
       <span className="reader-tts-sentence-note-label">{label}</span>
       <p className="reader-tts-sentence-note-text">{translation}</p>

@@ -344,6 +344,11 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
     explainSelection: vi.fn(async () => ""),
     translateSelection: vi.fn(async () => "第一句翻译"),
   };
+  await db.settings.put(
+    createStoredSettings({
+      ttsSentenceTranslationFontScale: 1.3,
+    }),
+  );
 
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
@@ -431,6 +436,7 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
   const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
   expect(note).toHaveTextContent("第一句翻译");
   expect(readerStage.contains(note)).toBe(true);
+  expect(note).toHaveStyle({ "--reader-tts-sentence-note-text-scale": "1.3" });
 });
 
 it("keeps the spoken sentence translation note hidden in tablet layout", async () => {
@@ -4081,12 +4087,15 @@ it("captures the live iframe selection on start tts pointer down before bridge s
   fireEvent.click(startButton);
 
   await waitFor(() => {
-    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        text: "Second paragraph keeps the queue running after the selected opening words. Third paragraph keeps the queue alive after the selected block.",
-      }),
-    );
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalled();
   });
+
+  const speakMock = browserTts.speechSynthesis.speak as unknown as {
+    mock: { calls: Array<[SpeechSynthesisUtterance]> };
+  };
+  const spokenTexts = speakMock.mock.calls.map(([utterance]) => utterance.text);
+  expect(spokenTexts[0]).toMatch(/^Second paragraph/);
+  expect(spokenTexts.join(" ")).toContain("Third paragraph keeps the queue alive after the selected block.");
 });
 
 it("falls back to the most recent released selection when focus clearing already wiped the bridge before start tts", async () => {

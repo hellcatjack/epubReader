@@ -14,6 +14,7 @@ export type ReaderPreferences = Pick<
   | "paragraphSpacing"
   | "readingMode"
   | "theme"
+  | "ttsSentenceTranslationFontScale"
 >;
 
 export const defaultReaderPreferences: ReaderPreferences = {
@@ -29,6 +30,7 @@ export const defaultReaderPreferences: ReaderPreferences = {
   paragraphSpacing: 0.85,
   readingMode: "scrolled",
   theme: "sepia",
+  ttsSentenceTranslationFontScale: 1,
 };
 
 const SCROLLED_MODE_WIDTH_BOOST = 200;

@@ -2,6 +2,7 @@ import type { SettingsInput } from "../../lib/types/settings";
 import { defaultSettings } from "./settingsRepository";
 
 const refreshSettingsSnapshotKey = "reader-refresh-settings";
+export const settingsUpdatedEventName = "reader:settings-updated";
 
 type RefreshSettingsSnapshot = {
   settings: SettingsInput;
@@ -62,6 +63,20 @@ export function writeRefreshSettingsSnapshot(settings: SettingsInput, updatedAt 
   } catch {
     // Ignore sessionStorage write failures and fall back to IndexedDB persistence.
   }
+}
+
+export function dispatchSettingsUpdated(settings: SettingsInput) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(settingsUpdatedEventName, {
+      detail: {
+        settings,
+      },
+    }),
+  );
 }
 
 export function resolvePreferredSettingsSnapshot(

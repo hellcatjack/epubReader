@@ -120,6 +120,130 @@ test("wide-screen continuous tts shows a spoken sentence translation note beside
   );
 });
 
+test("wide-screen continuous tts applies the configured now reading text size only to the Chinese note body", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    let activeStartTimer: number | undefined;
+    let activeBoundaryTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeStartTimer) {
+          clearTimeout(activeStartTimer);
+          activeStartTimer = undefined;
+        }
+        if (activeBoundaryTimer) {
+          clearTimeout(activeBoundaryTimer);
+          activeBoundaryTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        activeStartTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+          activeBoundaryTimer = window.setTimeout(() => {
+            utterance.onboundary?.(new Event("boundary") as Event & { charIndex: number });
+          }, 180);
+        }, 120);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+  });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        choices: [{ text: "当前句翻译" }],
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
+  await page.setViewportSize({ width: 2200, height: 1400 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  await page.getByRole("button", { name: /settings/i }).click();
+  await page.getByRole("button", { name: /advanced typography/i }).click();
+  await page.getByRole("region", { name: /reader settings/i }).getByLabel("Now reading text size").fill("1.6");
+  await page.getByRole("button", { name: /save settings/i }).click();
+  await expect(page.getByText(/settings saved\./i)).toBeVisible();
+  await page.getByRole("button", { name: /close settings/i }).click();
+  await expect(page.getByRole("region", { name: /reader settings panel/i })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  const note = page.getByRole("status", { name: /spoken sentence translation/i });
+  await expect(note).toBeVisible();
+
+  const labelFontSize = await note.locator(".reader-tts-sentence-note-label").evaluate((element) =>
+    Number.parseFloat(window.getComputedStyle(element).fontSize),
+  );
+  const textFontSize = await note.locator(".reader-tts-sentence-note-text").evaluate((element) =>
+    Number.parseFloat(window.getComputedStyle(element).fontSize),
+  );
+
+  expect(labelFontSize).toBeCloseTo(11.52, 1);
+  expect(textFontSize).toBeGreaterThan(23);
+});
+
 test("tablet-width continuous tts keeps the spoken sentence translation note disabled", async ({ page }) => {
   await page.addInitScript(() => {
     let activeStartTimer: number | undefined;

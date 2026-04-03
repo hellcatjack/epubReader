@@ -9,6 +9,7 @@ import { annotationService } from "../annotations/annotationService";
 import { getProgress, saveProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
 import {
+  settingsUpdatedEventName,
   readRefreshSettingsSnapshot,
   resolvePreferredSettingsSnapshot,
   writeRefreshSettingsSnapshot,
@@ -694,6 +695,24 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleSettingsUpdated(event: Event) {
+      const nextSettings = (event as CustomEvent<{ settings?: SettingsInput }>).detail?.settings;
+      if (!nextSettings) {
+        return;
+      }
+
+      settingsRef.current = nextSettings;
+      setSettings(nextSettings);
+      setIsSettingsReady(true);
+    }
+
+    window.addEventListener(settingsUpdatedEventName, handleSettingsUpdated);
+    return () => {
+      window.removeEventListener(settingsUpdatedEventName, handleSettingsUpdated);
     };
   }, []);
 
@@ -2260,6 +2279,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             )}
             {!isTabletLayout && ttsSentenceTranslationNote ? (
               <TtsSentenceTranslationNote
+                fontScale={settings.ttsSentenceTranslationFontScale}
                 left={ttsSentenceTranslationNote.left}
                 top={ttsSentenceTranslationNote.top}
                 translation={ttsSentenceTranslationNote.translation}

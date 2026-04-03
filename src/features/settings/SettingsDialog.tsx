@@ -4,6 +4,7 @@ import type { ReaderFontFamily, ReadingMode, SettingsInput, ThemeName, Translati
 import { geminiModelOptions, translationProviderOptions } from "../ai/providerOptions";
 import { useLocalLlmModels } from "../ai/useLocalLlmModels";
 import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
+import { dispatchSettingsUpdated, writeRefreshSettingsSnapshot } from "./refreshSettingsSnapshot";
 import { resetLocalAppState } from "./resetLocalAppState";
 import { defaultSettings, getResolvedSettings, saveSettings } from "./settingsRepository";
 import "./settings.css";
@@ -29,6 +30,9 @@ export function SettingsDialog() {
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
   const [fontScaleInput, setFontScaleInput] = useState(String(defaultSettings.fontScale));
   const [lineHeightInput, setLineHeightInput] = useState(String(defaultSettings.lineHeight));
+  const [ttsSentenceTranslationFontScaleInput, setTtsSentenceTranslationFontScaleInput] = useState(
+    String(defaultSettings.ttsSentenceTranslationFontScale),
+  );
   const [letterSpacingInput, setLetterSpacingInput] = useState(String(defaultSettings.letterSpacing));
   const [paragraphSpacingInput, setParagraphSpacingInput] = useState(String(defaultSettings.paragraphSpacing));
   const [paragraphIndentInput, setParagraphIndentInput] = useState(String(defaultSettings.paragraphIndent));
@@ -76,6 +80,7 @@ export function SettingsDialog() {
       setSettings({ ...resolvedSettings, ttsVoice: resolvedVoice });
       setFontScaleInput(String(nextSettings.fontScale));
       setLineHeightInput(String(nextSettings.lineHeight));
+      setTtsSentenceTranslationFontScaleInput(String(nextSettings.ttsSentenceTranslationFontScale));
       setLetterSpacingInput(String(nextSettings.letterSpacing));
       setParagraphSpacingInput(String(nextSettings.paragraphSpacing));
       setParagraphIndentInput(String(nextSettings.paragraphIndent));
@@ -94,6 +99,10 @@ export function SettingsDialog() {
   async function handleSave() {
     const nextFontScale = parseNumberInput(fontScaleInput, defaultSettings.fontScale);
     const nextLineHeight = parseNumberInput(lineHeightInput, defaultSettings.lineHeight);
+    const nextTtsSentenceTranslationFontScale = parseNumberInput(
+      ttsSentenceTranslationFontScaleInput,
+      defaultSettings.ttsSentenceTranslationFontScale,
+    );
     const nextLetterSpacing = parseNumberInput(letterSpacingInput, defaultSettings.letterSpacing);
     const nextParagraphSpacing = parseNumberInput(paragraphSpacingInput, defaultSettings.paragraphSpacing);
     const nextParagraphIndent = parseNumberInput(paragraphIndentInput, defaultSettings.paragraphIndent);
@@ -105,6 +114,7 @@ export function SettingsDialog() {
       ...settings,
       fontScale: nextFontScale,
       lineHeight: nextLineHeight,
+      ttsSentenceTranslationFontScale: nextTtsSentenceTranslationFontScale,
       letterSpacing: nextLetterSpacing,
       paragraphSpacing: nextParagraphSpacing,
       paragraphIndent: nextParagraphIndent,
@@ -115,9 +125,12 @@ export function SettingsDialog() {
     };
 
     await saveSettings(nextSettings);
+    writeRefreshSettingsSnapshot(nextSettings);
+    dispatchSettingsUpdated(nextSettings);
     setSettings(nextSettings);
     setFontScaleInput(String(nextFontScale));
     setLineHeightInput(String(nextLineHeight));
+    setTtsSentenceTranslationFontScaleInput(String(nextTtsSentenceTranslationFontScale));
     setLetterSpacingInput(String(nextLetterSpacing));
     setParagraphSpacingInput(String(nextParagraphSpacing));
     setParagraphIndentInput(String(nextParagraphIndent));
@@ -414,6 +427,19 @@ export function SettingsDialog() {
                     step="0.1"
                     type="number"
                     value={lineHeightInput}
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>Now reading text size</span>
+                  <input
+                    aria-label="Now reading text size"
+                    inputMode="decimal"
+                    max="1.6"
+                    min="0.85"
+                    onChange={(event) => setTtsSentenceTranslationFontScaleInput(event.target.value)}
+                    step="0.05"
+                    type="number"
+                    value={ttsSentenceTranslationFontScaleInput}
                   />
                 </label>
                 <label className="settings-field">

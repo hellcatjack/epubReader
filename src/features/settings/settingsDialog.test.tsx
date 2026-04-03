@@ -83,6 +83,7 @@ it("includes a configurable llm api url in default settings", () => {
     geminiModel: "gemini-2.5-flash",
     llmApiUrl: "http://localhost:8001/v1/chat/completions",
     localLlmModel: "",
+    ttsSentenceTranslationFontScale: 1,
     ttsFollowPlayback: false,
     ttsRate: 1,
     ttsVoice: "",
@@ -142,6 +143,7 @@ it("persists browser tts settings and local llm provider configuration", async (
   const columnCount = screen.getByLabelText(/column count/i);
   const fontFamily = screen.getByLabelText(/font family/i);
   const pageBackground = screen.getByLabelText(/page background/i);
+  const ttsNoteSize = screen.getByLabelText(/now reading text size/i);
 
   await user.selectOptions(targetLanguage, "zh-CN");
   await user.selectOptions(translationProvider, "local_llm");
@@ -161,6 +163,8 @@ it("persists browser tts settings and local llm provider configuration", async (
   await user.type(contentPadding, "40");
   await user.clear(maxLineWidth);
   await user.type(maxLineWidth, "780");
+  await user.clear(ttsNoteSize);
+  await user.type(ttsNoteSize, "1.35");
   fireEvent.change(pageBackground, { target: { value: "#c0ffee" } });
   await user.selectOptions(columnCount, "2");
   await user.selectOptions(fontFamily, "book");
@@ -194,6 +198,7 @@ it("persists browser tts settings and local llm provider configuration", async (
     maxLineWidth: 780,
     columnCount: 1,
     fontFamily: "book",
+    ttsSentenceTranslationFontScale: 1.35,
     ttsRate: 1.15,
     ttsFollowPlayback: true,
     ttsVoice: "Microsoft Andrew Online (Natural)",
@@ -235,12 +240,14 @@ it("shows common settings first and reveals advanced typography on demand", asyn
   expect(await screen.findByLabelText(/target language/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/tts voice/i)).toBeInTheDocument();
   expect(screen.queryByLabelText(/paragraph spacing/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/now reading text size/i)).not.toBeInTheDocument();
 
   await userEvent.setup().click(screen.getByRole("button", { name: /advanced typography/i }));
 
   expect(await screen.findByLabelText(/paragraph spacing/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/page background/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/max line width/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/now reading text size/i)).toBeInTheDocument();
 });
 
 it("shows local troubleshooting details and lets the user reset local app data", async () => {

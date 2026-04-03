@@ -102,6 +102,18 @@ export function AppearancePanel({
           />
         </label>
         <label className="appearance-field">
+          <span>Now reading text size</span>
+          <input
+            aria-label="Now reading text size"
+            max="1.6"
+            min="0.85"
+            onChange={(event) => parseNumericPatch(event.target.value, onChange, "ttsSentenceTranslationFontScale")}
+            step="0.05"
+            type="number"
+            value={preferences.ttsSentenceTranslationFontScale}
+          />
+        </label>
+        <label className="appearance-field">
           <span>Letter spacing</span>
           <input
             aria-label="Letter spacing"

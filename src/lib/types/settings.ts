@@ -14,6 +14,7 @@ export type SettingsRecord = {
   theme: ThemeName;
   ttsRate: number;
   ttsFollowPlayback: boolean;
+  ttsSentenceTranslationFontScale: number;
   ttsVoice: string;
   ttsVolume: number;
   fontScale: number;

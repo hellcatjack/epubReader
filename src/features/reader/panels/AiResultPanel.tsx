@@ -44,8 +44,10 @@ export function AiResultPanel({
           ) : null}
           {ipa ? (
             <div className="reader-ai-meta-row">
-              <span className="reader-ai-label">IPA</span>
-              <span className="reader-ai-value">{ipa}</span>
+              <div className="reader-ai-meta-main">
+                <span className="reader-ai-label">IPA</span>
+                <span className="reader-ai-value">{ipa}</span>
+              </div>
             </div>
           ) : null}
         </div>
