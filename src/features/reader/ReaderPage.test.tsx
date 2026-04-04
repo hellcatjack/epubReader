@@ -11,7 +11,7 @@ import type { AiService } from "../ai/aiService";
 import { defaultSettings, getSettings } from "../settings/settingsRepository";
 import { writeRefreshSettingsSnapshot } from "../settings/refreshSettingsSnapshot";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
-import { ReaderPage, resolveTtsSentenceNotePlacement } from "./ReaderPage";
+import { ReaderPage, isIpadTouchSelectionBrowser, resolveTtsSentenceNotePlacement } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
 
 const getProgressMock = vi.fn().mockResolvedValue(null);
@@ -140,6 +140,55 @@ function createSettingsInput(overrides: Partial<typeof defaultSettings> = {}) {
     ...overrides,
   };
 }
+
+it("detects iPad Safari, Chrome, and Edge for touch-selection translation fallback", () => {
+  expect(
+    isIpadTouchSelectionBrowser({
+      maxTouchPoints: 5,
+      platform: "iPad",
+      userAgent:
+        "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+    }),
+  ).toBe(true);
+
+  expect(
+    isIpadTouchSelectionBrowser({
+      maxTouchPoints: 5,
+      platform: "iPad",
+      userAgent:
+        "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0.0.0 Mobile/15E148 Safari/604.1",
+    }),
+  ).toBe(true);
+
+  expect(
+    isIpadTouchSelectionBrowser({
+      maxTouchPoints: 5,
+      platform: "iPad",
+      userAgent:
+        "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/124.0.2478.67 Mobile/15E148 Safari/604.1",
+    }),
+  ).toBe(true);
+});
+
+it("does not enable the iPad-specific touch-selection fallback for non-iPad browsers", () => {
+  expect(
+    isIpadTouchSelectionBrowser({
+      maxTouchPoints: 5,
+      platform: "Linux armv81",
+      userAgent:
+        "Mozilla/5.0 (Linux; Android 14; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    }),
+  ).toBe(false);
+
+  expect(
+    isIpadTouchSelectionBrowser({
+      maxTouchPoints: 0,
+      platform: "MacIntel",
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    }),
+  ).toBe(false);
+});
 
 it("does not expose paginated continuous tts markers before speech actually starts", async () => {
   const user = userEvent.setup();

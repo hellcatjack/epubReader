@@ -101,6 +101,7 @@ async function requestChatText(
   textModel: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
+  extraBody?: Record<string, number>,
 ) {
   const response = await fetchFn(endpoint, {
     method: "POST",
@@ -111,6 +112,7 @@ async function requestChatText(
     body: JSON.stringify({
       model: textModel,
       messages,
+      ...(extraBody ?? {}),
     }),
   });
 
@@ -151,6 +153,25 @@ function normalizeModelName(textModel: string) {
 
 function isHunyuanMtModel(textModel: string) {
   return normalizeModelName(textModel).includes("HY-MT1.5");
+}
+
+function getHunyuanChatSamplingOptions(strict = false) {
+  if (strict) {
+    return {
+      temperature: 0,
+      top_p: 1,
+    };
+  }
+
+  return {
+    temperature: 0.1,
+    top_p: 0.9,
+  };
+}
+
+function hasMixedScriptToken(output: string) {
+  const tokens = output.match(/[\p{Script=Han}A-Za-z]+/gu) ?? [];
+  return tokens.some((token) => /[\p{Script=Han}]/u.test(token) && /[A-Za-z]/.test(token));
 }
 
 function getCompletionSamplingOptions(textModel: string, mode: SelectionTranslationMode) {
@@ -220,22 +241,36 @@ async function requestSelectionTranslation(
   });
 
   if (isHunyuanMtModel(textModel)) {
-    const output = await requestChatText(
+    const translationMessages = [
+      {
+        role: "system" as const,
+        content: "You are an EPUB reader assistant. Reply only with the translation.",
+      },
+      {
+        role: "user" as const,
+        content: firstPass.prompt,
+      },
+    ];
+
+    let output = await requestChatText(
       fetchFn,
       chatEndpoint,
       textModel,
-      [
-        {
-          role: "system",
-          content: "You are an EPUB reader assistant. Reply only with the translation.",
-        },
-        {
-          role: "user",
-          content: firstPass.prompt,
-        },
-      ],
+      translationMessages,
       context.signal,
+      getHunyuanChatSamplingOptions(),
     );
+
+    if (context.targetLanguage === "zh-CN" && hasMixedScriptToken(output)) {
+      output = await requestChatText(
+        fetchFn,
+        chatEndpoint,
+        textModel,
+        translationMessages,
+        context.signal,
+        getHunyuanChatSamplingOptions(true),
+      );
+    }
 
     if (firstPass.mode === "sentence") {
       return output;

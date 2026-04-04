@@ -125,6 +125,33 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+export function isIpadTouchSelectionBrowser(
+  navigatorLike:
+    | {
+        maxTouchPoints?: number;
+        platform?: string;
+        userAgent?: string;
+      }
+    | undefined,
+) {
+  if (!navigatorLike) {
+    return false;
+  }
+
+  const userAgent = navigatorLike.userAgent ?? "";
+  const platform = navigatorLike.platform ?? "";
+  const maxTouchPoints = navigatorLike.maxTouchPoints ?? 0;
+  const isIpadFamily =
+    /\biPad\b/i.test(userAgent) ||
+    ((/\bMacintosh\b/i.test(userAgent) || /\bMacIntel\b/i.test(platform)) && maxTouchPoints > 1);
+
+  if (!isIpadFamily || !/AppleWebKit/i.test(userAgent)) {
+    return false;
+  }
+
+  return /Version\/.+Safari/i.test(userAgent) || /CriOS/i.test(userAgent) || /EdgiOS/i.test(userAgent);
+}
+
 export function resolveTtsSentenceNotePlacement(args: {
   activeRect: TtsSentenceNoteMetrics["activeRect"];
   isTabletLayout: boolean;
@@ -444,7 +471,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const shellContext = useOutletContext<ReaderAppShellContext | null>() ?? null;
   const isTabletLayout = useMediaQuery(tabletReaderMediaQuery);
   const supportsStableTouchSelectionTranslate =
-    isTabletLayout || (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0);
+    isTabletLayout || isIpadTouchSelectionBrowser(typeof navigator !== "undefined" ? navigator : undefined);
   const [initialCfi, setInitialCfi] = useState<string>();
   const [initialProgress, setInitialProgress] = useState<ProgressRecord | null>(null);
   const [isProgressReady, setIsProgressReady] = useState(!bookId);

@@ -283,6 +283,54 @@ it("matches the HY-MT1.5 chat translation path for 1.8B quantized model ids", as
   expect(requestBody.messages[1]?.content).toContain("参考上面的信息，把下面的文本翻译成简体中文");
 });
 
+it("retries HY-MT1.5 chat translations when the first result contains a mixed-script artifact", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "埃nder的声音在颤抖。" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "恩德的声音在颤抖。" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    endpoint: "https://ushome.amycat.com:18026/v1/chat/completions",
+    fetch: fakeFetch,
+    textModel: "tencent/HY-MT1.5-7B-GGUF:Q4_K_M",
+  });
+
+  await expect(
+    adapter.translateSelection("Ender’s voice trembled.", {
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("恩德的声音在颤抖。");
+
+  expect(fakeFetch).toHaveBeenCalledTimes(2);
+
+  const firstRequestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(firstRequestBody.temperature).toBe(0.1);
+  expect(firstRequestBody.top_p).toBe(0.9);
+
+  const secondRequestBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
+  expect(secondRequestBody.temperature).toBe(0);
+  expect(secondRequestBody.top_p).toBe(1);
+});
+
 it("translates multi-word selections directly without sentence-context glossing", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
