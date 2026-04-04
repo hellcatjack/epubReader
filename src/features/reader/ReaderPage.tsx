@@ -108,6 +108,7 @@ const tabletReaderMediaQuery = "(max-width: 1180px)";
 const ttsSentenceNoteGapPx = 18;
 const ttsSentenceNoteMinimumLanePx = 150;
 const ttsSentenceNoteMaximumWidthPx = 280;
+const ttsSentenceNoteTabletMaximumWidthPx = 360;
 const ttsSentenceNoteTopPaddingPx = 12;
 const ttsSentenceNoteEstimatedHeightPx = 196;
 
@@ -118,6 +119,63 @@ function getSelectionCacheKey(selection: ReaderSelection | null) {
   }
 
   return [selection?.spineItemId ?? "", selection?.cfiRange ?? "", text].join("::");
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+export function resolveTtsSentenceNotePlacement(args: {
+  activeRect: TtsSentenceNoteMetrics["activeRect"];
+  isTabletLayout: boolean;
+  readingRect: TtsSentenceNoteMetrics["readingRect"];
+  stageRect: DOMRect;
+}) {
+  const { activeRect, isTabletLayout, readingRect, stageRect } = args;
+  if (stageRect.width <= 0 || stageRect.height <= 0) {
+    return null;
+  }
+
+  if (!isTabletLayout) {
+    const availableLaneWidth = stageRect.right - readingRect.right - ttsSentenceNoteGapPx;
+    if (availableLaneWidth < ttsSentenceNoteMinimumLanePx) {
+      return null;
+    }
+
+    const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
+    const left = Math.max(ttsSentenceNoteGapPx, readingRect.right - stageRect.left + ttsSentenceNoteGapPx);
+    const maxTop = Math.max(
+      ttsSentenceNoteTopPaddingPx,
+      stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
+    );
+    const top = Math.min(
+      Math.max(ttsSentenceNoteTopPaddingPx, activeRect.top - stageRect.top - 8),
+      maxTop,
+    );
+
+    return { left, top, width };
+  }
+
+  const width = Math.min(ttsSentenceNoteTabletMaximumWidthPx, Math.max(220, stageRect.width - ttsSentenceNoteGapPx * 2));
+  const minLeft = ttsSentenceNoteGapPx;
+  const maxLeft = Math.max(minLeft, stageRect.width - width - ttsSentenceNoteGapPx);
+  const readingCenter = (readingRect.left + readingRect.right) / 2 - stageRect.left;
+  const left = clamp(readingCenter - width / 2, minLeft, maxLeft);
+  const relativeActiveTop = activeRect.top - stageRect.top;
+  const relativeActiveBottom = activeRect.bottom - stageRect.top;
+  const aboveTop = relativeActiveTop - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteGapPx;
+  const belowTop = relativeActiveBottom + ttsSentenceNoteGapPx;
+  const maxTop = Math.max(
+    ttsSentenceNoteTopPaddingPx,
+    stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
+  );
+
+  const top =
+    aboveTop >= ttsSentenceNoteTopPaddingPx
+      ? aboveTop
+      : clamp(belowTop, ttsSentenceNoteTopPaddingPx, maxTop);
+
+  return { left, top, width };
 }
 
 function resolveContinuousTtsSpineItemId(chunks: ChunkSegment[], fallbackSpineItemId: string) {
@@ -385,6 +443,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const { bookId } = useParams<{ bookId: string }>();
   const shellContext = useOutletContext<ReaderAppShellContext | null>() ?? null;
   const isTabletLayout = useMediaQuery(tabletReaderMediaQuery);
+  const supportsStableTouchSelectionTranslate =
+    isTabletLayout || (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0);
   const [initialCfi, setInitialCfi] = useState<string>();
   const [initialProgress, setInitialProgress] = useState<ProgressRecord | null>(null);
   const [isProgressReady, setIsProgressReady] = useState(!bookId);
@@ -888,7 +948,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [selectedSelection?.cfiRange, selectedSelection?.isReleased, selectedSelection?.text]);
 
   useEffect(() => {
-    if (isTabletLayout || !activeContinuousTtsSegment || !runtimeHandle?.getTtsSentenceNoteMetrics) {
+    if (!activeContinuousTtsSegment || !runtimeHandle?.getTtsSentenceNoteMetrics) {
       setTtsSentenceNoteMetrics(null);
       return;
     }
@@ -918,10 +978,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("resize", syncMetrics);
     };
-  }, [activeContinuousTtsSegment, isTabletLayout, runtimeHandle, ttsState.markerCfi, ttsState.markerText]);
+  }, [activeContinuousTtsSegment, runtimeHandle, ttsState.markerCfi, ttsState.markerText]);
 
   useEffect(() => {
-    if (!currentSpokenSentenceCacheKey || !currentSpokenSentence || isTabletLayout) {
+    if (!currentSpokenSentenceCacheKey || !currentSpokenSentence) {
       setSpokenSentenceTranslation("");
       return;
     }
@@ -954,11 +1014,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
         setSpokenSentenceTranslation("");
       });
-  }, [ai, currentSpokenSentence, currentSpokenSentenceCacheKey, isTabletLayout, settings.targetLanguage]);
+  }, [ai, currentSpokenSentence, currentSpokenSentenceCacheKey, settings.targetLanguage]);
 
   useEffect(() => {
     if (
-      isTabletLayout ||
       !activeContinuousTtsSegment ||
       ttsState.status === "idle" ||
       !spokenSentenceTranslation.trim() ||
@@ -976,38 +1035,29 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         return;
       }
 
-      const availableLaneWidth = stageRect.right - ttsSentenceNoteMetrics.readingRect.right - ttsSentenceNoteGapPx;
-      if (availableLaneWidth < ttsSentenceNoteMinimumLanePx) {
+      const placement = resolveTtsSentenceNotePlacement({
+        activeRect: ttsSentenceNoteMetrics.activeRect,
+        isTabletLayout,
+        readingRect: ttsSentenceNoteMetrics.readingRect,
+        stageRect,
+      });
+      if (!placement) {
         setTtsSentenceTranslationNote(null);
         return;
       }
 
-      const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
-      const left = Math.max(
-        ttsSentenceNoteGapPx,
-        ttsSentenceNoteMetrics.readingRect.right - stageRect.left + ttsSentenceNoteGapPx,
-      );
-      const maxTop = Math.max(
-        ttsSentenceNoteTopPaddingPx,
-        stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
-      );
-      const top = Math.min(
-        Math.max(ttsSentenceNoteTopPaddingPx, ttsSentenceNoteMetrics.activeRect.top - stageRect.top - 8),
-        maxTop,
-      );
-
       setTtsSentenceTranslationNote((current) =>
         current &&
-        current.left === left &&
-        current.top === top &&
+        current.left === placement.left &&
+        current.top === placement.top &&
         current.translation === spokenSentenceTranslation &&
-        current.width === width
+        current.width === placement.width
           ? current
           : {
-              left,
-              top,
+              left: placement.left,
+              top: placement.top,
               translation: spokenSentenceTranslation,
-              width,
+              width: placement.width,
             },
       );
     };
@@ -1151,7 +1201,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
 
     if (selectedSelection?.isReleased === false) {
-      if (!isTabletLayout) {
+      if (!supportsStableTouchSelectionTranslate) {
         return;
       }
 
@@ -1232,7 +1282,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     lastAutoTranslatedSelectionKeyRef.current = selectionKey;
     void requestTranslation(nextText, selectedSelection?.sentenceContext, selectedSelection);
-  }, [isTabletLayout, selectedSelection]);
+  }, [selectedSelection, supportsStableTouchSelectionTranslate]);
 
   useEffect(() => {
     if (!floatingSelectionTranslation) {
@@ -2347,7 +2397,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                 </article>
               </section>
             )}
-            {!isTabletLayout && ttsSentenceTranslationNote ? (
+            {ttsSentenceTranslationNote ? (
               <TtsSentenceTranslationNote
                 fontScale={settings.ttsSentenceTranslationFontScale}
                 left={ttsSentenceTranslationNote.left}

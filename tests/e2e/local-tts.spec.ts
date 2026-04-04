@@ -233,18 +233,16 @@ test("wide-screen continuous tts applies the configured now reading text size on
   const note = page.getByRole("status", { name: /spoken sentence translation/i });
   await expect(note).toBeVisible();
 
-  const labelFontSize = await note.locator(".reader-tts-sentence-note-label").evaluate((element) =>
-    Number.parseFloat(window.getComputedStyle(element).fontSize),
-  );
   const textFontSize = await note.locator(".reader-tts-sentence-note-text").evaluate((element) =>
     Number.parseFloat(window.getComputedStyle(element).fontSize),
   );
 
-  expect(labelFontSize).toBeCloseTo(11.52, 1);
   expect(textFontSize).toBeGreaterThan(23);
 });
 
-test("tablet-width continuous tts keeps the spoken sentence translation note disabled", async ({ page }) => {
+test("tablet-width continuous tts shows the spoken sentence translation note above the active reading text", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     let activeStartTimer: number | undefined;
 
@@ -329,6 +327,16 @@ test("tablet-width continuous tts keeps the spoken sentence translation note dis
     });
   });
 
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        choices: [{ text: "当前句翻译" }],
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
   await page.setViewportSize({ width: 1024, height: 1366 });
   await page.goto("/");
   await page.setInputFiles("input[type=file]", fixturePath);
@@ -337,7 +345,18 @@ test("tablet-width continuous tts keeps the spoken sentence translation note dis
   await page.getByRole("button", { name: /tools/i }).click();
   await page.getByRole("button", { name: /start tts/i }).click();
 
-  await expect(page.getByRole("status", { name: /spoken sentence translation/i })).toHaveCount(0);
+  const note = page.getByRole("status", { name: /spoken sentence translation/i });
+  await expect(note).toBeVisible();
+  await expect(note).toContainText("当前句翻译");
+
+  const noteBox = await note.boundingBox();
+  const activeBox = await page.frameLocator(".epub-root iframe").locator(".reader-tts-active-segment").boundingBox();
+  expect(noteBox).not.toBeNull();
+  expect(activeBox).not.toBeNull();
+  expect((noteBox?.bottom ?? 0) <= (activeBox?.top ?? 0) || (noteBox?.top ?? 0) >= (activeBox?.bottom ?? 0)).toBe(
+    true,
+  );
+  expect((noteBox?.bottom ?? 0) <= (activeBox?.top ?? 0)).toBe(true);
 });
 
 test("browser tts supports selection playback and continuous reader controls", async ({ page }) => {

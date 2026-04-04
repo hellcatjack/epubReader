@@ -62,7 +62,7 @@ describe("selectionTranslation", () => {
     expect(prompt.prompt).not.toContain("所在句子：");
   });
 
-  it("uses the narrowed Hunyuan word prompt for single-word disambiguation", () => {
+  it("uses the unified Hunyuan contextual translation template for single-word selections", () => {
     const prompt = buildSelectionTranslationPrompt({
       sentenceContext: "Where else would you stick the oldest foster kid?",
       targetLanguage: "zh-CN",
@@ -71,12 +71,12 @@ describe("selectionTranslation", () => {
     });
 
     expect(prompt.mode).toBe("word");
-    expect(prompt.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
-    expect(prompt.prompt).toContain("选中词：stick");
-    expect(prompt.prompt).toContain("所在句子：Where else would you stick the oldest foster kid?");
+    expect(prompt.prompt).toContain("Where else would you stick the oldest foster kid?");
+    expect(prompt.prompt).toContain("参考上面的信息，把下面的文本翻译成简体中文");
+    expect(prompt.prompt).toContain("\nstick");
   });
 
-  it("uses a direct segment translation prompt for multi-word Hunyuan selections", () => {
+  it("uses the unified Hunyuan contextual translation template for multi-word selections", () => {
     const prompt = buildSelectionTranslationPrompt({
       sentenceContext: "He looked up at him before leaving the room.",
       targetLanguage: "zh-CN",
@@ -84,10 +84,10 @@ describe("selectionTranslation", () => {
       textModel: "HY-MT1.5-7B-GGUF",
     });
 
-    expect(prompt.mode).toBe("sentence");
-    expect(prompt.prompt).toContain("把下面的文本翻译成简体中文，不要额外解释。");
+    expect(prompt.mode).toBe("phrase");
+    expect(prompt.prompt).toContain("He looked up at him before leaving the room.");
+    expect(prompt.prompt).toContain("参考上面的信息，把下面的文本翻译成简体中文");
     expect(prompt.prompt).toContain("looked up at him");
-    expect(prompt.prompt).not.toContain("句子：");
   });
 
   it("keeps the existing default prompt for non-Hunyuan local models", () => {
@@ -111,7 +111,7 @@ describe("selectionTranslation", () => {
     });
 
     expect(prompt.mode).toBe("word");
-    expect(prompt.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
+    expect(prompt.prompt).toContain("参考上面的信息，把下面的文本翻译成简体中文");
   });
 
   it("matches the Hunyuan profile for HY-MT1.5 1.8B model ids", () => {
@@ -123,36 +123,20 @@ describe("selectionTranslation", () => {
     });
 
     expect(prompt.mode).toBe("word");
-    expect(prompt.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
+    expect(prompt.prompt).toContain("参考上面的信息，把下面的文本翻译成简体中文");
   });
 
-  it("adds stronger word-boundary instructions to the Hunyuan single-word prompt", () => {
+  it("uses the direct Hunyuan translation template when the selection is the whole sentence", () => {
     const prompt = buildSelectionTranslationPrompt({
       sentenceContext: "If he earns rank, he'll lead.",
       targetLanguage: "zh-CN",
-      text: "earns",
+      text: "If he earns rank, he'll lead.",
       textModel: "HY-MT1.5-7B-GGUF",
     });
 
-    expect(prompt.mode).toBe("word");
-    expect(prompt.prompt).toContain("句子只用于判断词义");
-    expect(prompt.prompt).toContain("不要把相邻名词、宾语、补语翻进去");
-    expect(prompt.prompt).toContain("只输出该词最短核心词义");
-  });
-
-  it("includes earns/rank boundary examples in the Hunyuan single-word prompt", () => {
-    const prompt = buildSelectionTranslationPrompt({
-      sentenceContext: "If he earns rank, he'll lead.",
-      targetLanguage: "zh-CN",
-      text: "earns",
-      textModel: "HY-MT1.5-7B-GGUF",
-    });
-
-    expect(prompt.prompt).toContain("选中词：earns");
-    expect(prompt.prompt).toContain("所在句子：If he earns rank, he'll lead.");
-    expect(prompt.prompt).toContain("答案：获得");
-    expect(prompt.prompt).toContain("选中词：rank");
-    expect(prompt.prompt).toContain("答案：军衔");
+    expect(prompt.mode).toBe("sentence");
+    expect(prompt.prompt).toContain("将以下文本翻译为简体中文");
+    expect(prompt.prompt).toContain("If he earns rank, he'll lead.");
   });
 
   it("infers a likely verb/noun split for the earns/rank boundary sentence", () => {

@@ -274,6 +274,24 @@ it("shows local troubleshooting details and lets the user reset local app data",
   expect(resetLocalAppStateMock).toHaveBeenCalledTimes(1);
 });
 
+it("shows a manual local model input when secure pages cannot auto-discover private-network models", async () => {
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+  vi.stubGlobal("isSecureContext", true);
+  await db.settings.put(
+    createStoredSettings({
+      llmApiUrl: "http://192.168.1.31:8001/v1/chat/completions",
+      translationProvider: "local_llm",
+    }),
+  );
+
+  render(<SettingsDialog />);
+
+  expect(await screen.findByRole("textbox", { name: /local llm model/i })).toBeInTheDocument();
+  expect(
+    screen.getByText(/cannot auto-discover models from http private-network endpoints/i),
+  ).toBeInTheDocument();
+});
+
 it("shows single-column paginated mode in the settings UI without deleting the saved scrolled preference", async () => {
   installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
   await db.settings.put(createStoredSettings({

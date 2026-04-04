@@ -11,7 +11,7 @@ import type { AiService } from "../ai/aiService";
 import { defaultSettings, getSettings } from "../settings/settingsRepository";
 import { writeRefreshSettingsSnapshot } from "../settings/refreshSettingsSnapshot";
 import type { ActiveTtsSegment, RuntimeRenderHandle } from "./epubRuntime";
-import { ReaderPage } from "./ReaderPage";
+import { ReaderPage, resolveTtsSentenceNotePlacement } from "./ReaderPage";
 import { selectionBridge } from "./selectionBridge";
 
 const getProgressMock = vi.fn().mockResolvedValue(null);
@@ -33,6 +33,10 @@ vi.mock("../bookshelf/progressRepository", async () => {
 afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  Object.defineProperty(window.navigator, "maxTouchPoints", {
+    configurable: true,
+    value: 0,
+  });
   getProgressMock.mockReset();
   getProgressMock.mockResolvedValue(null);
   saveProgressMock.mockReset();
@@ -543,7 +547,7 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
   expect(note).toHaveStyle({ "--reader-tts-sentence-note-text-scale": "1.3" });
 });
 
-it("keeps the spoken sentence translation note hidden in tablet layout", async () => {
+it("shows the spoken sentence translation note above the active reading region in tablet layout", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": true });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
@@ -645,9 +649,62 @@ it("keeps the spoken sentence translation note hidden in tablet layout", async (
   await user.click(screen.getByRole("button", { name: /tools/i }));
   await user.click(await screen.findByRole("button", { name: /start tts/i }));
 
-  await waitFor(() => {
-    expect(screen.queryByRole("status", { name: /spoken sentence translation/i })).not.toBeInTheDocument();
+  const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
+  expect(note).toHaveTextContent("第一句翻译");
+  expect(note).toHaveStyle({
+    top: "186px",
+    width: "360px",
   });
+});
+
+it("keeps the tablet spoken sentence note horizontally stable while the active line moves", () => {
+  const stageRect = {
+    bottom: 980,
+    height: 860,
+    left: 80,
+    right: 1180,
+    top: 120,
+    width: 1100,
+  } as DOMRect;
+  const readingRect = {
+    bottom: 940,
+    height: 800,
+    left: 120,
+    right: 820,
+    top: 140,
+    width: 700,
+  };
+
+  const upperPlacement = resolveTtsSentenceNotePlacement({
+    activeRect: {
+      bottom: 288,
+      height: 28,
+      left: 460,
+      right: 720,
+      top: 260,
+      width: 260,
+    },
+    isTabletLayout: true,
+    readingRect,
+    stageRect,
+  });
+  const lowerPlacement = resolveTtsSentenceNotePlacement({
+    activeRect: {
+      bottom: 588,
+      height: 28,
+      left: 300,
+      right: 540,
+      top: 560,
+      width: 240,
+    },
+    isTabletLayout: true,
+    readingRect,
+    stageRect,
+  });
+
+  expect(upperPlacement?.left).toBe(210);
+  expect(lowerPlacement?.left).toBe(210);
+  expect(upperPlacement?.top).not.toBe(lowerPlacement?.top);
 });
 
 it("does not reuse the previous translation bubble content while a new tablet selection is still being dragged", async () => {
@@ -874,6 +931,121 @@ it("auto-translates a stable tablet selection after one second without repeating
   });
 
   expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+});
+
+it("auto-translates a stable touch selection after one second on wide layouts", async () => {
+  installMatchMedia({ "(max-width: 1180px)": false });
+  setUserAgent(
+    "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+  );
+  Object.defineProperty(window.navigator, "maxTouchPoints", {
+    configurable: true,
+    value: 5,
+  });
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "触摸选区翻译"),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/2/1:0)",
+      isReleased: false,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 280,
+        top: 222,
+        width: 160,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "earns",
+    } as any);
+  });
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 900));
+  });
+
+  expect(ai.translateSelection).not.toHaveBeenCalled();
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  });
+
+  expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+});
+
+it("auto-translates a stable touch selection on wide layouts even when Safari cannot provide a cfi range", async () => {
+  installMatchMedia({ "(max-width: 1180px)": false });
+  setUserAgent(
+    "Mozilla/5.0 (iPad; CPU OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+  );
+  Object.defineProperty(window.navigator, "maxTouchPoints", {
+    configurable: true,
+    value: 5,
+  });
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => "context"),
+    translateSelection: vi.fn(async () => "没有 cfi 也能翻译"),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      isReleased: false,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 280,
+        top: 222,
+        width: 160,
+      },
+      spineItemId: "chapter-1.xhtml",
+      text: "With",
+    });
+  });
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 900));
+  });
+
+  expect(ai.translateSelection).not.toHaveBeenCalled();
+
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
+  });
+
+  expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  expect(ai.translateSelection).toHaveBeenCalledWith(
+    "With",
+    expect.objectContaining({
+      sentenceContext: undefined,
+    }),
+  );
 });
 
 it("shows a tablet translation bubble when the released selection text exists but its anchor rect must be recovered from the runtime snapshot", async () => {

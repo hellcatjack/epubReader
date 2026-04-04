@@ -159,13 +159,13 @@ it("uses a sentence-slot replacement prompt for contextual single-word translati
   expect(requestBody.stop).toEqual(["，", ",", "\n"]);
 });
 
-it("uses Hunyuan sampling parameters for HY-MT1.5-7B-GGUF translation requests", async () => {
+it("uses the unified HY-MT1.5 contextual template through chat completions for single-word selections", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(
       new Response(
         JSON.stringify({
-          choices: [{ text: "安置" }],
+          choices: [{ message: { content: "然而，对于恩德尔来说，根本不存在不选边站队的可能性。" } }],
         }),
         {
           status: 200,
@@ -179,20 +179,17 @@ it("uses Hunyuan sampling parameters for HY-MT1.5-7B-GGUF translation requests",
   });
 
   await expect(
-    adapter.translateSelection("stick", {
-      sentenceContext: "Where else would you stick the oldest foster kid?",
+    adapter.translateSelection("With", {
+      sentenceContext: "With Ender, though, there was no such thing as not taking sides.",
       targetLanguage: "zh-CN",
     }),
-  ).resolves.toBe("安置");
+  ).resolves.toBe("然而");
 
+  expect(fakeFetch).toHaveBeenNthCalledWith(1, "http://localhost:8001/v1/chat/completions", expect.anything());
   const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
-  expect(requestBody.temperature).toBe(0.7);
-  expect(requestBody.top_p).toBe(0.6);
-  expect(requestBody.top_k).toBe(20);
-  expect(requestBody.repetition_penalty).toBe(1.05);
-  expect(requestBody.prompt).toContain("请按当前句子语境翻译选中词，不要额外解释。");
-  expect(requestBody.prompt.startsWith("<｜hy_begin▁of▁sentence｜><｜hy_User｜>")).toBe(true);
-  expect(requestBody.prompt.endsWith("<｜hy_Assistant｜>")).toBe(true);
+  expect(requestBody.messages[1]?.content).toContain("With Ender, though, there was no such thing as not taking sides.");
+  expect(requestBody.messages[1]?.content).toContain("参考上面的信息，把下面的文本翻译成简体中文");
+  expect(requestBody.messages[1]?.content).toContain("\nWith");
 });
 
 it("keeps the default translation parameters for non-Hunyuan local models", async () => {
@@ -228,13 +225,13 @@ it("keeps the default translation parameters for non-Hunyuan local models", asyn
   expect(requestBody.repetition_penalty).toBeUndefined();
 });
 
-it("matches Hunyuan parameters for namespaced quantized model ids", async () => {
+it("matches the HY-MT1.5 chat translation path for namespaced quantized model ids", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(
       new Response(
         JSON.stringify({
-          choices: [{ text: "安置" }],
+          choices: [{ message: { content: "Where else could you put him?" } }],
         }),
         {
           status: 200,
@@ -249,25 +246,21 @@ it("matches Hunyuan parameters for namespaced quantized model ids", async () => 
 
   await adapter.translateSelection("stick", {
     sentenceContext: "Where else would you stick the oldest foster kid?",
-    targetLanguage: "zh-CN",
+    targetLanguage: "en",
   });
 
+  expect(fakeFetch).toHaveBeenNthCalledWith(1, "http://localhost:8001/v1/chat/completions", expect.anything());
   const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
-  expect(requestBody.temperature).toBe(0.7);
-  expect(requestBody.top_p).toBe(0.6);
-  expect(requestBody.top_k).toBe(20);
-  expect(requestBody.repetition_penalty).toBe(1.05);
-  expect(requestBody.prompt.startsWith("<｜hy_begin▁of▁sentence｜><｜hy_User｜>")).toBe(true);
-  expect(requestBody.prompt.endsWith("<｜hy_Assistant｜>")).toBe(true);
+  expect(requestBody.messages[1]?.content).toContain("参考上面的信息，把下面的文本翻译成English");
 });
 
-it("matches Hunyuan parameters for HY-MT1.5 1.8B quantized model ids", async () => {
+it("matches the HY-MT1.5 chat translation path for 1.8B quantized model ids", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
     .mockResolvedValue(
       new Response(
         JSON.stringify({
-          choices: [{ text: "安置" }],
+          choices: [{ message: { content: "然而，对于恩德尔来说，根本不存在不选边站队的可能性。" } }],
         }),
         {
           status: 200,
@@ -280,104 +273,14 @@ it("matches Hunyuan parameters for HY-MT1.5 1.8B quantized model ids", async () 
     textModel: "tencent/HY-MT1.5-1.8B-GGUF:Q8_0",
   });
 
-  await adapter.translateSelection("stick", {
-    sentenceContext: "Where else would you stick the oldest foster kid?",
+  await adapter.translateSelection("With", {
+    sentenceContext: "With Ender, though, there was no such thing as not taking sides.",
     targetLanguage: "zh-CN",
   });
 
+  expect(fakeFetch).toHaveBeenNthCalledWith(1, "http://localhost:8001/v1/chat/completions", expect.anything());
   const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
-  expect(requestBody.temperature).toBe(0.7);
-  expect(requestBody.top_p).toBe(0.6);
-  expect(requestBody.top_k).toBe(20);
-  expect(requestBody.repetition_penalty).toBe(1.05);
-  expect(requestBody.prompt.startsWith("<｜hy_begin▁of▁sentence｜><｜hy_User｜>")).toBe(true);
-  expect(requestBody.prompt.endsWith("<｜hy_Assistant｜>")).toBe(true);
-});
-
-it("uses the stricter Hunyuan word retry prompt when a single-word answer absorbs adjacent meaning", async () => {
-  const fakeFetch = vi
-    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
-    .mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          choices: [{ text: "获得晋升" }],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    )
-    .mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          choices: [{ text: "获得" }],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-  const adapter = createOpenAIAdapter({
-    fetch: fakeFetch,
-    textModel: "HY-MT1.5-7B-GGUF",
-  });
-
-  await expect(
-    adapter.translateSelection("earns", {
-      sentenceContext: "If he earns rank, he'll lead.",
-      targetLanguage: "zh-CN",
-    }),
-  ).resolves.toBe("获得");
-
-  expect(fakeFetch).toHaveBeenCalledTimes(2);
-  const retryBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
-  expect(retryBody.prompt).toContain("上一次答案包含了选区外含义");
-  expect(retryBody.prompt).toContain("只输出该词最短核心词义");
-});
-
-it("falls back to a standalone noun translation prompt when a Hunyuan noun selection is mistranslated as a verb gloss", async () => {
-  const fakeFetch = vi
-    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
-    .mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          choices: [{ text: "获得" }],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    )
-    .mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          choices: [{ text: "等级" }],
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-  const adapter = createOpenAIAdapter({
-    fetch: fakeFetch,
-    textModel: "HY-MT1.5-7B-GGUF",
-  });
-
-  await expect(
-    adapter.translateSelection("rank", {
-      sentenceContext: "If he earns rank, he'll lead.",
-      targetLanguage: "zh-CN",
-    }),
-  ).resolves.toBe("等级");
-
-  expect(fakeFetch).toHaveBeenCalledTimes(2);
-  const fallbackBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
-  expect(fallbackBody.prompt).toContain("把下面的英文名词翻译成简体中文");
-  expect(fallbackBody.prompt).toContain("rank");
+  expect(requestBody.messages[1]?.content).toContain("参考上面的信息，把下面的文本翻译成简体中文");
 });
 
 it("translates multi-word selections directly without sentence-context glossing", async () => {
@@ -408,6 +311,44 @@ it("translates multi-word selections directly without sentence-context glossing"
   expect(requestBody.prompt).toContain("待翻译内容：looked up at him");
   expect(requestBody.prompt).not.toContain("所在句子：");
   expect(requestBody.stop).toBeUndefined();
+});
+
+it("uses chat completions for Hunyuan sentence translation requests", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "然而，对安德来说，根本不存在不站队这种事。" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({
+    endpoint: "https://ushome.amycat.com:18026/v1/chat/completions",
+    fetch: fakeFetch,
+    textModel: "tencent/HY-MT1.5-7B-GGUF:Q4_K_M",
+  });
+
+  await expect(
+    adapter.translateSelection("With Ender, though, there was no such thing as not taking sides.", {
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("然而，对安德来说，根本不存在不站队这种事。");
+
+  expect(fakeFetch).toHaveBeenCalledTimes(1);
+  expect(fakeFetch).toHaveBeenNthCalledWith(
+    1,
+    "https://ushome.amycat.com:18026/v1/chat/completions",
+    expect.anything(),
+  );
+
+  const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(requestBody.messages[0]?.content).toContain("You are an EPUB reader assistant.");
+  expect(requestBody.messages[1]?.content).toContain("将以下文本翻译为简体中文");
 });
 
 it("uses a sentence translation prompt when the selection is the whole sentence", async () => {

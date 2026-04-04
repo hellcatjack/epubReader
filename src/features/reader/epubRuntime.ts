@@ -2,7 +2,7 @@ import ePub, { type Contents, type Location, type NavItem } from "epubjs";
 import { loadStoredBookFile } from "../bookshelf/bookFileRepository";
 import type { TocItem } from "../../lib/types/books";
 import type { ReadingMode } from "../../lib/types/settings";
-import { buildReaderTheme, defaultReaderPreferences, type ReaderPreferences, toEpubFlow } from "./readerPreferences";
+import { applyReaderThemeToRendition, defaultReaderPreferences, type ReaderPreferences, toEpubFlow } from "./readerPreferences";
 import type { ReaderSelectionRect } from "./selectionBridge";
 import { findTocPathBySpineItemId, getTocTarget, getTocTargetSpineItemId } from "./tocTree";
 
@@ -272,6 +272,52 @@ function collectNormalizedTtsText(root: Node) {
 
 export function extractTtsBlockText(root: Node) {
   return collectNormalizedTtsText(root).text;
+}
+
+export function createReaderSelectionSnapshotFromRange({
+  contents,
+  fallbackCfiRange = "",
+  isReleased,
+  range,
+  sentenceContext,
+  selectionRect,
+  spineItemId,
+  text,
+  ttsBlocks,
+}: {
+  contents: Pick<Contents, "cfiFromRange">;
+  fallbackCfiRange?: string;
+  isReleased: boolean;
+  range: Range;
+  sentenceContext?: string;
+  selectionRect?: ReaderSelectionRect;
+  spineItemId: string;
+  text?: string;
+  ttsBlocks?: RuntimeTtsBlock[];
+}) {
+  const normalizedText = normalizeSegmentText(text ?? range.toString());
+  if (!normalizedText) {
+    return null;
+  }
+
+  let cfiRange = fallbackCfiRange;
+  if (!cfiRange) {
+    try {
+      cfiRange = contents.cfiFromRange(range);
+    } catch {
+      cfiRange = "";
+    }
+  }
+
+  return {
+    cfiRange,
+    isReleased,
+    selectionRect,
+    sentenceContext: sentenceContext ?? extractSentenceContextFromRange(range),
+    spineItemId,
+    text: normalizedText,
+    ttsBlocks,
+  };
 }
 
 function clampOffset(value: number, max: number) {
@@ -1620,7 +1666,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     };
 
     const applyCurrentReaderTheme = () => {
-      rendition.themes.default(buildReaderTheme(activePreferences));
+      applyReaderThemeToRendition(rendition as never, activePreferences);
     };
 
     const readRectMetrics = (rect: Pick<DOMRect, "bottom" | "left" | "right" | "top">): ReaderSelectionRect => ({
@@ -2569,17 +2615,45 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       syncPagePresentation(contents);
       void applyActiveTtsSegment(activeTtsSegment);
 
-      const range = await book.getRange(cfiRange);
-      const text = range?.toString().trim() ?? "";
-      const selection = {
-        cfiRange,
+      const liveSnapshot = getSelectionSnapshotFromContents(contents, cfiRange);
+      if (liveSnapshot) {
+        if (pointerSelecting) {
+          pendingSelection = liveSnapshot;
+        }
+
+        onSelectionChange?.(liveSnapshot);
+        return;
+      }
+
+      let range: Range | null = null;
+      try {
+        range = await book.getRange(cfiRange);
+      } catch {
+        range = null;
+      }
+      if (!range) {
+        return;
+      }
+
+      let ttsBlocks: RuntimeTtsBlock[] | undefined;
+      try {
+        ttsBlocks = getTtsBlocksFromSelectionRange(contents, range);
+      } catch {
+        ttsBlocks = undefined;
+      }
+
+      const selection = createReaderSelectionSnapshotFromRange({
+        contents,
+        fallbackCfiRange: cfiRange,
         isReleased: !pointerSelecting,
-        selectionRect: range ? toSelectionViewportRect(contents, range) : undefined,
-        sentenceContext: range ? extractSentenceContextFromRange(range) : text,
+        range,
+        selectionRect: toSelectionViewportRect(contents, range),
         spineItemId: currentSpineItemId,
-        text,
-        ttsBlocks: range ? getTtsBlocksFromSelectionRange(contents, range) : [],
-      };
+        ttsBlocks,
+      });
+      if (!selection) {
+        return;
+      }
 
       if (pointerSelecting) {
         pendingSelection = selection;
@@ -2588,32 +2662,29 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       onSelectionChange?.(selection);
     };
 
-    const getSelectionSnapshotFromContents = (contents: Contents) => {
+    const getSelectionSnapshotFromContents = (contents: Contents, fallbackCfiRange = "") => {
       const selection = contents.window.getSelection?.();
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
         return null;
       }
 
       const range = selection.getRangeAt(0);
-      const text = range.toString().trim();
-      if (!text) {
-        return null;
+      let ttsBlocks: RuntimeTtsBlock[] | undefined;
+      try {
+        ttsBlocks = getTtsBlocksFromSelectionRange(contents, range);
+      } catch {
+        ttsBlocks = undefined;
       }
 
-      try {
-        const ttsBlocks = getTtsBlocksFromSelectionRange(contents, range);
-        return {
-          cfiRange: contents.cfiFromRange(range),
-          isReleased: !pointerSelecting,
-          selectionRect: toSelectionViewportRect(contents, range),
-          sentenceContext: extractSentenceContextFromRange(range),
-          spineItemId: currentSpineItemId,
-          text,
-          ttsBlocks,
-        };
-      } catch {
-        return null;
-      }
+      return createReaderSelectionSnapshotFromRange({
+        contents,
+        fallbackCfiRange,
+        isReleased: !pointerSelecting,
+        range,
+        selectionRect: toSelectionViewportRect(contents, range),
+        spineItemId: currentSpineItemId,
+        ttsBlocks,
+      });
     };
 
     const getCurrentSelection = async () => {

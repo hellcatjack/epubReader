@@ -280,60 +280,10 @@ function resolveTranslationPromptProfile(textModel?: string): TranslationPromptP
   return isHunyuanMtModelName(textModel) ? "hunyuan_mt" : "default";
 }
 
-function buildHunyuanWordPrompt(text: string, sentenceContext: string, targetLanguage: string, strict = false) {
-  if (targetLanguage !== "zh-CN") {
-    return [
-      `Translate the selected word into ${describeLanguage(targetLanguage)} based on the sentence context, without extra explanation.`,
-      "Rules:",
-      "- The sentence is only for word-sense disambiguation",
-      "- Translate only the selected word itself",
-      "- Do not include adjacent nouns, objects, or complements",
-      strict
-        ? "- The previous answer included outside meaning. Return only the shortest core gloss for the selected word"
-        : "- Return only the shortest core gloss for the selected word",
-      "",
-      "Examples:",
-      "Selected word: earns",
-      "Sentence: If he earns rank, he'll lead.",
-      "Answer: earns",
-      "",
-      "Selected word: rank",
-      "Sentence: If he earns rank, he'll lead.",
-      "Answer: rank",
-      "",
-      `Selected word: ${text}`,
-      `Sentence: ${sentenceContext}`,
-      "Answer:",
-    ].join("\n");
-  }
-
-  return [
-    "请按当前句子语境翻译选中词，不要额外解释。",
-    "要求：",
-    "- 句子只用于判断词义",
-    "- 只翻译选中词本身",
-    "- 不要把相邻名词、宾语、补语翻进去",
-    strict ? "- 上一次答案包含了选区外含义，这次只输出该词最短核心词义" : "- 只输出该词最短核心词义",
-    "",
-    "示例：",
-    "选中词：earns",
-    "所在句子：If he earns rank, he'll lead.",
-    "答案：获得",
-    "",
-    "选中词：rank",
-    "所在句子：If he earns rank, he'll lead.",
-    "答案：军衔",
-    "",
-    `选中词：${text}`,
-    `所在句子：${sentenceContext}`,
-    "答案：",
-  ].join("\n");
-}
-
 function buildHunyuanDirectTranslationPrompt(text: string, targetLanguage: string) {
   if (targetLanguage === "zh-CN") {
     return [
-      "把下面的文本翻译成简体中文，不要额外解释。",
+      "将以下文本翻译为简体中文，注意只需要输出翻译后的结果，不要额外解释：",
       "",
       text,
     ].join("\n");
@@ -342,6 +292,14 @@ function buildHunyuanDirectTranslationPrompt(text: string, targetLanguage: strin
   return [
     `Translate the following segment into ${describeLanguage(targetLanguage)}, without additional explanation.`,
     "",
+    text,
+  ].join("\n");
+}
+
+function buildHunyuanContextualTranslationPrompt(text: string, sentenceContext: string, targetLanguage: string) {
+  return [
+    sentenceContext,
+    `参考上面的信息，把下面的文本翻译成${describeLanguage(targetLanguage)}，注意不需要翻译上文，也不要额外解释：`,
     text,
   ].join("\n");
 }
@@ -424,15 +382,15 @@ export function buildSelectionTranslationPrompt({
   const profile = resolveTranslationPromptProfile(textModel);
 
   if (profile === "hunyuan_mt") {
-    if (mode === "word" && sentenceContext) {
+    if (sentenceContext && normalizeText(text) !== normalizeText(sentenceContext)) {
       return {
         mode,
-        prompt: buildHunyuanWordPrompt(text, sentenceContext, targetLanguage, strict),
+        prompt: buildHunyuanContextualTranslationPrompt(text, sentenceContext, targetLanguage),
       };
     }
 
     return {
-      mode: "sentence",
+      mode,
       prompt: buildHunyuanDirectTranslationPrompt(text, targetLanguage),
     };
   }
@@ -458,6 +416,7 @@ export function cleanupSelectionTranslationOutput(output: string, mode: Selectio
     .filter(Boolean);
   const firstLine = lines[0] ?? "";
   const strippedLine = firstLine
+    .replace(/^(选中词|选中短语|Selected word|Selected phrase)\s*[:：-]\s*/i, "")
     .replace(/^(答案|译文|Answer|Translation)\s*[:：-]\s*/i, "")
     .replace(/^[-*]\s*/, "")
     .replace(/^[“”"‘’'`]+|[“”"‘’'`]+$/g, "")

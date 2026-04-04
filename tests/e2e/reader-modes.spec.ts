@@ -218,6 +218,30 @@ test("tablet-sized viewports prioritize the reader surface and move contents and
   await expect(page.getByRole("dialog", { name: /reader tools drawer/i })).toBeVisible();
 });
 
+test("tablet-sized viewports apply font size changes to epub body text, not just the surrounding chrome", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+
+  const readParagraphFontSize = () =>
+    page.locator(".epub-root iframe").evaluate((node) => {
+      const paragraph = node.contentDocument?.querySelector("p");
+      return paragraph ? getComputedStyle(paragraph).fontSize : "";
+    });
+
+  const initialParagraphFontSize = await readParagraphFontSize();
+
+  await page.getByRole("button", { name: /tools/i }).click();
+  const toolsDrawer = page.getByRole("dialog", { name: /reader tools drawer/i });
+  await expect(toolsDrawer).toBeVisible();
+
+  await toolsDrawer.getByLabel("Font size").fill("1.3");
+  await toolsDrawer.getByLabel("Font size").blur();
+
+  await expect.poll(readParagraphFontSize).not.toBe(initialParagraphFontSize);
+});
+
 test("scrolled mode restores the iframe width after resizing from tablet width back to desktop", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1200 });
   await page.goto("/");

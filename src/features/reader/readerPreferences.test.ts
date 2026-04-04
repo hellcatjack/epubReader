@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildReaderTheme, getEffectiveReaderPreferences, toEpubFlow } from "./readerPreferences";
+import { describe, expect, it, vi } from "vitest";
+import { applyReaderThemeToRendition, buildReaderTheme, getEffectiveReaderPreferences, toEpubFlow } from "./readerPreferences";
 
 describe("readerPreferences", () => {
   it("maps reader modes to epub rendition flow values", () => {
@@ -25,7 +25,13 @@ describe("readerPreferences", () => {
         ttsSentenceTranslationFontScale: 1,
       }),
     ).toMatchObject({
+      html: {
+        "-webkit-text-size-adjust": "100%",
+        "font-size": "115%",
+        "text-size-adjust": "100%",
+      },
       body: {
+        "-webkit-text-size-adjust": "100%",
         "background-color": "#c0ffee",
         "column-gap": "40px",
         "font-family": '"Iowan Old Style", Georgia, serif',
@@ -35,6 +41,7 @@ describe("readerPreferences", () => {
         "margin": "0 auto",
         "max-width": "780px",
         "padding": "40px",
+        "text-size-adjust": "100%",
       },
       p: {
         "margin-bottom": "1.1em",
@@ -146,5 +153,33 @@ describe("readerPreferences", () => {
         ttsSentenceTranslationFontScale: 1,
       }).body["max-width"],
     ).toBe("760px");
+  });
+
+  it("applies the reader theme through epub theme overrides as well as css rules", () => {
+    const rendition = {
+      themes: {
+        default: vi.fn(),
+        fontSize: vi.fn(),
+      },
+    };
+
+    applyReaderThemeToRendition(rendition as never, {
+      columnCount: 1,
+      contentPadding: 32,
+      contentBackgroundColor: "#f6edde",
+      fontFamily: "book",
+      fontScale: 1.3,
+      letterSpacing: 0,
+      lineHeight: 1.7,
+      maxLineWidth: 760,
+      paragraphIndent: 1.8,
+      paragraphSpacing: 0.85,
+      readingMode: "scrolled",
+      theme: "sepia",
+      ttsSentenceTranslationFontScale: 1,
+    });
+
+    expect(rendition.themes.default).toHaveBeenCalled();
+    expect(rendition.themes.fontSize).toHaveBeenCalledWith("130%");
   });
 });

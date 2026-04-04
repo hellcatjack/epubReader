@@ -34,6 +34,22 @@ function mergeModelOptions(currentValue: string, fetchedModels: string[]) {
   return currentValue && !fetchedModels.includes(currentValue) ? [currentValue, ...fetchedModels] : fetchedModels;
 }
 
+function getLocalModelDiscoveryNote(status: "idle" | "loading" | "ready" | "error" | "blocked", message: string) {
+  if (status === "loading") {
+    return "Loading models from /v1/models…";
+  }
+
+  if (status === "blocked") {
+    return message;
+  }
+
+  if (status === "error") {
+    return "Could not load models from the current endpoint. You can still type the model id manually.";
+  }
+
+  return "Models are discovered automatically from /v1/models.";
+}
+
 export function AppearancePanel({
   apiKey = "",
   geminiModel = "gemini-2.5-flash",
@@ -50,6 +66,7 @@ export function AppearancePanel({
 }: AppearancePanelProps) {
   const localModelState = useLocalLlmModels(llmApiUrl, translationProvider === "local_llm");
   const localModelOptions = mergeModelOptions(localLlmModel, localModelState.models);
+  const useManualLocalModelInput = localModelState.status === "blocked" || localModelState.status === "error";
 
   return (
     <section className="reader-panel" aria-label="Appearance">
@@ -196,24 +213,32 @@ export function AppearancePanel({
             </label>
             <label className="appearance-field appearance-field-wide">
               <span>Local LLM model</span>
-              <select
-                aria-label="Local LLM model"
-                onChange={(event) => onLocalLlmModelChange?.(event.target.value)}
-                value={localLlmModel}
-              >
-                <option value="">Default model</option>
-                {localModelOptions.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
+              {useManualLocalModelInput ? (
+                <input
+                  aria-label="Local LLM model"
+                  autoComplete="off"
+                  onChange={(event) => onLocalLlmModelChange?.(event.target.value)}
+                  placeholder="tencent/HY-MT1.5-1.8B-GGUF:Q8_0"
+                  spellCheck={false}
+                  type="text"
+                  value={localLlmModel}
+                />
+              ) : (
+                <select
+                  aria-label="Local LLM model"
+                  onChange={(event) => onLocalLlmModelChange?.(event.target.value)}
+                  value={localLlmModel}
+                >
+                  <option value="">Default model</option>
+                  {localModelOptions.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              )}
               <small className="appearance-field-note">
-                {localModelState.status === "loading"
-                  ? "Loading models from /v1/models…"
-                  : localModelState.status === "error"
-                    ? "Could not load models from the current endpoint."
-                    : "Models are discovered automatically from /v1/models."}
+                {getLocalModelDiscoveryNote(localModelState.status, localModelState.message)}
               </small>
             </label>
           </>

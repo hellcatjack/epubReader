@@ -1,9 +1,6 @@
 import {
-  buildStandaloneWordTranslationPrompt,
   buildSelectionTranslationPrompt,
   cleanupSelectionTranslationOutput,
-  inferLikelySingleWordClass,
-  shouldRetrySelectionGloss,
   type SelectionTranslationMode,
 } from "./selectionTranslation";
 import { DEFAULT_LLM_API_URL, resolveLlmApiEndpoints } from "./aiEndpoints";
@@ -179,10 +176,6 @@ function wrapCompletionPrompt(textModel: string, prompt: string) {
   return prompt;
 }
 
-function looksLikeVerbOnlyGloss(value: string) {
-  return /^(获得|赢得|赚取|取得|得到|获取|晋升|提升|升职|升迁|升级|成为|当上)/u.test(value.trim());
-}
-
 async function requestCompletionText(
   fetchFn: FetchLike,
   endpoint: string,
@@ -214,6 +207,7 @@ async function requestCompletionText(
 async function requestSelectionTranslation(
   fetchFn: FetchLike,
   completionEndpoint: string,
+  chatEndpoint: string,
   textModel: string,
   text: string,
   context: RequestContext,
@@ -224,6 +218,32 @@ async function requestSelectionTranslation(
     text,
     textModel,
   });
+
+  if (isHunyuanMtModel(textModel)) {
+    const output = await requestChatText(
+      fetchFn,
+      chatEndpoint,
+      textModel,
+      [
+        {
+          role: "system",
+          content: "You are an EPUB reader assistant. Reply only with the translation.",
+        },
+        {
+          role: "user",
+          content: firstPass.prompt,
+        },
+      ],
+      context.signal,
+    );
+
+    if (firstPass.mode === "sentence") {
+      return output;
+    }
+
+    return cleanupSelectionTranslationOutput(output, firstPass.mode);
+  }
+
   const initialOutput = await requestCompletionText(
     fetchFn,
     completionEndpoint,
@@ -233,48 +253,7 @@ async function requestSelectionTranslation(
     context.signal,
   );
   const cleanedInitialOutput = cleanupSelectionTranslationOutput(initialOutput, firstPass.mode);
-  const inferredWordClass = inferLikelySingleWordClass(text, context.sentenceContext);
-
-  if (
-    isHunyuanMtModel(textModel) &&
-    firstPass.mode === "word" &&
-    inferredWordClass === "noun" &&
-    looksLikeVerbOnlyGloss(cleanedInitialOutput)
-  ) {
-    const fallbackPrompt = buildStandaloneWordTranslationPrompt(text, context.targetLanguage, inferredWordClass);
-    const fallbackOutput = await requestCompletionText(
-      fetchFn,
-      completionEndpoint,
-      textModel,
-      fallbackPrompt.prompt,
-      fallbackPrompt.mode,
-      context.signal,
-    );
-
-    return cleanupSelectionTranslationOutput(fallbackOutput, fallbackPrompt.mode);
-  }
-
-  if (!shouldRetrySelectionGloss(initialOutput, firstPass.mode)) {
-    return cleanedInitialOutput;
-  }
-
-  const strictPass = buildSelectionTranslationPrompt({
-    sentenceContext: context.sentenceContext,
-    strict: true,
-    targetLanguage: context.targetLanguage,
-    text,
-    textModel,
-  });
-  const retryOutput = await requestCompletionText(
-    fetchFn,
-    completionEndpoint,
-    textModel,
-    strictPass.prompt,
-    strictPass.mode,
-    context.signal,
-  );
-
-  return cleanupSelectionTranslationOutput(retryOutput, strictPass.mode);
+  return cleanedInitialOutput;
 }
 
 async function requestBilingualExplain(
@@ -367,7 +346,7 @@ export function createOpenAIAdapter({
 
   return {
     translateSelection(text: string, context: RequestContext) {
-      return requestSelectionTranslation(fetchFn, resolvedCompletionEndpoint, textModel, text, context).catch(
+      return requestSelectionTranslation(fetchFn, resolvedCompletionEndpoint, chatEndpoint, textModel, text, context).catch(
         (error) => {
           throw normalizeOpenAIError(error);
         },

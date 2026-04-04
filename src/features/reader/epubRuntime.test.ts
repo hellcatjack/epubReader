@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildTocItems,
+  createReaderSelectionSnapshotFromRange,
   extractTtsBlockText,
   extractSentenceContextFromRange,
   findActiveTocPathForRange,
@@ -683,6 +684,58 @@ describe("epubRuntime tts targeting helpers", () => {
     range.setEnd(textNode, start + selectedSentence.length);
 
     expect(extractSentenceContextFromRange(range)).toBe("To her left was Eli’s bedroom.");
+  });
+
+  it("keeps a usable selection snapshot when Safari cannot derive a cfi from the current range", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>With Ender there was no chance to pass unnoticed.</p>
+    `;
+
+    const textNode = doc.querySelector("p")?.firstChild;
+    if (!textNode) {
+      throw new Error("missing paragraph text");
+    }
+
+    const range = doc.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(textNode, "With".length);
+
+    const snapshot = createReaderSelectionSnapshotFromRange({
+      contents: {
+        cfiFromRange() {
+          throw new Error("Safari failed to derive cfi");
+        },
+      } as Pick<import("epubjs").Contents, "cfiFromRange">,
+      isReleased: false,
+      range,
+      selectionRect: {
+        bottom: 124,
+        height: 24,
+        left: 100,
+        right: 148,
+        top: 100,
+        width: 48,
+      },
+      spineItemId: "chapter-4.xhtml",
+    });
+
+    expect(snapshot).toEqual({
+      cfiRange: "",
+      isReleased: false,
+      selectionRect: {
+        bottom: 124,
+        height: 24,
+        left: 100,
+        right: 148,
+        top: 100,
+        width: 48,
+      },
+      sentenceContext: "With Ender there was no chance to pass unnoticed.",
+      spineItemId: "chapter-4.xhtml",
+      text: "With",
+      ttsBlocks: undefined,
+    });
   });
 
   it("preserves nested epub navigation items instead of flattening them", () => {

@@ -168,3 +168,33 @@ it("switches to gemini byok controls inside the appearance panel", () => {
   expect(onGeminiModelChange).toHaveBeenCalledWith("gemini-2.5-flash");
   expect(onTranslationProviderChange).toHaveBeenCalledWith("local_llm");
 });
+
+it("shows a manual local model input when secure pages cannot auto-discover private-network models", async () => {
+  vi.stubGlobal("isSecureContext", true);
+
+  render(
+    <AppearancePanel
+      llmApiUrl="http://192.168.1.31:8001/v1/chat/completions"
+      preferences={{
+        columnCount: 1,
+        contentPadding: 32,
+        contentBackgroundColor: "#f6edde",
+        fontFamily: "book",
+        fontScale: 1,
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "scrolled",
+        theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
+      }}
+    />,
+  );
+
+  expect(await screen.findByRole("textbox", { name: /local llm model/i })).toBeInTheDocument();
+  expect(
+    screen.getByText(/cannot auto-discover models from http private-network endpoints/i),
+  ).toBeInTheDocument();
+});

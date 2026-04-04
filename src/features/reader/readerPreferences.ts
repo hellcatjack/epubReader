@@ -68,6 +68,7 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
       ? effectivePreferences.maxLineWidth + SCROLLED_MODE_WIDTH_BOOST
       : effectivePreferences.maxLineWidth;
   const bodyTheme: Record<string, string> = {
+    "-webkit-text-size-adjust": "100%",
     "background-color": effectivePreferences.contentBackgroundColor,
     "box-sizing": "border-box",
     "column-gap": `${columnGap}px`,
@@ -78,6 +79,7 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
     "margin": "0 auto",
     "max-width": `${maxLineWidth}px`,
     "padding": `${effectivePreferences.contentPadding}px`,
+    "text-size-adjust": "100%",
   };
 
   if (effectivePreferences.readingMode !== "paginated") {
@@ -86,7 +88,9 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
 
   return {
     html: {
+      "-webkit-text-size-adjust": "100%",
       "font-size": fontSize,
+      "text-size-adjust": "100%",
     },
     body: bodyTheme,
     "body.reader-image-page": {
@@ -128,6 +132,21 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
       "page-break-before": "always",
     },
   };
+}
+
+type ReaderThemeCapableRendition = {
+  themes: {
+    default: (theme: ReturnType<typeof buildReaderTheme>) => void;
+    fontSize?: (size: string) => void;
+  };
+};
+
+export function applyReaderThemeToRendition(rendition: ReaderThemeCapableRendition, preferences: ReaderPreferences) {
+  const theme = buildReaderTheme(preferences);
+  const effectivePreferences = getEffectiveReaderPreferences(preferences);
+  const fontSize = `${Math.round(effectivePreferences.fontScale * 100)}%`;
+  rendition.themes.default(theme);
+  rendition.themes.fontSize?.(fontSize);
 }
 
 export function toReaderPreferences(settings: Partial<SettingsInput>): ReaderPreferences {

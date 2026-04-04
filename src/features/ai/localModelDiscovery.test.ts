@@ -23,3 +23,14 @@ it("loads local model ids from the openai-compatible models endpoint", async () 
     method: "GET",
   });
 });
+
+it("blocks insecure private-network model discovery from secure pages before fetch", async () => {
+  const fakeFetch = vi.fn();
+  vi.stubGlobal("isSecureContext", true);
+
+  await expect(listLocalModels("http://192.168.1.31:8001/v1/chat/completions", fakeFetch)).rejects.toThrow(
+    /cannot auto-discover models/i,
+  );
+
+  expect(fakeFetch).not.toHaveBeenCalled();
+});
