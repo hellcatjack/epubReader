@@ -75,6 +75,10 @@ export function AppearancePanel({
   const localModelState = useLocalLlmModels(llmApiUrl, translationProvider === "local_llm");
   const localModelOptions = mergeModelOptions(localLlmModel, localModelState.models);
   const useManualLocalModelInput = localModelState.status === "blocked" || localModelState.status === "error";
+  const grammarModelDiscoveryEndpoint = grammarLlmApiUrl || llmApiUrl;
+  const grammarModelState = useLocalLlmModels(grammarModelDiscoveryEndpoint, translationProvider === "local_llm");
+  const grammarModelOptions = mergeModelOptions(grammarLlmModel, grammarModelState.models);
+  const useManualGrammarModelInput = grammarModelState.status === "blocked" || grammarModelState.status === "error";
 
   return (
     <section className="reader-panel" aria-label="Appearance">
@@ -263,16 +267,34 @@ export function AppearancePanel({
             </label>
             <label className="appearance-field appearance-field-wide">
               <span>Grammar LLM model</span>
-              <input
-                aria-label="Grammar LLM model"
-                autoComplete="off"
-                onChange={(event) => onGrammarLlmModelChange?.(event.target.value)}
-                placeholder="grammar-model"
-                spellCheck={false}
-                type="text"
-                value={grammarLlmModel}
-              />
-              <small className="appearance-field-note">Overrides the model used by Explain only.</small>
+              {useManualGrammarModelInput ? (
+                <input
+                  aria-label="Grammar LLM model"
+                  autoComplete="off"
+                  onChange={(event) => onGrammarLlmModelChange?.(event.target.value)}
+                  placeholder="grammar-model"
+                  spellCheck={false}
+                  type="text"
+                  value={grammarLlmModel}
+                />
+              ) : (
+                <select
+                  aria-label="Grammar LLM model"
+                  onChange={(event) => onGrammarLlmModelChange?.(event.target.value)}
+                  value={grammarLlmModel}
+                >
+                  <option value="">Reuse translation model</option>
+                  {grammarModelOptions.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <small className="appearance-field-note">
+                {getLocalModelDiscoveryNote(grammarModelState.status, grammarModelState.message)} Leave blank to reuse the
+                normal translation model.
+              </small>
             </label>
           </>
         ) : (

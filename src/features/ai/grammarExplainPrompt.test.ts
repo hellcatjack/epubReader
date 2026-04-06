@@ -25,6 +25,8 @@ describe("grammarExplainPrompt", () => {
     expect(prompt).toContain("## 再拆结构");
     expect(prompt).toContain("## 读起来要注意");
     expect(prompt).toContain("保持紧凑、自然，宁可少说一点，也不要铺开");
+    expect(prompt).toContain("成对的 ASCII 反引号(`)");
+    expect(prompt).toContain("不要使用单引号");
     expect(prompt).toContain(text);
   });
 

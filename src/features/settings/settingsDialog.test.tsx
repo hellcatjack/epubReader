@@ -128,8 +128,8 @@ it("persists browser tts settings and local llm provider configuration", async (
   const llmApiUrl = screen.getByLabelText(/^LLM API URL$/i);
   const grammarLlmApiUrl = screen.getByLabelText(/grammar llm api url/i);
   const localLlmModel = await screen.findByRole("combobox", { name: /local llm model/i });
-  const grammarLlmModel = screen.getByLabelText(/grammar llm model/i);
-  await screen.findByRole("option", { name: "phi-4-mini" });
+  const grammarLlmModel = await screen.findByRole("combobox", { name: /grammar llm model/i });
+  expect(await screen.findAllByRole("option", { name: "phi-4-mini" })).toHaveLength(2);
 
   expect(screen.queryByLabelText(/font scale/i)).not.toBeInTheDocument();
 
@@ -177,8 +177,7 @@ it("persists browser tts settings and local llm provider configuration", async (
   await user.clear(grammarLlmApiUrl);
   await user.type(grammarLlmApiUrl, "http://localhost:9001/v1/chat/completions");
   await user.selectOptions(localLlmModel, "phi-4-mini");
-  await user.clear(grammarLlmModel);
-  await user.type(grammarLlmModel, "grammar-model");
+  await user.selectOptions(grammarLlmModel, "phi-4-mini");
   await user.clear(ttsRate);
   await user.type(ttsRate, "1.15");
   await user.clear(ttsVolume);
@@ -189,7 +188,7 @@ it("persists browser tts settings and local llm provider configuration", async (
     apiKey: "",
     geminiModel: "gemini-2.5-flash",
     grammarLlmApiUrl: "http://localhost:9001/v1/chat/completions",
-    grammarLlmModel: "grammar-model",
+    grammarLlmModel: "phi-4-mini",
     llmApiUrl: "http://localhost:1234/v1",
     localLlmModel: "phi-4-mini",
     targetLanguage: "zh-CN",
@@ -305,8 +304,56 @@ it("shows a manual local model input when secure pages cannot auto-discover priv
 
   expect(await screen.findByRole("textbox", { name: /local llm model/i })).toBeInTheDocument();
   expect(
-    screen.getByText(/cannot auto-discover models from http private-network endpoints/i),
-  ).toBeInTheDocument();
+    screen.getAllByText(/cannot auto-discover models from http private-network endpoints/i),
+  ).not.toHaveLength(0);
+});
+
+it("shows a grammar model selector when grammar models can be discovered", async () => {
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: "grammar-model" }, { id: "grammar-model-2" }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    ),
+  );
+  await db.settings.put(
+    createStoredSettings({
+      grammarLlmApiUrl: "http://localhost:9001/v1/chat/completions",
+      translationProvider: "local_llm",
+    }),
+  );
+
+  render(<SettingsDialog />);
+
+  await screen.findByRole("combobox", { name: /grammar llm model/i });
+  expect(await screen.findAllByRole("option", { name: "grammar-model-2" })).toHaveLength(2);
+});
+
+it("shows a manual grammar model input when secure pages cannot auto-discover the grammar endpoint", async () => {
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+  vi.stubGlobal("isSecureContext", true);
+  await db.settings.put(
+    createStoredSettings({
+      grammarLlmApiUrl: "http://192.168.1.31:8004/v1/chat/completions",
+      translationProvider: "local_llm",
+    }),
+  );
+
+  render(<SettingsDialog />);
+
+  expect(await screen.findByRole("textbox", { name: /grammar llm model/i })).toBeInTheDocument();
+  expect(
+    screen.getAllByText(/cannot auto-discover models from http private-network endpoints/i),
+  ).not.toHaveLength(0);
 });
 
 it("shows single-column paginated mode in the settings UI without deleting the saved scrolled preference", async () => {

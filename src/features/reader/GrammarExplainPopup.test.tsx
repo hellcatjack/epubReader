@@ -42,6 +42,30 @@ describe("GrammarExplainPopup", () => {
     expect(screen.getByText("be supposed to").tagName).toBe("CODE");
   });
 
+  it("repairs malformed inline code when the model closes a backtick span with an apostrophe-like quote", () => {
+    render(
+      <GrammarExplainPopup
+        explanation={
+          "<answer>\n## 再拆结构\n* 这里的 `teachers’ quarters' 指的是老师宿舍。\n* `don't come crying to me’ 是很不耐烦的警告。\n</answer>"
+        }
+      />,
+    );
+
+    expect(screen.getByText("teachers’ quarters").tagName).toBe("CODE");
+    expect(screen.getByText("don't come crying to me").tagName).toBe("CODE");
+  });
+
+  it("repairs malformed inline code when the model leaves a single opening backtick before punctuation", () => {
+    render(
+      <GrammarExplainPopup
+        explanation={"<answer>\n## 读起来要注意\n* 这里强调 `Battle School，不是在说普通学校。\n</answer>"}
+      />,
+    );
+
+    expect(screen.getByText("Battle School").tagName).toBe("CODE");
+    expect(screen.queryByText("`Battle School")).not.toBeInTheDocument();
+  });
+
   it("shows the selected source text in a dedicated quote card above the explanation", () => {
     render(
       <GrammarExplainPopup
@@ -60,5 +84,16 @@ describe("GrammarExplainPopup", () => {
     expect(screen.getByRole("dialog", { name: /grammar explanation/i })).toHaveStyle({
       "--reader-tts-sentence-note-text-scale": "1.35",
     });
+  });
+
+  it("does not turn ordinary apostrophes into code when there is no opening backtick", () => {
+    render(
+      <GrammarExplainPopup
+        explanation={"<answer>\n## 读起来要注意\n* `don't like Launchies butting in` 是完整短语，但 that's 里的撇号只是正常拼写。\n</answer>"}
+      />,
+    );
+
+    expect(screen.getByText("don't like Launchies butting in").tagName).toBe("CODE");
+    expect(screen.queryByText("that's")?.tagName).not.toBe("CODE");
   });
 });

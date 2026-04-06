@@ -12,8 +12,92 @@ type GrammarExplainBlock =
   | { ordered?: boolean; items: string[]; type: "list" }
   | { text: string; type: "paragraph" };
 
+const INLINE_CODE_MAX_LENGTH = 120;
+const INLINE_CODE_FALLBACK_CLOSERS = new Set(["'", "’", "‘"]);
+const INLINE_CODE_STOP_CHARS = new Set(["\n", ".", ",", "!", "?", ":", ";", "。", "，", "！", "？", "：", "；"]);
+
 function normalizeInlineSpacing(text: string) {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function isCjkCharacter(char: string | undefined) {
+  return char != null && /[\u3400-\u9fff]/u.test(char);
+}
+
+function isInlineCodeBoundary(char: string | undefined) {
+  return char == null || /\s|[)\]}>」』】》）,.!?;:，。！？；：]/u.test(char);
+}
+
+function looksLikeInlineCode(text: string) {
+  const normalized = text.trim();
+  if (!normalized || normalized.length > INLINE_CODE_MAX_LENGTH) {
+    return false;
+  }
+
+  if (!/[A-Za-z]/.test(normalized)) {
+    return false;
+  }
+
+  if (/[`]/.test(normalized) || /[\u4e00-\u9fff]/u.test(normalized)) {
+    return false;
+  }
+
+  return /^[A-Za-z0-9\s"'‘’.,!?;:()[\]{}\-_/&]+$/u.test(normalized);
+}
+
+function findMalformedInlineCode(text: string, codeStart: number) {
+  const searchLimit = Math.min(text.length, codeStart + INLINE_CODE_MAX_LENGTH + 1);
+  let quoteCloserIndex = -1;
+  let boundaryIndex = -1;
+
+  for (let index = codeStart + 1; index < searchLimit; index += 1) {
+    const char = text[index];
+    if (char === "`") {
+      return null;
+    }
+
+    if (INLINE_CODE_FALLBACK_CLOSERS.has(char) && isInlineCodeBoundary(text[index + 1])) {
+      quoteCloserIndex = index;
+      continue;
+    }
+
+    if (isCjkCharacter(char) || INLINE_CODE_STOP_CHARS.has(char)) {
+      boundaryIndex = index;
+      break;
+    }
+  }
+
+  if (quoteCloserIndex !== -1) {
+    const candidate = text.slice(codeStart + 1, quoteCloserIndex);
+    if (looksLikeInlineCode(candidate)) {
+      return {
+        codeText: candidate.trim(),
+        nextCursor: quoteCloserIndex + 1,
+      };
+    }
+  }
+
+  if (boundaryIndex !== -1) {
+    const candidate = text.slice(codeStart + 1, boundaryIndex);
+    if (looksLikeInlineCode(candidate)) {
+      return {
+        codeText: candidate.trim(),
+        nextCursor: boundaryIndex,
+      };
+    }
+  }
+
+  if (searchLimit === text.length) {
+    const candidate = text.slice(codeStart + 1);
+    if (looksLikeInlineCode(candidate)) {
+      return {
+        codeText: candidate.trim(),
+        nextCursor: text.length,
+      };
+    }
+  }
+
+  return null;
 }
 
 function formatGrammarExplanation(explanation: string): GrammarExplainBlock[] {
@@ -153,8 +237,16 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
 
     const end = text.indexOf("`", codeStart + 1);
     if (end === -1) {
-      nodes.push(text.slice(codeStart));
-      return nodes;
+      const repairedCode = findMalformedInlineCode(text, codeStart);
+      if (!repairedCode) {
+        nodes.push(text.slice(codeStart));
+        return nodes;
+      }
+
+      nodes.push(<code key={`${keyPrefix}-code-${segmentIndex}`}>{repairedCode.codeText}</code>);
+      segmentIndex += 1;
+      cursor = repairedCode.nextCursor;
+      continue;
     }
 
     const codeText = text.slice(codeStart + 1, end).trim();
