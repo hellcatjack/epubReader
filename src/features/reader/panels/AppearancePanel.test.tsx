@@ -73,6 +73,8 @@ it("renders a now reading text size input and emits updates", () => {
 
 it("renders an llm api url input and emits direct updates", () => {
   const onLlmApiUrlChange = vi.fn();
+  const onGrammarLlmApiUrlChange = vi.fn();
+  const onGrammarLlmModelChange = vi.fn();
   const onLocalLlmModelChange = vi.fn();
   vi.stubGlobal(
     "fetch",
@@ -92,6 +94,10 @@ it("renders an llm api url input and emits direct updates", () => {
   render(
     <AppearancePanel
       llmApiUrl="http://localhost:8001/v1/chat/completions"
+      grammarLlmApiUrl="http://localhost:9001/v1/chat/completions"
+      grammarLlmModel="grammar-model"
+      onGrammarLlmApiUrlChange={onGrammarLlmApiUrlChange}
+      onGrammarLlmModelChange={onGrammarLlmModelChange}
       onLlmApiUrlChange={onLlmApiUrlChange}
       onLocalLlmModelChange={onLocalLlmModelChange}
       preferences={{
@@ -112,13 +118,48 @@ it("renders an llm api url input and emits direct updates", () => {
     />,
   );
 
-  const input = screen.getByLabelText(/llm api url/i);
+  const input = screen.getByLabelText(/^llm api url$/i);
+  const grammarApiInput = screen.getByLabelText(/grammar llm api url/i);
+  const grammarModelInput = screen.getByLabelText(/grammar llm model/i);
   expect(input).toHaveValue("http://localhost:8001/v1/chat/completions");
+  expect(grammarApiInput).toHaveValue("http://localhost:9001/v1/chat/completions");
+  expect(grammarModelInput).toHaveValue("grammar-model");
 
   fireEvent.change(input, { target: { value: "http://localhost:1234/v1" } });
+  fireEvent.change(grammarApiInput, { target: { value: "http://localhost:9999/v1/chat/completions" } });
+  fireEvent.change(grammarModelInput, { target: { value: "grammar-model-2" } });
 
   expect(onLlmApiUrlChange).toHaveBeenCalledWith("http://localhost:1234/v1");
+  expect(onGrammarLlmApiUrlChange).toHaveBeenCalledWith("http://localhost:9999/v1/chat/completions");
+  expect(onGrammarLlmModelChange).toHaveBeenCalledWith("grammar-model-2");
   expect(screen.getByRole("combobox", { name: /local llm model/i })).toBeInTheDocument();
+});
+
+it("exposes grammar llm api controls in the reader appearance panel", () => {
+  render(
+    <AppearancePanel
+      grammarLlmApiUrl="http://localhost:9001/v1/chat/completions"
+      grammarLlmModel="grammar-model"
+      preferences={{
+        columnCount: 1,
+        contentPadding: 32,
+        contentBackgroundColor: "#f6edde",
+        fontFamily: "book",
+        fontScale: 1,
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "scrolled",
+        theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
+      }}
+    />,
+  );
+
+  expect(screen.getByLabelText(/grammar llm api url/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/grammar llm model/i)).toBeInTheDocument();
 });
 
 it("switches to gemini byok controls inside the appearance panel", () => {
@@ -152,7 +193,7 @@ it("switches to gemini byok controls inside the appearance panel", () => {
     />,
   );
 
-  expect(screen.queryByLabelText(/llm api url/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^llm api url$/i)).not.toBeInTheDocument();
   expect(screen.getByLabelText(/gemini api key/i)).toHaveValue("gemini-secret");
   expect(screen.getByRole("combobox", { name: /gemini model/i })).toHaveValue("gemini-2.5-flash-lite");
 

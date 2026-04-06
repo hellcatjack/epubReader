@@ -141,6 +141,17 @@ function createSettingsInput(overrides: Partial<typeof defaultSettings> = {}) {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
 it("detects iPad Safari, Chrome, and Edge for touch-selection translation fallback", () => {
   expect(
     isIpadTouchSelectionBrowser({
@@ -331,6 +342,51 @@ it("uses drawer toggles instead of inline side panels on tablet-sized viewports"
 
   await user.click(screen.getByRole("button", { name: /tools/i }));
   expect(await screen.findByRole("dialog", { name: /reader tools drawer/i })).toBeInTheDocument();
+});
+
+it("shows explain results in an async grammar popup and closes only through the explicit x button", async () => {
+  const user = userEvent.setup();
+  const deferredExplain = createDeferred<string>();
+
+  render(
+    <ReaderPage
+      ai={{
+        explainSelection: vi.fn(() => deferredExplain.promise),
+        translateSelection: vi.fn(async () => "你好"),
+      }}
+    />,
+  );
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "Despite himself, Ender's voice trembled.",
+    });
+  });
+
+  await user.click(screen.getByRole("button", { name: /explain/i }));
+
+  const popup = await screen.findByRole("dialog", { name: /grammar explanation/i });
+  expect(popup).toHaveTextContent("正在解析语法...");
+  expect(popup).toHaveTextContent("Despite himself, Ender's voice trembled.");
+  expect(screen.queryByLabelText("Explanation result")).not.toBeInTheDocument();
+
+  await act(async () => {
+    deferredExplain.resolve("这里是语法解析。");
+    await deferredExplain.promise;
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole("dialog", { name: /grammar explanation/i })).toHaveTextContent("这里是语法解析。");
+  });
+
+  await user.click(screen.getByRole("button", { name: /close grammar explanation/i }));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: /grammar explanation/i })).not.toBeInTheDocument();
+  });
 });
 
 it("shows a persistent translation bubble for multi-word selections on tablet-sized viewports", async () => {
@@ -2680,7 +2736,7 @@ it("persists llm api url changes from the reader tools panel", async () => {
   );
 
   await act(async () => {
-    fireEvent.change(await screen.findByLabelText(/llm api url/i), {
+    fireEvent.change(await screen.findByLabelText(/^LLM API URL$/i), {
       target: { value: "http://localhost:1234/v1" },
     });
   });

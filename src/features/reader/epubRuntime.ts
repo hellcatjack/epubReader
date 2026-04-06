@@ -2095,6 +2095,27 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
       const handlePointerDown = () => {
         pointerSelecting = true;
+        currentContents = contents;
+        syncPagePresentation(contents);
+        void applyActiveTtsSegment(activeTtsSegment);
+
+        const snapshot = getSelectionSnapshotFromContents(contents);
+        if (!snapshot) {
+          pendingSelection = null;
+          onSelectionChange?.({
+            cfiRange: "",
+            isReleased: false,
+            spineItemId: "",
+            text: "",
+          });
+          return;
+        }
+
+        pendingSelection = {
+          ...snapshot,
+          isReleased: false,
+        };
+        onSelectionChange?.(pendingSelection);
       };
 
       const handlePointerUp = () => {

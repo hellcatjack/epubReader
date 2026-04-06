@@ -5,11 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 import { AiResultPanel } from "./AiResultPanel";
 
 describe("AiResultPanel", () => {
-  it("renders translation metadata and result in separate surfaces", () => {
+  it("renders translation metadata and result without an explanation surface", () => {
     render(
       <AiResultPanel
         {...({
-          explanation: "中文解释：表示被压住或紧迫。\n\nEnglish explanation: describes pressure or urgency.",
           ipa: "/prest/",
           selectedText: "pressed",
           translation: "按压的；紧迫的。",
@@ -20,13 +19,11 @@ describe("AiResultPanel", () => {
     const panel = screen.getByLabelText("AI result");
     expect(panel.querySelector(".reader-ai-meta")).not.toBeNull();
     expect(panel.querySelector(".reader-ai-surface-primary")).not.toBeNull();
-    expect(panel.querySelector(".reader-ai-surface-secondary")).not.toBeNull();
+    expect(panel.querySelector(".reader-ai-surface-secondary")).toBeNull();
     expect(screen.getByText("Selection")).toBeInTheDocument();
     expect(screen.getByText("IPA")).toBeInTheDocument();
     expect(screen.getByText("Translation")).toBeInTheDocument();
-    expect(screen.getByText("Explanation")).toBeInTheDocument();
     expect(screen.getByText("按压的；紧迫的。")).toBeInTheDocument();
-    expect(screen.getByText(/English explanation:/)).toBeInTheDocument();
   });
 
   it("keeps the ipa label and value grouped in the left-aligned meta column", () => {
@@ -56,20 +53,6 @@ describe("AiResultPanel", () => {
     );
 
     expect(screen.queryByText("IPA")).toBeNull();
-  });
-
-  it("shows an explanation placeholder before explain is requested", () => {
-    render(
-      <AiResultPanel
-        {...({
-          ipa: "/prest/",
-          selectedText: "pressed",
-          translation: "按压",
-        } as Record<string, unknown>)}
-      />,
-    );
-
-    expect(screen.getByText("Click Explain for deeper context.")).toBeInTheDocument();
   });
 
   it("shows a compact read aloud button beside the current selection", async () => {

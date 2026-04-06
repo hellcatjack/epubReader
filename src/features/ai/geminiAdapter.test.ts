@@ -50,3 +50,39 @@ it("sends translation requests to gemini generateContent with the configured api
   expect(body.generationConfig.temperature).toBe(0.1);
 });
 
+it("sends explain requests as Chinese grammar analysis only", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: "<answer>\n## 先看整句\n这里是语法解析。\n</answer>" }],
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createGeminiAdapter({
+    apiKey: "gemini-secret-key",
+    fetch: fakeFetch,
+    textModel: "gemini-2.5-flash",
+  });
+
+  await expect(adapter.explainSelection("Despite himself, Ender's voice trembled.", { targetLanguage: "zh-CN" })).resolves.toBe(
+    "## 先看整句\n这里是语法解析。",
+  );
+
+  const body = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(body.contents[0]?.parts[0]?.text).toContain("## 先看整句");
+  expect(body.contents[0]?.parts[0]?.text).toContain("## 再拆结构");
+  expect(body.contents[0]?.parts[0]?.text).toContain("## 读起来要注意");
+  expect(body.contents[0]?.parts[0]?.text).toContain("<answer>");
+});

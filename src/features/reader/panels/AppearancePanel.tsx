@@ -6,11 +6,15 @@ import type { ReaderPreferences } from "../readerPreferences";
 type AppearancePanelProps = {
   apiKey?: string;
   geminiModel?: string;
+  grammarLlmApiUrl?: string;
+  grammarLlmModel?: string;
   llmApiUrl?: string;
   localLlmModel?: string;
   onApiKeyChange?: (value: string) => void;
   onChange?: (patch: Partial<ReaderPreferences>) => void;
   onGeminiModelChange?: (value: string) => void;
+  onGrammarLlmApiUrlChange?: (value: string) => void;
+  onGrammarLlmModelChange?: (value: string) => void;
   onLlmApiUrlChange?: (value: string) => void;
   onLocalLlmModelChange?: (value: string) => void;
   onTranslationProviderChange?: (value: TranslationProvider) => void;
@@ -53,11 +57,15 @@ function getLocalModelDiscoveryNote(status: "idle" | "loading" | "ready" | "erro
 export function AppearancePanel({
   apiKey = "",
   geminiModel = "gemini-2.5-flash",
+  grammarLlmApiUrl = "",
+  grammarLlmModel = "",
   llmApiUrl = "",
   localLlmModel = "",
   onApiKeyChange,
   onChange,
   onGeminiModelChange,
+  onGrammarLlmApiUrlChange,
+  onGrammarLlmModelChange,
   onLlmApiUrlChange,
   onLocalLlmModelChange,
   onTranslationProviderChange,
@@ -212,6 +220,18 @@ export function AppearancePanel({
               <small className="appearance-field-note">Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
             </label>
             <label className="appearance-field appearance-field-wide">
+              <span>Grammar LLM API URL</span>
+              <input
+                aria-label="Grammar LLM API URL"
+                inputMode="url"
+                onChange={(event) => onGrammarLlmApiUrlChange?.(event.target.value)}
+                placeholder="http://localhost:1234/v1"
+                type="url"
+                value={grammarLlmApiUrl}
+              />
+              <small className="appearance-field-note">Used only for Explain grammar analysis.</small>
+            </label>
+            <label className="appearance-field appearance-field-wide">
               <span>Local LLM model</span>
               {useManualLocalModelInput ? (
                 <input
@@ -240,6 +260,19 @@ export function AppearancePanel({
               <small className="appearance-field-note">
                 {getLocalModelDiscoveryNote(localModelState.status, localModelState.message)}
               </small>
+            </label>
+            <label className="appearance-field appearance-field-wide">
+              <span>Grammar LLM model</span>
+              <input
+                aria-label="Grammar LLM model"
+                autoComplete="off"
+                onChange={(event) => onGrammarLlmModelChange?.(event.target.value)}
+                placeholder="grammar-model"
+                spellCheck={false}
+                type="text"
+                value={grammarLlmModel}
+              />
+              <small className="appearance-field-note">Overrides the model used by Explain only.</small>
             </label>
           </>
         ) : (

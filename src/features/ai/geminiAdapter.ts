@@ -4,6 +4,11 @@ import {
   shouldRetrySelectionGloss,
   type SelectionTranslationMode,
 } from "./selectionTranslation";
+import {
+  createGrammarExplainSystemPrompt,
+  createGrammarExplainUserPrompt,
+  extractGrammarExplainAnswer,
+} from "./grammarExplainPrompt";
 
 type FetchLike = typeof fetch;
 
@@ -26,14 +31,6 @@ type GeminiAdapterDeps = {
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
-
-function createExplainSectionPrompt(text: string, language: "zh-CN" | "en") {
-  if (language === "zh-CN") {
-    return `Explain the following reading selection in Simplified Chinese. Return only the explanation.\n\n${text}`;
-  }
-
-  return `Explain the following reading selection in English. Return only the explanation.\n\n${text}`;
-}
 
 function getGenerateContentEndpoint(model: string) {
   return `${GEMINI_API_BASE}/${model}:generateContent`;
@@ -166,19 +163,23 @@ async function requestSelectionTranslation(
   return cleanupSelectionTranslationOutput(retryOutput, strictPass.mode);
 }
 
-async function requestBilingualExplain(
+async function requestGrammarExplain(
   fetchFn: FetchLike,
   endpoint: string,
   apiKey: string,
   text: string,
   context: RequestContext,
 ) {
-  const [chineseExplanation, englishExplanation] = await Promise.all([
-    requestGenerateContent(fetchFn, endpoint, apiKey, createExplainSectionPrompt(text, "zh-CN"), "sentence", context.signal),
-    requestGenerateContent(fetchFn, endpoint, apiKey, createExplainSectionPrompt(text, "en"), "sentence", context.signal),
-  ]);
+  const output = await requestGenerateContent(
+    fetchFn,
+    endpoint,
+    apiKey,
+    `${createGrammarExplainSystemPrompt()}\n\n${createGrammarExplainUserPrompt(text)}`,
+    "sentence",
+    context.signal,
+  );
 
-  return `中文解释：${chineseExplanation}\n\nEnglish explanation: ${englishExplanation}`;
+  return extractGrammarExplainAnswer(output);
 }
 
 export function createGeminiAdapter({
@@ -193,7 +194,7 @@ export function createGeminiAdapter({
       return requestSelectionTranslation(fetchFn, endpoint, apiKey, text, context);
     },
     explainSelection(text: string, context: RequestContext) {
-      return requestBilingualExplain(fetchFn, endpoint, apiKey, text, context);
+      return requestGrammarExplain(fetchFn, endpoint, apiKey, text, context);
     },
     async synthesizeSpeech(_text: string, _options: SpeechOptions) {
       throw { kind: "unsupported" } as const;

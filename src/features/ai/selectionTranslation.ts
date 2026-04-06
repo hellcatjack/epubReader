@@ -1,6 +1,5 @@
 export type SelectionTranslationMode = "word" | "phrase" | "sentence";
 export type SingleWordClassHint = "noun" | "verb" | "unknown";
-type TranslationPromptProfile = "default" | "hunyuan_mt";
 
 type BuildSelectionTranslationPromptOptions = {
   sentenceContext?: string;
@@ -242,65 +241,23 @@ function buildSentencePrompt(text: string, targetLanguage: string) {
   if (targetLanguage === "zh-CN") {
     return [
       "你是电子书阅读助手。请将下面的内容准确翻译成简体中文。",
-      "要求：",
-      "- 只输出译文",
-      "- 不要解释",
-      "",
-      `待翻译内容：${text}`,
+      "只输出译文。",
+      "不要解释。",
+      "不要重复要求或标签。",
+      "待翻译内容：",
+      text,
       "译文：",
     ].join("\n");
   }
 
   return [
     `You are an EPUB reader assistant. Translate the following text into ${describeLanguage(targetLanguage)}.`,
-    "Rules:",
-    "- Return translation only",
-    "- Do not explain",
-    "",
-    `Text: ${text}`,
+    "Return translation only.",
+    "Do not explain.",
+    "Do not repeat the instructions or labels.",
+    "Text:",
+    text,
     "Translation:",
-  ].join("\n");
-}
-
-function normalizeModelName(textModel?: string) {
-  const normalized = (textModel ?? "").trim();
-  if (!normalized) {
-    return "";
-  }
-
-  const withoutNamespace = normalized.split("/").at(-1) ?? normalized;
-  return withoutNamespace.split(":")[0]?.trim() ?? withoutNamespace;
-}
-
-function isHunyuanMtModelName(textModel?: string) {
-  return normalizeModelName(textModel).includes("HY-MT1.5");
-}
-
-function resolveTranslationPromptProfile(textModel?: string): TranslationPromptProfile {
-  return isHunyuanMtModelName(textModel) ? "hunyuan_mt" : "default";
-}
-
-function buildHunyuanDirectTranslationPrompt(text: string, targetLanguage: string) {
-  if (targetLanguage === "zh-CN") {
-    return [
-      "将以下文本翻译为简体中文，注意只需要输出翻译后的结果，不要额外解释：",
-      "",
-      text,
-    ].join("\n");
-  }
-
-  return [
-    `Translate the following segment into ${describeLanguage(targetLanguage)}, without additional explanation.`,
-    "",
-    text,
-  ].join("\n");
-}
-
-function buildHunyuanContextualTranslationPrompt(text: string, sentenceContext: string, targetLanguage: string) {
-  return [
-    sentenceContext,
-    `参考上面的信息，把下面的文本翻译成${describeLanguage(targetLanguage)}，注意不需要翻译上文，也不要额外解释：`,
-    text,
   ].join("\n");
 }
 
@@ -376,24 +333,8 @@ export function buildSelectionTranslationPrompt({
   strict = false,
   targetLanguage,
   text,
-  textModel,
 }: BuildSelectionTranslationPromptOptions): SelectionTranslationPrompt {
   const mode = classifySelectionTranslationMode(text, sentenceContext);
-  const profile = resolveTranslationPromptProfile(textModel);
-
-  if (profile === "hunyuan_mt") {
-    if (sentenceContext && normalizeText(text) !== normalizeText(sentenceContext)) {
-      return {
-        mode,
-        prompt: buildHunyuanContextualTranslationPrompt(text, sentenceContext, targetLanguage),
-      };
-    }
-
-    return {
-      mode,
-      prompt: buildHunyuanDirectTranslationPrompt(text, targetLanguage),
-    };
-  }
 
   if (mode === "word" && sentenceContext) {
     return {

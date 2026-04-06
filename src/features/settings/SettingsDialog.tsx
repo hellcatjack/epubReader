@@ -178,6 +178,8 @@ export function SettingsDialog() {
     settings.translationProvider === "local_llm"
       ? settings.localLlmModel || "Default model"
       : settings.geminiModel;
+  const activeGrammarEndpointLabel = settings.grammarLlmApiUrl || "Reuse translation endpoint";
+  const activeGrammarModelLabel = settings.grammarLlmModel || "Reuse translation model";
 
   return (
     <section aria-label="Reader settings" className="settings-dialog">
@@ -299,6 +301,20 @@ export function SettingsDialog() {
                     <small>Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
                   </label>
                   <label className="settings-field settings-field-wide">
+                    <span>Grammar LLM API URL</span>
+                    <input
+                      aria-label="Grammar LLM API URL"
+                      inputMode="url"
+                      onChange={(event) =>
+                        setSettings((current) => ({ ...current, grammarLlmApiUrl: event.target.value }))
+                      }
+                      placeholder="http://localhost:9001/v1/chat/completions"
+                      type="url"
+                      value={settings.grammarLlmApiUrl}
+                    />
+                    <small>Used only for Explain grammar analysis. Leave blank to reuse the normal translation endpoint.</small>
+                  </label>
+                  <label className="settings-field settings-field-wide">
                     <span>Local LLM model</span>
                     {useManualLocalModelInput ? (
                       <input
@@ -325,6 +341,21 @@ export function SettingsDialog() {
                       </select>
                     )}
                     <small>{getLocalModelDiscoveryNote(localModelState.status, localModelState.message)}</small>
+                  </label>
+                  <label className="settings-field settings-field-wide">
+                    <span>Grammar LLM model</span>
+                    <input
+                      aria-label="Grammar LLM model"
+                      autoComplete="off"
+                      onChange={(event) =>
+                        setSettings((current) => ({ ...current, grammarLlmModel: event.target.value }))
+                      }
+                      placeholder="grammar-model"
+                      spellCheck={false}
+                      type="text"
+                      value={settings.grammarLlmModel}
+                    />
+                    <small>Overrides the model used by Explain only. Leave blank to reuse the normal translation model.</small>
                   </label>
                 </>
               ) : (
@@ -575,6 +606,12 @@ export function SettingsDialog() {
                   <p>
                     <strong>Model:</strong> {activeModelLabel}
                   </p>
+                  <p>
+                    <strong>Grammar endpoint:</strong> {activeGrammarEndpointLabel}
+                  </p>
+                  <p>
+                    <strong>Grammar model:</strong> {activeGrammarModelLabel}
+                  </p>
                 </div>
               </div>
               <div className="settings-field settings-field-wide settings-reset-card">
@@ -601,8 +638,8 @@ export function SettingsDialog() {
       <div className="settings-footer">
         <p className="settings-disclosure">
           {settings.translationProvider === "gemini_byok"
-            ? "Translation and explanation requests are sent directly from this browser to Gemini using your API key."
-            : "Translation and explanation requests are sent directly from this browser to your configured local model endpoint."}
+            ? "Translation requests are sent directly from this browser to Gemini using your API key. Explain uses the dedicated grammar endpoint when configured."
+            : "Translation requests are sent directly from this browser to your configured local model endpoint. Explain uses the dedicated grammar endpoint when configured."}
         </p>
         <div className="settings-actions">
           <button onClick={handleSave} type="button" className="settings-save-button">

@@ -13,9 +13,9 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   apiKey?: string;
   aiIpa?: string;
   appearance?: ReaderPreferences;
-  explanation?: string;
-  explanationError?: string;
   geminiModel?: string;
+  grammarLlmApiUrl?: string;
+  grammarLlmModel?: string;
   noteDraft?: string;
   noteOpen?: boolean;
   llmApiUrl?: string;
@@ -23,6 +23,8 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onApiKeyChange?: (value: string) => void;
   onAppearanceChange?: (patch: Partial<ReaderPreferences>) => void;
   onGeminiModelChange?: (value: string) => void;
+  onGrammarLlmApiUrlChange?: (value: string) => void;
+  onGrammarLlmModelChange?: (value: string) => void;
   onLlmApiUrlChange?: (value: string) => void;
   onLocalLlmModelChange?: (value: string) => void;
   onNoteDraftChange?: (value: string) => void;
@@ -59,9 +61,9 @@ export function RightPanel({
   apiKey,
   aiIpa,
   appearance,
-  explanation,
-  explanationError,
   geminiModel,
+  grammarLlmApiUrl,
+  grammarLlmModel,
   llmApiUrl,
   localLlmModel,
   noteDraft,
@@ -69,6 +71,8 @@ export function RightPanel({
   onApiKeyChange,
   onAppearanceChange,
   onGeminiModelChange,
+  onGrammarLlmApiUrlChange,
+  onGrammarLlmModelChange,
   onLlmApiUrlChange,
   onLocalLlmModelChange,
   onNoteDraftChange,
@@ -126,8 +130,6 @@ export function RightPanel({
       </div>
       <div className="reader-tools-scroll" role="group" aria-label="Reader detail panels">
         <AiResultPanel
-          explanation={explanation}
-          explanationError={explanationError}
           ipa={aiIpa}
           onReadAloud={onSelectionReadAloud}
           selectedText={selectedText}
@@ -139,11 +141,15 @@ export function RightPanel({
           <AppearancePanel
             apiKey={apiKey}
             geminiModel={geminiModel}
+            grammarLlmApiUrl={grammarLlmApiUrl}
+            grammarLlmModel={grammarLlmModel}
             llmApiUrl={llmApiUrl}
             localLlmModel={localLlmModel}
             onApiKeyChange={onApiKeyChange}
             onChange={onAppearanceChange}
             onGeminiModelChange={onGeminiModelChange}
+            onGrammarLlmApiUrlChange={onGrammarLlmApiUrlChange}
+            onGrammarLlmModelChange={onGrammarLlmModelChange}
             onLlmApiUrlChange={onLlmApiUrlChange}
             onLocalLlmModelChange={onLocalLlmModelChange}
             onTranslationProviderChange={onTranslationProviderChange}

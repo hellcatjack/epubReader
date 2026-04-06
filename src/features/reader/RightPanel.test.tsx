@@ -10,7 +10,6 @@ it("keeps the tts queue outside the scrolling reader detail panels", () => {
     <RightPanel
       appearance={defaultReaderPreferences}
       aria-label="Reader tools"
-      explanation="Long explanation"
       selectedText="Selected text"
       translation="Long translation"
       ttsStatus="idle"
@@ -23,6 +22,7 @@ it("keeps the tts queue outside the scrolling reader detail panels", () => {
   expect(within(tools).getByRole("heading", { name: /tts queue/i })).toBeInTheDocument();
   expect(within(detailPanels).queryByRole("heading", { name: /tts queue/i })).not.toBeInTheDocument();
   expect(within(detailPanels).getByRole("heading", { name: /reading assistant/i })).toBeInTheDocument();
+  expect(within(detailPanels).queryByText("Explanation")).not.toBeInTheDocument();
 });
 
 it("wires the reading assistant read-aloud button to the selection playback handler", async () => {

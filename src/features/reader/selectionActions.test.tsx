@@ -135,16 +135,16 @@ it("automatically translates and auto-reads a new selection while keeping explai
   });
   expect(await screen.findByText("你好，世界")).toBeInTheDocument();
   expect(screen.getByLabelText("Translation result")).toHaveTextContent("你好，世界");
-  expect(screen.getByLabelText("Explanation result")).toHaveTextContent("Click Explain for deeper context.");
+  expect(screen.queryByLabelText("Explanation result")).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
   expect(ai.explainSelection).toHaveBeenCalledWith(
     "Hello",
     expect.objectContaining({ targetLanguage: "zh-CN" }),
   );
-  expect(await screen.findByText("A short contextual explanation")).toBeInTheDocument();
+  const explainPopup = await screen.findByRole("dialog", { name: /grammar explanation/i });
+  expect(explainPopup).toHaveTextContent("A short contextual explanation");
   expect(screen.getByLabelText("Translation result")).toHaveTextContent("你好，世界");
-  expect(screen.getByLabelText("Explanation result")).not.toHaveTextContent("Click Explain for deeper context.");
 
   await user.click(screen.getByRole("button", { name: /add note/i }));
   expect(screen.getByRole("textbox", { name: /note body/i })).toBeInTheDocument();
@@ -401,7 +401,7 @@ it("keeps translation visible when explain fails", async () => {
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
 
-  expect(await screen.findByText(/Explain failed:/)).toBeInTheDocument();
+  expect(await screen.findByText(/语法解析失败：/)).toBeInTheDocument();
   expect(screen.getByLabelText("Translation result")).toHaveTextContent("按压");
 });
 

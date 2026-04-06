@@ -125,8 +125,10 @@ it("persists browser tts settings and local llm provider configuration", async (
   const ttsRate = screen.getByLabelText(/tts rate/i);
   const ttsVolume = screen.getByLabelText(/tts volume/i);
   const ttsFollowPlayback = screen.getByRole("checkbox", { name: /follow tts playback/i });
-  const llmApiUrl = screen.getByLabelText(/llm api url/i);
+  const llmApiUrl = screen.getByLabelText(/^LLM API URL$/i);
+  const grammarLlmApiUrl = screen.getByLabelText(/grammar llm api url/i);
   const localLlmModel = await screen.findByRole("combobox", { name: /local llm model/i });
+  const grammarLlmModel = screen.getByLabelText(/grammar llm model/i);
   await screen.findByRole("option", { name: "phi-4-mini" });
 
   expect(screen.queryByLabelText(/font scale/i)).not.toBeInTheDocument();
@@ -172,7 +174,11 @@ it("persists browser tts settings and local llm provider configuration", async (
   await user.click(ttsFollowPlayback);
   await user.clear(llmApiUrl);
   await user.type(llmApiUrl, "http://localhost:1234/v1");
+  await user.clear(grammarLlmApiUrl);
+  await user.type(grammarLlmApiUrl, "http://localhost:9001/v1/chat/completions");
   await user.selectOptions(localLlmModel, "phi-4-mini");
+  await user.clear(grammarLlmModel);
+  await user.type(grammarLlmModel, "grammar-model");
   await user.clear(ttsRate);
   await user.type(ttsRate, "1.15");
   await user.clear(ttsVolume);
@@ -182,6 +188,8 @@ it("persists browser tts settings and local llm provider configuration", async (
   await expect(getSettings()).resolves.toMatchObject({
     apiKey: "",
     geminiModel: "gemini-2.5-flash",
+    grammarLlmApiUrl: "http://localhost:9001/v1/chat/completions",
+    grammarLlmModel: "grammar-model",
     llmApiUrl: "http://localhost:1234/v1",
     localLlmModel: "phi-4-mini",
     targetLanguage: "zh-CN",
@@ -204,6 +212,15 @@ it("persists browser tts settings and local llm provider configuration", async (
     ttsVoice: "Microsoft Andrew Online (Natural)",
     ttsVolume: 0.9,
   });
+});
+
+it("shows grammar llm api and model fields", async () => {
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+
+  render(<SettingsDialog />);
+
+  expect(await screen.findByLabelText(/grammar llm api url/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/grammar llm model/i)).toBeInTheDocument();
 });
 
 it("switches to gemini byok fields and persists the gemini provider settings", async () => {

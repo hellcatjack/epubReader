@@ -82,13 +82,13 @@ test("ai actions translate explain and save a note for selected text", async ({ 
     const body = route.request().postDataJSON();
     const prompt = JSON.stringify(body);
     requestPrompts.push(prompt);
-    const content = prompt.includes("Reply only in English") ? "English explanation" : "中文解释";
+    await page.waitForTimeout(120);
 
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        choices: [{ message: { content } }],
+        choices: [{ message: { content: "中文语法解析" } }],
       }),
     });
   });
@@ -114,10 +114,8 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   expect(selectedWord.length).toBeGreaterThan(0);
   const aiMeta = page.locator(".reader-ai-meta");
   const translationSurface = page.locator(".reader-ai-surface-primary");
-  const explanationSurface = page.locator(".reader-ai-surface-secondary");
   await expect(aiMeta).toBeVisible();
   await expect(translationSurface).toBeVisible();
-  await expect(explanationSurface).toBeVisible();
   await expect(aiMeta).toContainText("Selection");
   await expect(aiMeta).toContainText(selectedWord);
   await expect(aiMeta).toContainText("IPA");
@@ -126,7 +124,7 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   const ipaValueBox = await aiMeta.locator(".reader-ai-meta-row").nth(1).locator(".reader-ai-value").boundingBox();
   expect(Math.abs((ipaValueBox?.x ?? 0) - (ipaLabelBox?.x ?? 0))).toBeLessThanOrEqual(8);
   await expect(translationSurface).toContainText("中文翻译");
-  await expect(explanationSurface).toContainText("Click Explain for deeper context.");
+  await expect(page.getByText("Explanation")).toHaveCount(0);
 
   const selectedPhrase = await selectWordCountInIframe(page, 2);
   expect(selectedPhrase.split(/\s+/).length).toBe(2);
@@ -144,13 +142,14 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   await expect(desktopBubble).toContainText("中文翻译");
 
   await page.getByRole("button", { name: "Explain" }).click();
+  const grammarPopup = page.getByRole("dialog", { name: "Grammar explanation" });
+  await expect(grammarPopup).toBeVisible();
+  await expect(grammarPopup).toContainText("正在解析语法...");
   await expect(translationSurface).not.toContainText("中文翻译");
-  await expect(explanationSurface).toContainText("中文解释");
-  await expect(explanationSurface).toContainText("English explanation");
-  await expect(explanationSurface).not.toContainText("Click Explain for deeper context.");
-  expect(requestPrompts.some((prompt) => prompt.includes("Simplified Chinese"))).toBe(true);
-  expect(requestPrompts.some((prompt) => prompt.includes("Reply only in Simplified Chinese"))).toBe(true);
-  expect(requestPrompts.some((prompt) => prompt.includes("Reply only in English"))).toBe(true);
+  await expect(grammarPopup).toContainText("中文语法解析");
+
+  await grammarPopup.getByRole("button", { name: /close grammar explanation/i }).click();
+  await expect(grammarPopup).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add note" }).click();
   await page.getByRole("textbox", { name: /note body/i }).fill("Remember this sentence");

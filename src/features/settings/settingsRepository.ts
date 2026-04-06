@@ -20,6 +20,8 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
   return {
     apiKey: "",
     geminiModel: "gemini-2.5-flash",
+    grammarLlmApiUrl: "",
+    grammarLlmModel: "",
     llmApiUrl: DEFAULT_LLM_API_URL,
     localLlmModel: "",
     targetLanguage: "zh-CN",
@@ -55,6 +57,8 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
 
   return (
     typeof record.llmApiUrl !== "string" ||
+    typeof record.grammarLlmApiUrl !== "string" ||
+    typeof record.grammarLlmModel !== "string" ||
     typeof record.localLlmModel !== "string" ||
     typeof record.geminiModel !== "string" ||
     typeof record.translationProvider !== "string" ||

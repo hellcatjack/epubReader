@@ -4,6 +4,11 @@ import {
   type SelectionTranslationMode,
 } from "./selectionTranslation";
 import { DEFAULT_LLM_API_URL, resolveLlmApiEndpoints } from "./aiEndpoints";
+import {
+  createGrammarExplainSystemPrompt,
+  createGrammarExplainUserPrompt,
+  extractGrammarExplainAnswer,
+} from "./grammarExplainPrompt";
 
 type FetchLike = typeof fetch;
 
@@ -35,14 +40,6 @@ type OpenAIErrorKind =
 export type OpenAIError = {
   kind: OpenAIErrorKind;
 };
-
-function createExplainSectionPrompt(text: string, language: "zh-CN" | "en") {
-  if (language === "zh-CN") {
-    return `Explain the following reading selection in Simplified Chinese. Return only the explanation.\n\n${text}`;
-  }
-
-  return `Explain the following reading selection in English. Return only the explanation.\n\n${text}`;
-}
 
 function extractChatOutputText(payload: unknown) {
   if (!payload || typeof payload !== "object") {
@@ -101,7 +98,7 @@ async function requestChatText(
   textModel: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
-  extraBody?: Record<string, number>,
+  extraBody?: Record<string, unknown>,
 ) {
   const response = await fetchFn(endpoint, {
     method: "POST",
@@ -141,60 +138,10 @@ function getCompletionStop(mode: SelectionTranslationMode) {
   return ["，", ",", "\n"];
 }
 
-function normalizeModelName(textModel: string) {
-  const normalized = textModel.trim();
-  if (!normalized) {
-    return "";
-  }
-
-  const withoutNamespace = normalized.split("/").at(-1) ?? normalized;
-  return withoutNamespace.split(":")[0]?.trim() ?? withoutNamespace;
-}
-
-function isHunyuanMtModel(textModel: string) {
-  return normalizeModelName(textModel).includes("HY-MT1.5");
-}
-
-function getHunyuanChatSamplingOptions(strict = false) {
-  if (strict) {
-    return {
-      temperature: 0,
-      top_p: 1,
-    };
-  }
-
-  return {
-    temperature: 0.1,
-    top_p: 0.9,
-  };
-}
-
-function hasMixedScriptToken(output: string) {
-  const tokens = output.match(/[\p{Script=Han}A-Za-z]+/gu) ?? [];
-  return tokens.some((token) => /[\p{Script=Han}]/u.test(token) && /[A-Za-z]/.test(token));
-}
-
-function getCompletionSamplingOptions(textModel: string, mode: SelectionTranslationMode) {
-  if (isHunyuanMtModel(textModel)) {
-    return {
-      repetition_penalty: 1.05,
-      temperature: 0.7,
-      top_k: 20,
-      top_p: 0.6,
-    };
-  }
-
+function getCompletionSamplingOptions(mode: SelectionTranslationMode) {
   return {
     temperature: mode === "sentence" ? 0.2 : 0.1,
   };
-}
-
-function wrapCompletionPrompt(textModel: string, prompt: string) {
-  if (isHunyuanMtModel(textModel)) {
-    return `<｜hy_begin▁of▁sentence｜><｜hy_User｜>${prompt}<｜hy_Assistant｜>`;
-  }
-
-  return prompt;
 }
 
 async function requestCompletionText(
@@ -214,9 +161,9 @@ async function requestCompletionText(
     body: JSON.stringify({
       max_tokens: getCompletionMaxTokens(mode),
       model: textModel,
-      prompt: wrapCompletionPrompt(textModel, prompt),
+      prompt,
       ...(getCompletionStop(mode) ? { stop: getCompletionStop(mode) } : {}),
-      ...getCompletionSamplingOptions(textModel, mode),
+      ...getCompletionSamplingOptions(mode),
     }),
   });
 
@@ -228,7 +175,6 @@ async function requestCompletionText(
 async function requestSelectionTranslation(
   fetchFn: FetchLike,
   completionEndpoint: string,
-  chatEndpoint: string,
   textModel: string,
   text: string,
   context: RequestContext,
@@ -239,45 +185,6 @@ async function requestSelectionTranslation(
     text,
     textModel,
   });
-
-  if (isHunyuanMtModel(textModel)) {
-    const translationMessages = [
-      {
-        role: "system" as const,
-        content: "You are an EPUB reader assistant. Reply only with the translation.",
-      },
-      {
-        role: "user" as const,
-        content: firstPass.prompt,
-      },
-    ];
-
-    let output = await requestChatText(
-      fetchFn,
-      chatEndpoint,
-      textModel,
-      translationMessages,
-      context.signal,
-      getHunyuanChatSamplingOptions(),
-    );
-
-    if (context.targetLanguage === "zh-CN" && hasMixedScriptToken(output)) {
-      output = await requestChatText(
-        fetchFn,
-        chatEndpoint,
-        textModel,
-        translationMessages,
-        context.signal,
-        getHunyuanChatSamplingOptions(true),
-      );
-    }
-
-    if (firstPass.mode === "sentence") {
-      return output;
-    }
-
-    return cleanupSelectionTranslationOutput(output, firstPass.mode);
-  }
 
   const initialOutput = await requestCompletionText(
     fetchFn,
@@ -291,49 +198,44 @@ async function requestSelectionTranslation(
   return cleanedInitialOutput;
 }
 
-async function requestBilingualExplain(
+async function requestGrammarExplain(
   fetchFn: FetchLike,
   endpoint: string,
   textModel: string,
   text: string,
   context: RequestContext,
 ) {
-  const [chineseExplanation, englishExplanation] = await Promise.all([
-    requestChatText(
-      fetchFn,
-      endpoint,
-      textModel,
-      [
+  const response = await fetchFn(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    signal: context.signal,
+    body: JSON.stringify({
+      chat_template_kwargs: {
+        enable_thinking: false,
+      },
+      max_tokens: 1400,
+      model: textModel,
+      messages: [
         {
           role: "system",
-          content: "You are an EPUB reader assistant. Reply only in Simplified Chinese.",
+          content: createGrammarExplainSystemPrompt(),
         },
         {
           role: "user",
-          content: createExplainSectionPrompt(text, "zh-CN"),
+          content: createGrammarExplainUserPrompt(text),
         },
       ],
-      context.signal,
-    ),
-    requestChatText(
-      fetchFn,
-      endpoint,
-      textModel,
-      [
-        {
-          role: "system",
-          content: "You are an EPUB reader assistant. Reply only in English.",
-        },
-        {
-          role: "user",
-          content: createExplainSectionPrompt(text, "en"),
-        },
-      ],
-      context.signal,
-    ),
-  ]);
+      temperature: 0.2,
+    }),
+  });
 
-  return `中文解释：${chineseExplanation}\n\nEnglish explanation: ${englishExplanation}`;
+  await assertOk(response);
+  const payload = await response.json();
+  return extractGrammarExplainAnswer(
+    extractChatOutputText(payload),
+  );
 }
 
 export function normalizeOpenAIError(error: unknown): OpenAIError {
@@ -381,14 +283,14 @@ export function createOpenAIAdapter({
 
   return {
     translateSelection(text: string, context: RequestContext) {
-      return requestSelectionTranslation(fetchFn, resolvedCompletionEndpoint, chatEndpoint, textModel, text, context).catch(
+      return requestSelectionTranslation(fetchFn, resolvedCompletionEndpoint, textModel, text, context).catch(
         (error) => {
           throw normalizeOpenAIError(error);
         },
       );
     },
     explainSelection(text: string, context: RequestContext) {
-      return requestBilingualExplain(fetchFn, chatEndpoint, textModel, text, context).catch((error) => {
+      return requestGrammarExplain(fetchFn, chatEndpoint, textModel, text, context).catch((error) => {
         throw normalizeOpenAIError(error);
       });
     },

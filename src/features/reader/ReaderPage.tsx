@@ -20,6 +20,7 @@ import { createTtsQueue } from "../tts/ttsQueue";
 import { createPhoneticsService, getEligibleIpaWord } from "./phoneticsService";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
+import { GrammarExplainPopup } from "./GrammarExplainPopup";
 import type {
   ActiveTtsSegment,
   EpubViewportRuntime,
@@ -94,6 +95,13 @@ type SpokenSentenceTranslationNoteState = {
   top: number;
   translation: string;
   width: number;
+};
+
+type GrammarExplainPopupState = {
+  error: string;
+  explanation: string;
+  isLoading: boolean;
+  selectedText: string;
 };
 
 type LocationTargetIntent = "explicit" | "restored";
@@ -494,8 +502,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const [ttsSentenceTranslationNote, setTtsSentenceTranslationNote] = useState<SpokenSentenceTranslationNoteState | null>(
     null,
   );
-  const [explanation, setExplanation] = useState("");
-  const [explanationError, setExplanationError] = useState("");
+  const [grammarExplainPopup, setGrammarExplainPopup] = useState<GrammarExplainPopupState | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [currentLocation, setCurrentLocation] = useState<ReaderLocationState>({
     cfi: "",
@@ -540,7 +547,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     textQuote: "",
   });
   const runtimeHandleValueRef = useRef<RuntimeRenderHandle | null>(null);
-  const aiRequestVersionRef = useRef(0);
+  const translationRequestVersionRef = useRef(0);
+  const explanationRequestVersionRef = useRef(0);
   const lastAutoTranslatedSelectionKeyRef = useRef("");
   const suppressedTabletAutoTranslateSelectionKeyRef = useRef("");
   const activeSelectionSpeechRequestRef = useRef(0);
@@ -1571,13 +1579,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       return;
     }
 
-    const requestVersion = ++aiRequestVersionRef.current;
+    const requestVersion = ++translationRequestVersionRef.current;
     const requestSelectionKey = getSelectionCacheKey(selectionForBubble ?? null);
     const ipaWord = getEligibleIpaWord(nextText);
     const singleWordSelection = isSingleWordSelection(nextText);
     setTranslationError("");
-    setExplanation("");
-    setExplanationError("");
     setAiIpa("");
     setTranslation("");
     setFloatingSelectionTranslation(null);
@@ -1590,7 +1596,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         }),
         ipaWord ? phoneticsServiceRef.current.lookupIpa(ipaWord) : Promise.resolve(null),
       ]);
-      if (aiRequestVersionRef.current !== requestVersion) {
+      if (translationRequestVersionRef.current !== requestVersion) {
         return;
       }
       if (selectionForBubble?.isReleased === false && requestSelectionKey) {
@@ -1615,7 +1621,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         });
       }
     } catch (error) {
-      if (aiRequestVersionRef.current !== requestVersion) {
+      if (translationRequestVersionRef.current !== requestVersion) {
         return;
       }
       if (singleWordSelection) {
@@ -1631,23 +1637,37 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       return;
     }
 
-    const requestVersion = ++aiRequestVersionRef.current;
-    setExplanation("");
-    setExplanationError("");
+    const requestVersion = ++explanationRequestVersionRef.current;
+    setGrammarExplainPopup({
+      error: "",
+      explanation: "",
+      isLoading: true,
+      selectedText: nextText,
+    });
 
     try {
       const result = await ai.explainSelection(nextText, {
         targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
       });
-      if (aiRequestVersionRef.current !== requestVersion) {
+      if (explanationRequestVersionRef.current !== requestVersion) {
         return;
       }
-      setExplanation(result);
+      setGrammarExplainPopup({
+        error: "",
+        explanation: result,
+        isLoading: false,
+        selectedText: nextText,
+      });
     } catch (error) {
-      if (aiRequestVersionRef.current !== requestVersion) {
+      if (explanationRequestVersionRef.current !== requestVersion) {
         return;
       }
-      setExplanationError(`Explain failed: ${String(error)}`);
+      setGrammarExplainPopup({
+        error: `语法解析失败：${String(error)}`,
+        explanation: "",
+        isLoading: false,
+        selectedText: nextText,
+      });
     }
   }
 
@@ -1869,12 +1889,20 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     await updateSettings({ llmApiUrl });
   }
 
+  async function handleGrammarLlmApiUrlChange(grammarLlmApiUrl: string) {
+    await updateSettings({ grammarLlmApiUrl });
+  }
+
   async function handleTranslationProviderChange(translationProvider: TranslationProvider) {
     await updateSettings({ translationProvider });
   }
 
   async function handleLocalLlmModelChange(localLlmModel: string) {
     await updateSettings({ localLlmModel });
+  }
+
+  async function handleGrammarLlmModelChange(grammarLlmModel: string) {
+    await updateSettings({ grammarLlmModel });
   }
 
   async function handleApiKeyChange(apiKey: string) {
@@ -2182,9 +2210,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       annotationCount={visibleAnnotations.length}
       appearance={readerPreferences}
       aria-label="Reader tools"
-      explanation={explanation}
-      explanationError={explanationError}
       geminiModel={settings.geminiModel}
+      grammarLlmApiUrl={settings.grammarLlmApiUrl}
+      grammarLlmModel={settings.grammarLlmModel}
       llmApiUrl={settings.llmApiUrl}
       localLlmModel={settings.localLlmModel}
       noteDraft={noteDraft}
@@ -2192,6 +2220,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       onApiKeyChange={handleApiKeyChange}
       onAppearanceChange={handleAppearanceChange}
       onGeminiModelChange={handleGeminiModelChange}
+      onGrammarLlmApiUrlChange={handleGrammarLlmApiUrlChange}
+      onGrammarLlmModelChange={handleGrammarLlmModelChange}
       onLlmApiUrlChange={handleLlmApiUrlChange}
       onLocalLlmModelChange={handleLocalLlmModelChange}
       onNoteDraftChange={setNoteDraft}
@@ -2465,6 +2495,16 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             anchorRect={floatingSelectionTranslation.anchorRect}
             onDismiss={() => setFloatingSelectionTranslation(null)}
             translation={floatingSelectionTranslation.translation}
+          />
+        ) : null}
+        {grammarExplainPopup ? (
+          <GrammarExplainPopup
+            error={grammarExplainPopup.error}
+            explanation={grammarExplainPopup.explanation}
+            fontScale={settings.ttsSentenceTranslationFontScale}
+            isLoading={grammarExplainPopup.isLoading}
+            onClose={() => setGrammarExplainPopup(null)}
+            selectedText={grammarExplainPopup.selectedText}
           />
         ) : null}
       </section>

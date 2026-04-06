@@ -43,6 +43,33 @@ export function createAiService({
     });
   }
 
+  async function getExplainAdapter() {
+    const settings = await loadSettings();
+    const grammarEndpoint = settings.grammarLlmApiUrl.trim();
+    const grammarModel = settings.grammarLlmModel.trim();
+
+    if (grammarEndpoint || grammarModel) {
+      return createLocalAdapter({
+        ...(grammarEndpoint ? { endpoint: grammarEndpoint } : {}),
+        ...(grammarModel ? { textModel: grammarModel } : {}),
+      });
+    }
+
+    if (settings.translationProvider === "gemini_byok") {
+      return buildGeminiAdapter({
+        apiKey: settings.apiKey.trim(),
+        textModel: settings.geminiModel.trim() || undefined,
+      });
+    }
+
+    const endpoint = settings.llmApiUrl.trim();
+    const textModel = settings.localLlmModel.trim();
+    return createLocalAdapter({
+      ...(endpoint ? { endpoint } : {}),
+      ...(textModel ? { textModel } : {}),
+    });
+  }
+
   return {
     async translateSelection(text: string, context: ServiceContext) {
       try {
@@ -53,7 +80,7 @@ export function createAiService({
     },
     async explainSelection(text: string, context: ServiceContext) {
       try {
-        return await (await getAdapter()).explainSelection(text, context);
+        return await (await getExplainAdapter()).explainSelection(text, context);
       } catch (error) {
         throw normalizeOpenAIError(error);
       }

@@ -7,6 +7,8 @@ export type SettingsRecord = {
   id: "settings";
   apiKey: string;
   geminiModel: string;
+  grammarLlmApiUrl: string;
+  grammarLlmModel: string;
   llmApiUrl: string;
   localLlmModel: string;
   targetLanguage: string;
