@@ -1,8 +1,15 @@
 import "@testing-library/jest-dom/vitest";
 import { act, render } from "@testing-library/react";
 import { vi } from "vitest";
+import { saveProgress } from "../bookshelf/progressRepository";
 import { EpubViewport } from "./EpubViewport";
 import type { EpubViewportRuntime, RuntimeRenderHandle } from "./epubRuntime";
+
+vi.mock("../bookshelf/progressRepository", () => ({
+  saveProgress: vi.fn(async () => undefined),
+}));
+
+type RelocatedHandler = NonNullable<Parameters<EpubViewportRuntime["render"]>[0]["onRelocated"]>;
 
 it("falls back to chapter start when a saved cfi is invalid", async () => {
   const onStatusChange = vi.fn();
@@ -286,6 +293,243 @@ it("passes the saved scrolled scrollTop to the runtime when restoring a same-tab
       }),
     );
   });
+});
+
+it("coalesces dense scrolled relocation updates and flushes the latest location", async () => {
+  vi.useFakeTimers();
+  const onLocationChange = vi.fn();
+  let onRelocated: RelocatedHandler | undefined;
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async (args) => {
+      onRelocated = args.onRelocated;
+      return {
+        applyPreferences: vi.fn(async () => undefined),
+        destroy() {
+          return undefined;
+        },
+        findCfiFromTextQuote: vi.fn(async () => null),
+        getTextFromCurrentLocation: vi.fn(async () => ""),
+        goTo: vi.fn(async () => undefined),
+        next: vi.fn(async () => undefined),
+        prev: vi.fn(async () => undefined),
+        setActiveTtsSegment: vi.fn(async () => undefined),
+        setFlow: vi.fn(async () => undefined),
+      };
+    }),
+  };
+
+  render(<EpubViewport bookId="book-1" onLocationChange={onLocationChange} readingMode="scrolled" runtime={runtime} />);
+
+  await vi.waitFor(() => {
+    expect(onRelocated).toBeTypeOf("function");
+  });
+
+  const first = {
+    cfi: "epubcfi(/6/2!/4/1:0)",
+    progress: 0.1,
+    scrollTop: 120,
+    spineItemId: "chapter-1.xhtml",
+    textQuote: "First visible paragraph.",
+  };
+  const second = {
+    cfi: "epubcfi(/6/2!/4/1:20)",
+    progress: 0.12,
+    scrollTop: 240,
+    spineItemId: "chapter-1.xhtml",
+    textQuote: "Second visible paragraph.",
+  };
+  const third = {
+    cfi: "epubcfi(/6/2!/4/1:40)",
+    progress: 0.14,
+    scrollTop: 360,
+    spineItemId: "chapter-1.xhtml",
+    textQuote: "Third visible paragraph.",
+  };
+
+  act(() => {
+    onRelocated?.(first as never);
+    onRelocated?.(second as never);
+    onRelocated?.(third as never);
+  });
+
+  expect(onLocationChange).toHaveBeenCalledTimes(1);
+  expect(onLocationChange).toHaveBeenLastCalledWith(first);
+  expect(saveProgress).toHaveBeenCalledTimes(1);
+  expect(saveProgress).toHaveBeenLastCalledWith("book-1", first);
+
+  await act(async () => {
+    vi.advanceTimersByTime(300);
+  });
+
+  expect(onLocationChange).toHaveBeenCalledTimes(2);
+  expect(onLocationChange).toHaveBeenLastCalledWith(third);
+  expect(saveProgress).toHaveBeenCalledTimes(2);
+  expect(saveProgress).toHaveBeenLastCalledWith("book-1", third);
+
+  vi.useRealTimers();
+});
+
+it("does not force an extra paginated goTo cycle on window resize", async () => {
+  vi.useFakeTimers();
+  const findCfiFromTextQuote = vi.fn(async () => "epubcfi(/6/2!/4/1:24)");
+  const getCurrentLocation = vi.fn(async () => ({
+    cfi: "epubcfi(/6/2!/4/1:12)",
+    pageIndex: 5,
+    pageOffset: 2730,
+    progress: 0.42,
+    spineItemId: "chapter-2.xhtml",
+    textQuote: "Stable paragraph from the current page.",
+  }));
+  const goTo = vi.fn(async () => undefined);
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async () => ({
+      applyPreferences: vi.fn(async () => undefined),
+      destroy() {
+        return undefined;
+      },
+      findCfiFromTextQuote,
+      getCurrentLocation,
+      getTextFromCurrentLocation: vi.fn(async () => ""),
+      goTo,
+      next: vi.fn(async () => undefined),
+      prev: vi.fn(async () => undefined),
+      setActiveTtsSegment: vi.fn(async () => undefined),
+      setFlow: vi.fn(async () => undefined),
+    })),
+  };
+
+  render(<EpubViewport bookId="book-1" readingMode="paginated" runtime={runtime} />);
+
+  await vi.waitFor(() => {
+    expect(runtime.render).toHaveBeenCalledTimes(1);
+  });
+
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+
+  await act(async () => {
+    vi.advanceTimersByTime(300);
+  });
+
+  expect(getCurrentLocation).not.toHaveBeenCalled();
+  expect(findCfiFromTextQuote).not.toHaveBeenCalled();
+  expect(goTo).not.toHaveBeenCalled();
+
+  vi.useRealTimers();
+});
+
+it("does not force a scrolled recovery goTo when resize stays on the same passage", async () => {
+  vi.useFakeTimers();
+  let onRelocated: RelocatedHandler | undefined;
+  const goTo = vi.fn(async () => undefined);
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async (args) => {
+      onRelocated = args.onRelocated;
+      return {
+        applyPreferences: vi.fn(async () => undefined),
+        destroy() {
+          return undefined;
+        },
+        findCfiFromTextQuote: vi.fn(async () => null),
+        getTextFromCurrentLocation: vi.fn(async () => ""),
+        goTo,
+        next: vi.fn(async () => undefined),
+        prev: vi.fn(async () => undefined),
+        setActiveTtsSegment: vi.fn(async () => undefined),
+        setFlow: vi.fn(async () => undefined),
+      };
+    }),
+  };
+
+  render(<EpubViewport bookId="book-1" readingMode="scrolled" runtime={runtime} />);
+
+  await vi.waitFor(() => {
+    expect(onRelocated).toBeTypeOf("function");
+  });
+
+  const baseline = {
+    cfi: "epubcfi(/6/12!/4/8/2[v01001001]/2/1:0)",
+    progress: 0.01,
+    scrollTop: 1467,
+    spineItemId: "chapter-1.xhtml",
+    textQuote: "In the beginning, God created the heavens and the earth.",
+  };
+
+  act(() => {
+    onRelocated?.(baseline as never);
+    window.dispatchEvent(new Event("resize"));
+    onRelocated?.({
+      ...baseline,
+      scrollTop: 1466,
+    } as never);
+  });
+
+  await act(async () => {
+    vi.advanceTimersByTime(600);
+  });
+
+  expect(goTo).not.toHaveBeenCalled();
+
+  vi.useRealTimers();
+});
+
+it("reanchors the last stable scrolled passage after resize drift", async () => {
+  vi.useFakeTimers();
+  let onRelocated: RelocatedHandler | undefined;
+  const goTo = vi.fn(async () => undefined);
+  const runtime: EpubViewportRuntime = {
+    render: vi.fn(async (args) => {
+      onRelocated = args.onRelocated;
+      return {
+        applyPreferences: vi.fn(async () => undefined),
+        destroy() {
+          return undefined;
+        },
+        findCfiFromTextQuote: vi.fn(async () => null),
+        getTextFromCurrentLocation: vi.fn(async () => ""),
+        goTo,
+        next: vi.fn(async () => undefined),
+        prev: vi.fn(async () => undefined),
+        setActiveTtsSegment: vi.fn(async () => undefined),
+        setFlow: vi.fn(async () => undefined),
+      };
+    }),
+  };
+
+  render(<EpubViewport bookId="book-1" readingMode="scrolled" runtime={runtime} />);
+
+  await vi.waitFor(() => {
+    expect(onRelocated).toBeTypeOf("function");
+  });
+
+  const baseline = {
+    cfi: "epubcfi(/6/12!/4/8/2[v01001001]/2/1:0)",
+    progress: 0.01,
+    scrollTop: 1467,
+    spineItemId: "chapter-1.xhtml",
+    textQuote: "In the beginning, God created the heavens and the earth.",
+  };
+
+  act(() => {
+    onRelocated?.(baseline as never);
+    window.dispatchEvent(new Event("resize"));
+    onRelocated?.({
+      cfi: "epubcfi(/6/12!/4/2[v01000000]/1:0)",
+      progress: 0.006,
+      scrollTop: 0,
+      spineItemId: "chapter-1.xhtml",
+      textQuote: "GENESIS",
+    } as never);
+  });
+
+  await act(async () => {
+    vi.advanceTimersByTime(600);
+  });
+
+  expect(goTo).toHaveBeenCalledWith(baseline.cfi);
+
+  vi.useRealTimers();
 });
 
 it("destroys stale runtime handles that resolve after the viewport unmounts", async () => {

@@ -14,6 +14,9 @@ import {
 import type { ReaderPreferences } from "./readerPreferences";
 import { selectionBridge } from "./selectionBridge";
 
+const scrolledRelocationFlushMs = 240;
+const scrolledResizeRecoveryMs = 480;
+
 type EpubViewportProps = {
   bookId?: string;
   activeTtsSegment?: ActiveTtsSegment | null;
@@ -89,6 +92,212 @@ export function EpubViewport({
     const activeHost = hostRef.current;
     let cancelled = false;
     let handle: RuntimeRenderHandle | null = null;
+    let pendingScrolledRelocation:
+      | {
+          cfi: string;
+          pageIndex?: number;
+          pageOffset?: number;
+          progress: number;
+          sectionPath?: string[];
+          scrollTop?: number;
+          spineItemId: string;
+          textQuote: string;
+        }
+      | null = null;
+    let pendingScrolledRelocationTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingScrolledResizeRecovery:
+      | {
+          cfi: string;
+          scrollTop?: number;
+          textQuote: string;
+        }
+      | null =
+      readingMode === "scrolled" && initialProgress
+        ? {
+            cfi: initialProgress.cfi,
+            scrollTop: initialProgress.scrollTop,
+            textQuote: initialProgress.textQuote ?? "",
+          }
+        : null;
+    let pendingScrolledResizeRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCommittedScrolledLocation:
+      | {
+          cfi: string;
+          scrollTop?: number;
+          textQuote: string;
+        }
+      | null =
+      readingMode === "scrolled" && initialProgress
+        ? {
+            cfi: initialProgress.cfi,
+            scrollTop: initialProgress.scrollTop,
+            textQuote: initialProgress.textQuote ?? "",
+          }
+        : null;
+    let lastRelocationCommitAt = 0;
+
+    const clearPendingScrolledRelocationTimer = () => {
+      if (pendingScrolledRelocationTimer) {
+        clearTimeout(pendingScrolledRelocationTimer);
+        pendingScrolledRelocationTimer = null;
+      }
+    };
+
+    const clearPendingScrolledResizeRecovery = () => {
+      if (pendingScrolledResizeRecoveryTimer) {
+        clearTimeout(pendingScrolledResizeRecoveryTimer);
+        pendingScrolledResizeRecoveryTimer = null;
+      }
+      pendingScrolledResizeRecovery = null;
+    };
+
+    const matchesPendingScrolledResizeRecovery = (location: {
+      cfi: string;
+      textQuote: string;
+    }) => {
+      if (!pendingScrolledResizeRecovery) {
+        return false;
+      }
+
+      return (
+        (pendingScrolledResizeRecovery.cfi && location.cfi === pendingScrolledResizeRecovery.cfi) ||
+        (pendingScrolledResizeRecovery.textQuote && location.textQuote === pendingScrolledResizeRecovery.textQuote)
+      );
+    };
+
+    const updateScrolledViewportState = (scrollTop?: number) => {
+      if (readingMode !== "scrolled") {
+        return;
+      }
+
+      const container = activeHost.querySelector<HTMLElement>(".epub-container");
+      if (container) {
+        container.dataset.lastKnownScrollTop = String(
+          typeof scrollTop === "number" && Number.isFinite(scrollTop) ? Math.max(0, scrollTop) : container.scrollTop,
+        );
+      }
+    };
+
+    const commitRelocation = (location: {
+      cfi: string;
+      pageIndex?: number;
+      pageOffset?: number;
+      progress: number;
+      sectionPath?: string[];
+      scrollTop?: number;
+      spineItemId: string;
+      textQuote: string;
+    }) => {
+      clearPendingScrolledRelocationTimer();
+      pendingScrolledRelocation = null;
+      lastRelocationCommitAt = Date.now();
+      updateScrolledViewportState(location.scrollTop);
+      if (readingMode === "scrolled") {
+        lastCommittedScrolledLocation = {
+          cfi: location.cfi,
+          scrollTop: location.scrollTop,
+          textQuote: location.textQuote,
+        };
+        if (matchesPendingScrolledResizeRecovery(location)) {
+          clearPendingScrolledResizeRecovery();
+        }
+      }
+
+      const { sectionPath, ...persistedLocation } = location;
+      void saveProgress(activeBookId, persistedLocation);
+      onLocationChange?.({
+        ...persistedLocation,
+        ...(sectionPath?.length ? { sectionPath } : {}),
+      });
+    };
+
+    const flushPendingScrolledRelocation = () => {
+      if (!pendingScrolledRelocation) {
+        return;
+      }
+
+      commitRelocation(pendingScrolledRelocation);
+    };
+
+    const bridgeRelocated = (location: {
+      cfi: string;
+      pageIndex?: number;
+      pageOffset?: number;
+      progress: number;
+      sectionPath?: string[];
+      scrollTop?: number;
+      spineItemId: string;
+      textQuote: string;
+    }) => {
+      if (readingMode !== "scrolled") {
+        commitRelocation(location);
+        return;
+      }
+
+      pendingScrolledRelocation = location;
+      const elapsed = Date.now() - lastRelocationCommitAt;
+      if (lastRelocationCommitAt === 0 || elapsed >= scrolledRelocationFlushMs) {
+        commitRelocation(location);
+        return;
+      }
+
+      clearPendingScrolledRelocationTimer();
+      pendingScrolledRelocationTimer = setTimeout(() => {
+        flushPendingScrolledRelocation();
+      }, scrolledRelocationFlushMs - elapsed);
+    };
+
+    const handlePageHide = () => {
+      flushPendingScrolledRelocation();
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+
+    const handleWindowResize = () => {
+      if (readingMode !== "scrolled") {
+        return;
+      }
+
+      const preservedLocation = pendingScrolledRelocation ?? lastCommittedScrolledLocation;
+      if (!preservedLocation || (!preservedLocation.cfi && typeof preservedLocation.scrollTop !== "number")) {
+        return;
+      }
+
+      pendingScrolledResizeRecovery = {
+        cfi: preservedLocation.cfi,
+        scrollTop: preservedLocation.scrollTop,
+        textQuote: preservedLocation.textQuote,
+      };
+      if (pendingScrolledResizeRecoveryTimer) {
+        clearTimeout(pendingScrolledResizeRecoveryTimer);
+      }
+      pendingScrolledResizeRecoveryTimer = setTimeout(() => {
+        const recovery = pendingScrolledResizeRecovery;
+        pendingScrolledResizeRecoveryTimer = null;
+        if (!recovery) {
+          return;
+        }
+
+        if (handle?.goTo && recovery.cfi) {
+          void handle.goTo(recovery.cfi).catch(() => {
+            const container = activeHost.querySelector<HTMLElement>(".epub-container");
+            if (container && typeof recovery.scrollTop === "number" && Number.isFinite(recovery.scrollTop)) {
+              container.scrollTop = Math.max(0, recovery.scrollTop);
+              updateScrolledViewportState(container.scrollTop);
+            }
+          });
+          return;
+        }
+
+        const container = activeHost.querySelector<HTMLElement>(".epub-container");
+        if (container && typeof recovery.scrollTop === "number" && Number.isFinite(recovery.scrollTop)) {
+          container.scrollTop = Math.max(0, recovery.scrollTop);
+          updateScrolledViewportState(container.scrollTop);
+        }
+      }, scrolledResizeRecoveryMs);
+    };
+
+    window.addEventListener("resize", handleWindowResize);
 
     async function openPersistedBook(nextCfi?: string) {
       const shouldRestorePaginatedFromChapter =
@@ -121,16 +330,13 @@ export function EpubViewport({
         initialScrollTop:
           initialProgress && nextCfi === initialProgress.cfi ? initialProgress.scrollTop : undefined,
         initialPreferences: readerPreferences,
-        onRelocated: ({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote }) => {
-          void saveProgress(activeBookId, { cfi, pageIndex, pageOffset, progress, scrollTop, spineItemId, textQuote });
-        onLocationChange?.({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote });
-      },
-      onPagePresentationChange: setPageKind,
-      onSelectionChange: ({ cfiRange, isReleased, selectionRect, sentenceContext, spineItemId, text }) => {
-        selectionBridge.publish(text ? { cfiRange, isReleased, selectionRect, sentenceContext, spineItemId, text } : null);
-      },
-      onTocChange,
-    });
+        onRelocated: bridgeRelocated,
+        onPagePresentationChange: setPageKind,
+        onSelectionChange: ({ cfiRange, isReleased, selectionRect, sentenceContext, spineItemId, text }) => {
+          selectionBridge.publish(text ? { cfiRange, isReleased, selectionRect, sentenceContext, spineItemId, text } : null);
+        },
+        onTocChange,
+      });
 
       if (cancelled) {
         handle.destroy();
@@ -141,6 +347,7 @@ export function EpubViewport({
       runtimeHandleRef.current = handle;
       await handle.setTtsPlaybackFollow?.(ttsFollowPlayback);
       await handle.setActiveTtsSegment(activeTtsSegmentRef.current);
+      updateScrolledViewportState(initialProgress?.scrollTop);
       onReady?.(handle);
     }
 
@@ -198,6 +405,12 @@ export function EpubViewport({
 
     return () => {
       cancelled = true;
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("resize", handleWindowResize);
+      flushPendingScrolledRelocation();
+      clearPendingScrolledRelocationTimer();
+      clearPendingScrolledResizeRecovery();
+      pendingScrolledRelocation = null;
       handle?.destroy();
       runtimeHandleRef.current = null;
       setPageKind("prose");

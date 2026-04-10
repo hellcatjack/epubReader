@@ -62,6 +62,18 @@ export type TtsSentenceNoteMetrics = {
   readingRect: ReaderSelectionRect;
 };
 
+export type ScrolledResizeRestoreAnchor = {
+  cfi?: string;
+  offsetFromViewportTop: number;
+  textQuote: string;
+};
+
+export type PaginatedResizeRestoreAnchor = {
+  cfi?: string;
+  offsetFromViewportLeft: number;
+  textQuote: string;
+};
+
 export type RuntimeRenderHandle = {
   applyPreferences(preferences: Partial<ReaderPreferences>): Promise<void>;
   clearSelection?(): Promise<void>;
@@ -362,6 +374,176 @@ function getBlockCfi(contents: Contents, element: HTMLElement) {
   return undefined;
 }
 
+export function captureScrolledResizeRestoreAnchor(
+  contents: Pick<Contents, "cfiFromNode" | "cfiFromRange">,
+  candidates: readonly HTMLElement[],
+  viewport: { height: number; left: number; top: number; width: number },
+) {
+  const visibleIndex = findFirstVisibleTtsBlockIndex(candidates, viewport.width, viewport.height, viewport.top);
+  if (visibleIndex < 0) {
+    return null;
+  }
+
+  const anchorElement = candidates[visibleIndex];
+  const cfi = getBlockCfi(contents as Contents, anchorElement);
+  const anchorTop = anchorElement.getBoundingClientRect().top;
+  const textQuote = extractTtsBlockText(anchorElement);
+  if (!textQuote || !Number.isFinite(anchorTop)) {
+    return null;
+  }
+
+  return {
+    cfi,
+    offsetFromViewportTop: anchorTop - viewport.top,
+    textQuote,
+  } satisfies ScrolledResizeRestoreAnchor;
+}
+
+export function capturePaginatedResizeRestoreAnchor(
+  contents: Pick<Contents, "cfiFromNode" | "cfiFromRange">,
+  candidates: readonly HTMLElement[],
+  viewport: { height: number; left: number; top: number; width: number },
+) {
+  const visibleIndex = findMostCentralVisiblePaginatedTtsBlockIndex(
+    candidates,
+    viewport.width,
+    viewport.height,
+    viewport.left,
+    viewport.top,
+  );
+  if (visibleIndex < 0) {
+    return null;
+  }
+
+  const anchorElement = candidates[visibleIndex];
+  const anchorText =
+    findVisibleTextOffsetNearPoint(
+      anchorElement,
+      viewport.width,
+      viewport.height,
+      viewport.left + viewport.width / 2,
+      viewport.top + viewport.height / 2,
+      viewport.left,
+      viewport.top,
+    ) ??
+    findFirstVisibleTextOffset(anchorElement, viewport.width, viewport.height, viewport.left, viewport.top);
+  let cfi: string | undefined;
+  let anchorLeft: number | undefined;
+
+  if (anchorText) {
+    const range = createCollapsedRange(anchorElement.ownerDocument, anchorText.node);
+    range.setStart(anchorText.node, anchorText.offset);
+    range.setEnd(anchorText.node, anchorText.offset);
+    anchorLeft = readResizeAnchorLeft(range);
+
+    try {
+      cfi = contents.cfiFromRange(range);
+    } catch {
+      cfi = undefined;
+    }
+  }
+
+  cfi ||= getBlockCfi(contents as Contents, anchorElement);
+  anchorLeft ??= anchorElement.getBoundingClientRect().left;
+  const textQuote = extractTtsBlockText(anchorElement);
+  if (!textQuote || !Number.isFinite(anchorLeft)) {
+    return null;
+  }
+
+  return {
+    cfi,
+    offsetFromViewportLeft: anchorLeft - viewport.left,
+    textQuote,
+  } satisfies PaginatedResizeRestoreAnchor;
+}
+
+function captureLeadingPaginatedVisibleCfi(
+  contents: Pick<Contents, "cfiFromNode" | "cfiFromRange">,
+  candidates: readonly HTMLElement[],
+  viewport: { height: number; left: number; top: number; width: number },
+) {
+  const visibleIndex = findFirstVisiblePaginatedTtsBlockIndex(
+    candidates,
+    viewport.width,
+    viewport.height,
+    viewport.left,
+    viewport.top,
+  );
+  if (visibleIndex < 0) {
+    return "";
+  }
+
+  const anchorElement = candidates[visibleIndex];
+  const firstVisibleText = findFirstVisibleTextOffset(
+    anchorElement,
+    viewport.width,
+    viewport.height,
+    viewport.left,
+    viewport.top,
+  );
+  if (firstVisibleText) {
+    const range = createCollapsedRange(anchorElement.ownerDocument, firstVisibleText.node);
+    range.setStart(firstVisibleText.node, firstVisibleText.offset);
+    range.setEnd(firstVisibleText.node, firstVisibleText.offset);
+    try {
+      return contents.cfiFromRange(range);
+    } catch {
+      return getBlockCfi(contents as Contents, anchorElement) ?? "";
+    }
+  }
+
+  return getBlockCfi(contents as Contents, anchorElement) ?? "";
+}
+
+export function resolveScrolledResizeAnchorScrollTop(anchorTop: number, offsetFromViewportTop: number) {
+  if (!Number.isFinite(anchorTop) || !Number.isFinite(offsetFromViewportTop)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.round(anchorTop - offsetFromViewportTop));
+}
+
+export function resolvePaginatedResizeAnchorScrollLeft(anchorLeft: number, offsetFromViewportLeft: number) {
+  if (!Number.isFinite(anchorLeft) || !Number.isFinite(offsetFromViewportLeft)) {
+    return undefined;
+  }
+
+  return Math.max(0, Math.round(anchorLeft - offsetFromViewportLeft));
+}
+
+export function resolveScrolledResizeFallbackScrollTop(
+  preservedScrollTop?: number,
+  preservedScrollMax?: number,
+  nextScrollMax?: number,
+) {
+  if (!(typeof preservedScrollTop === "number" && Number.isFinite(preservedScrollTop))) {
+    return undefined;
+  }
+
+  if (
+    typeof preservedScrollMax === "number" &&
+    Number.isFinite(preservedScrollMax) &&
+    preservedScrollMax > 0 &&
+    typeof nextScrollMax === "number" &&
+    Number.isFinite(nextScrollMax)
+  ) {
+    return Math.max(0, Math.round((preservedScrollTop / preservedScrollMax) * Math.max(0, nextScrollMax)));
+  }
+
+  return Math.max(0, Math.round(preservedScrollTop));
+}
+
+export function resolveScrolledContentsTop(localTop: number, _frameTop?: number, _containerTop?: number) {
+  if (!Number.isFinite(localTop)) {
+    return undefined;
+  }
+
+  // Scrolled-mode block rects are already expressed in the chapter document's
+  // scroll coordinate space. Reapplying iframe/container offsets pulls the
+  // restore anchor upward during host resize.
+  return localTop;
+}
+
 function findFirstTextNode(root: Node) {
   const ownerDocument = root.nodeType === Node.DOCUMENT_NODE ? (root as Document) : root.ownerDocument;
   if (!ownerDocument) {
@@ -523,6 +705,70 @@ export function findFirstVisiblePaginatedTtsBlockIndex(
   return bestIndex;
 }
 
+function findMostCentralVisiblePaginatedTtsBlockIndex(
+  blocks: readonly HTMLElement[],
+  viewportWidth: number,
+  viewportHeight: number,
+  viewportLeft = 0,
+  viewportTop = 0,
+) {
+  if (!blocks.length || viewportWidth <= 0 || viewportHeight <= 0) {
+    return -1;
+  }
+
+  const targetLeft = viewportLeft + viewportWidth / 2;
+  const targetTop = viewportTop + viewportHeight / 2;
+  let bestIndex = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestLeft = Number.POSITIVE_INFINITY;
+  let bestTop = Number.POSITIVE_INFINITY;
+
+  blocks.forEach((block, index) => {
+    const rect = block.getBoundingClientRect();
+    const visibleRect = getVisibleRect(rect, viewportWidth, viewportHeight, viewportLeft, viewportTop);
+    if (visibleRect.width <= 1 || visibleRect.height <= 1) {
+      return;
+    }
+
+    const centerLeft = visibleRect.left + visibleRect.width / 2;
+    const centerTop = visibleRect.top + visibleRect.height / 2;
+    const distance = Math.abs(centerLeft - targetLeft) + Math.abs(centerTop - targetTop) * 0.35;
+
+    if (
+      bestIndex === -1 ||
+      distance < bestDistance ||
+      (distance === bestDistance && (centerLeft < bestLeft || (centerLeft === bestLeft && centerTop < bestTop)))
+    ) {
+      bestIndex = index;
+      bestDistance = distance;
+      bestLeft = centerLeft;
+      bestTop = centerTop;
+    }
+  });
+
+  return bestIndex;
+}
+
+export function findVisibleLocationTextQuote(
+  candidates: readonly HTMLElement[],
+  readingMode: ReadingMode,
+  viewport: { height: number; left: number; top: number; width: number },
+  maxLength = 180,
+) {
+  if (!candidates.length) {
+    return "";
+  }
+
+  const visibleIndex =
+    readingMode === "paginated"
+      ? findFirstVisiblePaginatedTtsBlockIndex(candidates, viewport.width, viewport.height, viewport.left, viewport.top)
+      : findFirstVisibleTtsBlockIndex(candidates, viewport.width, viewport.height, viewport.top);
+
+  const preferredCandidate = visibleIndex >= 0 ? candidates[visibleIndex] : candidates[0];
+  const text = extractTtsBlockText(preferredCandidate);
+  return text.slice(0, maxLength);
+}
+
 export function findFirstVisibleTextOffset(
   block: HTMLElement,
   viewportWidth: number,
@@ -579,6 +825,86 @@ export function findFirstVisibleTextOffset(
   return null;
 }
 
+function findVisibleTextOffsetNearPoint(
+  block: HTMLElement,
+  viewportWidth: number,
+  viewportHeight: number,
+  targetLeft: number,
+  targetTop: number,
+  viewportLeft = 0,
+  viewportTop = 0,
+) {
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return null;
+  }
+
+  const doc = block.ownerDocument;
+  const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  const range = doc.createRange();
+  let bestMatch:
+    | {
+        distance: number;
+        left: number;
+        node: Text;
+        offset: number;
+        top: number;
+      }
+    | null = null;
+
+  while (true) {
+    const nextNode = walker.nextNode();
+    if (!isTextNode(nextNode)) {
+      break;
+    }
+
+    if (isWithinOmittableTtsElement(nextNode, block)) {
+      continue;
+    }
+
+    const text = nextNode.textContent ?? "";
+    if (!text.trim()) {
+      continue;
+    }
+
+    for (let index = 0; index < text.length; index += 1) {
+      if (/\s/.test(text[index] ?? "")) {
+        continue;
+      }
+
+      range.setStart(nextNode, index);
+      range.setEnd(nextNode, Math.min(text.length, index + 1));
+      const visibleRect = Array.from(range.getClientRects())
+        .map((rect) => getVisibleRect(rect, viewportWidth, viewportHeight, viewportLeft, viewportTop))
+        .find((rect) => rect.width > 1 && rect.height > 1);
+      if (!visibleRect) {
+        continue;
+      }
+
+      const centerLeft = visibleRect.left + visibleRect.width / 2;
+      const centerTop = visibleRect.top + visibleRect.height / 2;
+      const distance = Math.abs(centerLeft - targetLeft) + Math.abs(centerTop - targetTop) * 0.35;
+      const offset = resolveWordStartOffset(nextNode, index);
+
+      if (
+        !bestMatch ||
+        distance < bestMatch.distance ||
+        (distance === bestMatch.distance &&
+          (centerLeft < bestMatch.left || (centerLeft === bestMatch.left && centerTop < bestMatch.top)))
+      ) {
+        bestMatch = {
+          distance,
+          left: centerLeft,
+          node: nextNode,
+          offset,
+          top: centerTop,
+        };
+      }
+    }
+  }
+
+  return bestMatch ? { node: bestMatch.node, offset: bestMatch.offset } : null;
+}
+
 function resolveWordStartOffset(node: Node | null, offset: number) {
   if (!isTextNode(node)) {
     return offset;
@@ -595,6 +921,7 @@ function resolveWordStartOffset(node: Node | null, offset: number) {
 }
 
 type LocationProgressResolver = {
+  cfiFromPercentage?(percentage: number): string;
   generate(chars: number): Promise<unknown>;
   length(): number;
   percentageFromCfi(cfi: string): number;
@@ -665,12 +992,46 @@ export function resolveLocationProgressSnapshot(
   return typeof resolvedProgress === "number" && Number.isFinite(resolvedProgress) ? resolvedProgress : 0;
 }
 
+export function resolveLocationCfiFromProgress(
+  progress: number,
+  locations: Pick<LocationProgressResolver, "cfiFromPercentage"> | null | undefined,
+) {
+  if (!(typeof progress === "number" && Number.isFinite(progress))) {
+    return "";
+  }
+
+  if (!locations || typeof locations.cfiFromPercentage !== "function") {
+    return "";
+  }
+
+  try {
+    const normalizedProgress = Math.min(0.999, Math.max(0, progress));
+    const cfi = locations.cfiFromPercentage(normalizedProgress);
+    return typeof cfi === "string" ? cfi : "";
+  } catch {
+    return "";
+  }
+}
+
 export function resolveStoredLocationCfi(relocatedCfi: string, preferredTarget?: string) {
   if (preferredTarget?.startsWith("epubcfi(")) {
     return preferredTarget;
   }
 
   return relocatedCfi;
+}
+
+export function resolvePreferredPaginatedLocationCfi(args: {
+  locationStartCfi: string;
+  preferredCfi: string;
+  preservePreferredCfi?: boolean;
+  visiblePaginatedCfi?: string;
+}) {
+  if (args.preservePreferredCfi) {
+    return resolveStoredLocationCfi(args.locationStartCfi, args.preferredCfi);
+  }
+
+  return args.visiblePaginatedCfi || resolveStoredLocationCfi(args.locationStartCfi, args.preferredCfi);
 }
 
 export function resolveApproximateLocationProgress(
@@ -1027,6 +1388,32 @@ function readScrolledViewportOffset(readingMode: ReadingMode, container: HTMLEle
   return Math.max(0, container.scrollTop);
 }
 
+export function resolveHostResizeRestoreTarget(readingMode: ReadingMode, currentTarget: string) {
+  if (readingMode !== "scrolled" && readingMode !== "paginated") {
+    return undefined;
+  }
+
+  return currentTarget || undefined;
+}
+
+export function resolveHostResizeRestoreScrollTop(
+  readingMode: ReadingMode,
+  currentTarget: string,
+  preservedScrollTop?: number,
+) {
+  if (readingMode !== "scrolled") {
+    return undefined;
+  }
+
+  if (currentTarget) {
+    return undefined;
+  }
+
+  return typeof preservedScrollTop === "number" && Number.isFinite(preservedScrollTop)
+    ? Math.max(0, preservedScrollTop)
+    : undefined;
+}
+
 export function readPaginatedPageIndex(readingMode: ReadingMode, container: HTMLElement | null) {
   if (readingMode !== "paginated" || !container || container.clientWidth <= 0) {
     return undefined;
@@ -1271,7 +1658,60 @@ export function getNearestTtsBlockElement(node: Node | null) {
   return element?.closest<HTMLElement>(ttsBlockSelector) ?? null;
 }
 
-export function findTtsBlockElementByText(root: ParentNode, text: string) {
+function getTtsBlockElementForRange(range: Range | null) {
+  if (!range) {
+    return null;
+  }
+
+  return getNearestTtsBlockElement(range.startContainer) ?? getNearestTtsBlockElement(range.commonAncestorContainer);
+}
+
+function readResizeAnchorTop(range: Range | null) {
+  if (!range) {
+    return undefined;
+  }
+
+  const anchorElement = getTtsBlockElementForRange(range);
+  if (anchorElement) {
+    return anchorElement.getBoundingClientRect().top;
+  }
+
+  const rect =
+    Array.from(range.getClientRects()).find((candidate) => candidate.width > 0 || candidate.height > 0) ??
+    range.getBoundingClientRect();
+
+  return Number.isFinite(rect.top) ? rect.top : undefined;
+}
+
+function readResizeAnchorLeft(range: Range | null) {
+  if (!range) {
+    return undefined;
+  }
+
+  const rect =
+    Array.from(range.getClientRects()).find((candidate) => candidate.width > 0 || candidate.height > 0) ??
+    range.getBoundingClientRect();
+  if (Number.isFinite(rect.left)) {
+    return rect.left;
+  }
+
+  const anchorElement = getTtsBlockElementForRange(range);
+  if (!anchorElement) {
+    return undefined;
+  }
+
+  const anchorLeft = anchorElement.getBoundingClientRect().left;
+  return Number.isFinite(anchorLeft) ? anchorLeft : undefined;
+}
+
+export function findTtsBlockElementByText(
+  root: ParentNode,
+  text: string,
+  options?: {
+    allowContainedMatch?: boolean;
+    allowPrefixMatch?: boolean;
+  },
+) {
   const normalizedSegment = normalizeSegmentText(text);
   if (!normalizedSegment) {
     return null;
@@ -1280,6 +1720,8 @@ export function findTtsBlockElementByText(root: ParentNode, text: string) {
   const candidates = Array.from(root.querySelectorAll<HTMLElement>(ttsBlockSelector));
   let prefixMatch: HTMLElement | null = null;
   const segmentPrefix = normalizedSegment.slice(0, Math.min(normalizedSegment.length, 120));
+  const allowContainedMatch = options?.allowContainedMatch ?? true;
+  const allowPrefixMatch = options?.allowPrefixMatch ?? true;
 
   for (const candidate of candidates) {
     const candidateText = extractTtsBlockText(candidate);
@@ -1287,16 +1729,29 @@ export function findTtsBlockElementByText(root: ParentNode, text: string) {
       continue;
     }
 
-    if (normalizedSegment === candidateText || normalizedSegment.includes(candidateText)) {
+    if (normalizedSegment === candidateText || (allowContainedMatch && normalizedSegment.includes(candidateText))) {
       return candidate;
     }
 
-    if (!prefixMatch && segmentPrefix && candidateText.includes(segmentPrefix)) {
+    if (allowPrefixMatch && !prefixMatch && segmentPrefix && candidateText.includes(segmentPrefix)) {
       prefixMatch = candidate;
     }
   }
 
   return prefixMatch;
+}
+
+export function findScrolledResizeAnchorElementByText(root: ParentNode, text: string) {
+  return (
+    findTtsBlockElementByText(root, text, {
+      allowContainedMatch: false,
+      allowPrefixMatch: false,
+    }) ??
+    findTtsBlockElementByText(root, text, {
+      allowContainedMatch: false,
+      allowPrefixMatch: true,
+    })
+  );
 }
 
 export function findTtsSegmentTextRange(root: HTMLElement, text: string, startOffset?: number, endOffset?: number) {
@@ -1485,6 +1940,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }) as typeof renditionWithSafeLocated.located;
     }
     let currentTarget = initialCfi ?? "";
+    let currentPaginatedResizeTarget = flow === "paginated" ? initialCfi ?? "" : "";
     let currentContents: Contents | null = null;
     let currentSpineItemId = "";
     let currentToc: TocItem[] = [];
@@ -1609,6 +2065,93 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }
     };
 
+    const getRenditionContents = () => {
+      const contents = rendition.getContents();
+      return Array.isArray(contents) ? contents : contents ? [contents] : [];
+    };
+
+    const readScrolledContentsTop = (contents: Contents, localTop: number) => {
+      const containerTop = getPaginatedContainer(element)?.getBoundingClientRect().top;
+      const frameElement = contents.window.frameElement;
+      const frameTop = isElementNode(frameElement) ? frameElement.getBoundingClientRect().top : undefined;
+      return resolveScrolledContentsTop(localTop, frameTop, containerTop);
+    };
+
+    const resolveScrolledResizeAnchorRestoreScrollTop = (anchor: ScrolledResizeRestoreAnchor | null) => {
+      if (!anchor) {
+        return undefined;
+      }
+
+      for (const contents of getRenditionContents()) {
+        const anchorElement = findScrolledResizeAnchorElementByText(contents.document.body, anchor.textQuote);
+        const anchorTop = anchorElement
+          ? readScrolledContentsTop(contents, anchorElement.getBoundingClientRect().top)
+          : undefined;
+        if (typeof anchorTop === "number") {
+          return resolveScrolledResizeAnchorScrollTop(anchorTop, anchor.offsetFromViewportTop);
+        }
+      }
+
+      if (!anchor.cfi) {
+        return undefined;
+      }
+
+      for (const contents of getRenditionContents()) {
+        try {
+          const range = contents.range(anchor.cfi);
+          if (!range || !containsNode(contents.document.body, range.startContainer)) {
+            continue;
+          }
+
+          const anchorTop = readScrolledContentsTop(contents, readResizeAnchorTop(range) ?? Number.NaN);
+          if (typeof anchorTop === "number") {
+            return resolveScrolledResizeAnchorScrollTop(anchorTop, anchor.offsetFromViewportTop);
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      return undefined;
+    };
+
+    const resolvePaginatedResizeAnchorRestoreScrollLeft = (anchor: PaginatedResizeRestoreAnchor | null) => {
+      if (!anchor) {
+        return undefined;
+      }
+
+      if (anchor.cfi) {
+        for (const contents of getRenditionContents()) {
+          try {
+            const range = contents.range(anchor.cfi);
+            if (!range || !containsNode(contents.document.body, range.startContainer)) {
+              continue;
+            }
+
+            const anchorLeft = readResizeAnchorLeft(range);
+            if (typeof anchorLeft === "number") {
+              return resolvePaginatedResizeAnchorScrollLeft(anchorLeft, anchor.offsetFromViewportLeft);
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+
+      for (const contents of getRenditionContents()) {
+        const anchorElement = findTtsBlockElementByText(contents.document.body, anchor.textQuote, {
+          allowContainedMatch: false,
+          allowPrefixMatch: false,
+        });
+        const anchorLeft = anchorElement?.getBoundingClientRect().left;
+        if (typeof anchorLeft === "number") {
+          return resolvePaginatedResizeAnchorScrollLeft(anchorLeft, anchor.offsetFromViewportLeft);
+        }
+      }
+
+      return undefined;
+    };
+
     const syncPagePresentation = (contents: Contents) => {
       const pageKind = getPagePresentationKind(contents.document);
       element.dataset.pageKind = pageKind;
@@ -1681,6 +2224,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     let hostResizeObserver: ResizeObserver | null = null;
     let queuedHostResize: { height: number; width: number } | null = null;
     let hostResizeSyncInFlight = false;
+    let activeHostResizeRestoreTarget: string | null = null;
     let isRenditionReadyForHostResize = false;
     let lastObservedHostSize = {
       height: Math.round(element.clientHeight),
@@ -1703,29 +2247,109 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       const preservedPageIndex = readPaginatedPageIndex(activePreferences.readingMode, container);
       const preservedPageOffset = readPaginatedPageOffset(activePreferences.readingMode, container);
       const preservedScrollTop = readScrolledViewportOffset(activePreferences.readingMode, container);
+      const preservedScrollMax =
+        activePreferences.readingMode === "scrolled" && container
+          ? Math.max(0, container.scrollHeight - container.clientHeight)
+          : undefined;
+      const preservedScrollProgress =
+        typeof preservedScrollTop === "number" &&
+        Number.isFinite(preservedScrollTop) &&
+        typeof preservedScrollMax === "number" &&
+        Number.isFinite(preservedScrollMax) &&
+        preservedScrollMax > 0
+          ? preservedScrollTop / preservedScrollMax
+          : undefined;
+      const scrolledResizeAnchor =
+        activePreferences.readingMode === "scrolled" && currentContents
+          ? captureScrolledResizeRestoreAnchor(
+              currentContents,
+              Array.from(currentContents.document.body.querySelectorAll<HTMLElement>(ttsBlockSelector)),
+              getVisibleViewportMetrics(),
+            )
+          : null;
+      const paginatedResizeAnchor =
+        activePreferences.readingMode === "paginated" && currentContents
+          ? capturePaginatedResizeRestoreAnchor(
+              currentContents,
+              Array.from(currentContents.document.body.querySelectorAll<HTMLElement>(ttsBlockSelector)),
+              getVisibleViewportMetrics(),
+            )
+          : null;
+      const resizeRestoreTarget = resolveHostResizeRestoreTarget(activePreferences.readingMode, currentTarget);
+      const paginatedResizeRestoreTarget =
+        activePreferences.readingMode === "paginated"
+          ? paginatedResizeAnchor?.cfi || currentPaginatedResizeTarget || resizeRestoreTarget || currentTarget || null
+          : null;
 
-      rendition.resize(width, height);
-      await waitForLayoutFrame(element.ownerDocument);
-      syncCurrentContents();
+      if (paginatedResizeRestoreTarget) {
+        activeHostResizeRestoreTarget = paginatedResizeRestoreTarget;
+      }
 
-      if (!hasRenderableViewport()) {
-        await rendition.display(currentTarget || undefined);
+      try {
+        rendition.resize(width, height);
         await waitForLayoutFrame(element.ownerDocument);
         syncCurrentContents();
-      }
 
-      if (!hasRenderableViewport()) {
-        return;
-      }
+        if (!hasRenderableViewport()) {
+          await rendition.display(currentTarget || undefined);
+          await waitForLayoutFrame(element.ownerDocument);
+          syncCurrentContents();
+        }
 
-      if (activePreferences.readingMode === "paginated") {
-        await settlePaginatedPosition(activePreferences.readingMode, preservedPageOffset, preservedPageIndex);
-        await settleDisplayedPaginatedLocation(activePreferences.readingMode);
-      } else {
-        await settleScrolledPosition(activePreferences.readingMode, preservedScrollTop);
-      }
+        if (!hasRenderableViewport()) {
+          return;
+        }
 
-      await syncDisplayedLocation();
+        if (activePreferences.readingMode === "paginated") {
+          if (paginatedResizeRestoreTarget) {
+            await rendition.display(paginatedResizeRestoreTarget);
+            await waitForLayoutFrame(element.ownerDocument);
+            syncCurrentContents();
+          } else {
+            await settlePaginatedPosition(activePreferences.readingMode, preservedPageOffset, preservedPageIndex);
+          }
+          const restoredPaginatedAnchor = await settlePaginatedResizeAnchorPosition(
+            activePreferences.readingMode,
+            paginatedResizeAnchor,
+            width,
+          );
+          if (!restoredPaginatedAnchor) {
+            await settleDisplayedPaginatedLocation(activePreferences.readingMode);
+          }
+        } else {
+          const resizedContainer = getPaginatedContainer(element);
+          const proportionalScrollTop =
+            resizedContainer && typeof preservedScrollMax === "number"
+              ? resolveScrolledResizeFallbackScrollTop(
+                  preservedScrollTop,
+                  preservedScrollMax,
+                  Math.max(0, resizedContainer.scrollHeight - resizedContainer.clientHeight),
+                )
+              : undefined;
+          const resolvedAnchorScrollTop = resolveScrolledResizeAnchorRestoreScrollTop(scrolledResizeAnchor);
+          const shouldTrustAnchorScrollTop =
+            typeof resolvedAnchorScrollTop === "number" &&
+            (typeof proportionalScrollTop !== "number" ||
+              Math.abs(resolvedAnchorScrollTop - proportionalScrollTop) <=
+                Math.max(640, Math.round((resizedContainer?.clientHeight ?? 0) * 1.5)));
+          if (shouldTrustAnchorScrollTop) {
+            await settleScrolledPosition(activePreferences.readingMode, resolvedAnchorScrollTop);
+          } else {
+            await settleScrolledPositionWithProgress(
+              activePreferences.readingMode,
+              preservedScrollProgress,
+              proportionalScrollTop ??
+                resolveHostResizeRestoreScrollTop(activePreferences.readingMode, currentTarget, preservedScrollTop),
+            );
+          }
+        }
+
+        await syncDisplayedLocation();
+      } finally {
+        if (activeHostResizeRestoreTarget === paginatedResizeRestoreTarget) {
+          activeHostResizeRestoreTarget = null;
+        }
+      }
     };
 
     const queueHostResizeSync = (width: number, height: number) => {
@@ -1958,6 +2582,16 @@ export const epubViewportRuntime: EpubViewportRuntime = {
 
     const getLocationTextQuote = async (cfi: string) => {
       const fallbackText = normalizeText(currentContents?.document.body?.innerText ?? "");
+      const visibleCandidates = currentContents
+        ? Array.from(currentContents.document.body.querySelectorAll<HTMLElement>(ttsBlockSelector))
+        : [];
+      const visibleTextQuote = visibleCandidates.length
+        ? findVisibleLocationTextQuote(visibleCandidates, activePreferences.readingMode, getVisibleViewportMetrics())
+        : "";
+      if (visibleTextQuote) {
+        return visibleTextQuote;
+      }
+
       if (!cfi) {
         return fallbackText.slice(0, 180);
       }
@@ -2029,9 +2663,37 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         .catch(() => undefined);
     };
 
+    const resolveVisiblePaginatedLocationCfi = () => {
+      if (activePreferences.readingMode !== "paginated" || !currentContents) {
+        return "";
+      }
+
+      const visibleCandidates = Array.from(currentContents.document.body.querySelectorAll<HTMLElement>(ttsBlockSelector));
+      if (!visibleCandidates.length) {
+        return "";
+      }
+
+      return captureLeadingPaginatedVisibleCfi(currentContents, visibleCandidates, getVisibleViewportMetrics());
+    };
+
+    const resolveCurrentPaginatedResizeTarget = () => {
+      if (activePreferences.readingMode !== "paginated" || !currentContents) {
+        return "";
+      }
+
+      const visibleCandidates = Array.from(currentContents.document.body.querySelectorAll<HTMLElement>(ttsBlockSelector));
+      if (!visibleCandidates.length) {
+        return "";
+      }
+
+      return capturePaginatedResizeRestoreAnchor(currentContents, visibleCandidates, getVisibleViewportMetrics())?.cfi ?? "";
+    };
+
     const toStoredLocation = async (location: Location) => {
-      const cfi = location.start.cfi;
-      const exactProgress = resolveLocationProgressSnapshot(cfi, location.start.percentage, book.locations);
+      const cfi = resolveVisiblePaginatedLocationCfi() || location.start.cfi;
+      const relocatedPercentage =
+        cfi === location.start.cfi ? location.start.percentage : undefined;
+      const exactProgress = resolveLocationProgressSnapshot(cfi, relocatedPercentage, book.locations);
       const progress =
         exactProgress > 0
           ? exactProgress
@@ -2051,8 +2713,18 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     };
 
     const toPreferredStoredLocation = async (location: Location, cfi: string) => {
-      const storedCfi = resolveStoredLocationCfi(location.start.cfi, cfi);
-      const exactProgress = resolveLocationProgressSnapshot(storedCfi, location.start.percentage, book.locations);
+      const storedCfi =
+        activePreferences.readingMode === "paginated"
+          ? resolvePreferredPaginatedLocationCfi({
+              locationStartCfi: location.start.cfi,
+              preferredCfi: cfi,
+              preservePreferredCfi: cfi === activeHostResizeRestoreTarget,
+              visiblePaginatedCfi: resolveVisiblePaginatedLocationCfi(),
+            })
+          : resolveStoredLocationCfi(location.start.cfi, cfi);
+      const relocatedPercentage =
+        storedCfi === location.start.cfi ? location.start.percentage : undefined;
+      const exactProgress = resolveLocationProgressSnapshot(storedCfi, relocatedPercentage, book.locations);
       const progress =
         exactProgress > 0
           ? exactProgress
@@ -2799,6 +3471,8 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       syncCurrentContents();
       const preferredRestore =
         activePreferences.readingMode === "paginated" ? preferredPaginatedRestore : null;
+      const hostResizeRestoreTarget =
+        !preferredRestore && activePreferences.readingMode === "paginated" ? activeHostResizeRestoreTarget : null;
       if (preferredRestore) {
         await settlePaginatedPosition(
           activePreferences.readingMode,
@@ -2811,8 +3485,14 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       }
       const storedLocation = preferredRestore
         ? await toPreferredStoredLocation(location, preferredRestore.cfi)
+        : hostResizeRestoreTarget
+          ? await toPreferredStoredLocation(location, hostResizeRestoreTarget)
         : await toStoredLocation(location);
       currentTarget = storedLocation.cfi;
+      currentPaginatedResizeTarget =
+        activePreferences.readingMode === "paginated"
+          ? resolveCurrentPaginatedResizeTarget() || storedLocation.cfi
+          : "";
       currentSpineItemId = storedLocation.spineItemId;
       const sectionPath = getCurrentSectionPath(storedLocation.cfi);
 
@@ -2881,6 +3561,32 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       restoreScrolledViewportOffset(readingMode, settledContainer, scrollTop);
     };
 
+    const settleScrolledPositionWithProgress = async (
+      readingMode: ReadingMode,
+      progress?: number,
+      fallbackScrollTop?: number,
+    ) => {
+      const resolveLiveScrollTop = (container: HTMLElement | null) => {
+        if (
+          typeof progress === "number" &&
+          Number.isFinite(progress) &&
+          container &&
+          Number.isFinite(container.scrollHeight) &&
+          Number.isFinite(container.clientHeight)
+        ) {
+          return Math.max(0, Math.round(progress * Math.max(0, container.scrollHeight - container.clientHeight)));
+        }
+
+        return fallbackScrollTop;
+      };
+
+      const initialContainer = await waitForPaginatedContainerReady(element);
+      restoreScrolledViewportOffset(readingMode, initialContainer, resolveLiveScrollTop(initialContainer));
+      await waitForLayoutFrame(element.ownerDocument);
+      const settledContainer = await waitForPaginatedContainerReady(element);
+      restoreScrolledViewportOffset(readingMode, settledContainer, resolveLiveScrollTop(settledContainer));
+    };
+
     const settleDisplayedPaginatedLocation = async (readingMode: ReadingMode) => {
       if (readingMode !== "paginated") {
         return;
@@ -2890,6 +3596,36 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       const displayedPageIndex = readPaginatedPageIndex(readingMode, container);
       const displayedPageOffset = readPaginatedPageOffset(readingMode, container);
       restorePaginatedPagePosition(readingMode, container, displayedPageOffset, displayedPageIndex);
+    };
+
+    const settlePaginatedResizeAnchorPosition = async (
+      readingMode: ReadingMode,
+      anchor: PaginatedResizeRestoreAnchor | null,
+      expectedClientWidth: number,
+    ) => {
+      if (readingMode !== "paginated" || !anchor) {
+        return false;
+      }
+
+      const initialContainer = await waitForPaginatedContainerReady(element);
+      const initialScrollLeft = resolvePaginatedResizeAnchorRestoreScrollLeft(anchor);
+      if (typeof initialScrollLeft !== "number") {
+        return false;
+      }
+
+      restorePaginatedPageOffset(readingMode, initialContainer, initialScrollLeft);
+      await waitForLayoutFrame(element.ownerDocument);
+      syncCurrentContents();
+
+      const settledContainer = await waitForSettledPaginatedContainer(element, expectedClientWidth);
+      const settledScrollLeft = resolvePaginatedResizeAnchorRestoreScrollLeft(anchor);
+      if (typeof settledScrollLeft === "number") {
+        restorePaginatedPageOffset(readingMode, settledContainer, settledScrollLeft);
+        await waitForLayoutFrame(element.ownerDocument);
+        syncCurrentContents();
+      }
+
+      return true;
     };
 
     const resolveNavigationTarget = async (target: string) => {
@@ -3088,6 +3824,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     await settlePaginatedPosition(flow, initialPageOffset, initialPageIndex);
     await settleScrolledPosition(flow, initialScrollTop);
     await syncDisplayedLocation();
+    currentPaginatedResizeTarget = flow === "paginated" ? resolveCurrentPaginatedResizeTarget() || currentTarget : "";
     isRenditionReadyForHostResize = true;
     const pendingInitialHostResize = queuedHostResize as { height: number; width: number } | null;
     if (pendingInitialHostResize) {
@@ -3235,6 +3972,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       },
       async goTo(target) {
         currentTarget = target;
+        currentPaginatedResizeTarget = activePreferences.readingMode === "paginated" ? target : "";
         preferredPaginatedRestore =
           activePreferences.readingMode === "paginated"
             ? {
@@ -3246,10 +3984,11 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         const resolvedTarget = await resolveNavigationTarget(target);
         if (resolvedTarget !== target) {
           currentTarget = resolvedTarget;
+          currentPaginatedResizeTarget = activePreferences.readingMode === "paginated" ? resolvedTarget : "";
           preferredPaginatedRestore =
             activePreferences.readingMode === "paginated"
               ? {
-                  cfi: resolvedTarget,
+                cfi: resolvedTarget,
                 }
               : null;
           await rendition.display(resolvedTarget);
@@ -3288,6 +4027,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
                 pageOffset: preservedPageOffset,
               }
             : null;
+        currentPaginatedResizeTarget = nextFlow === "paginated" ? currentTarget : "";
         rendition.flow(toEpubFlow(nextFlow));
         rendition.spread(nextFlow === "paginated" ? "none" : "auto");
         await rendition.display(currentTarget || undefined);

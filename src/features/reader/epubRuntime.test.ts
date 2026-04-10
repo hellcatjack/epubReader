@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import * as epubRuntimeModule from "./epubRuntime";
 import {
   buildTocItems,
+  capturePaginatedResizeRestoreAnchor,
+  captureScrolledResizeRestoreAnchor,
   createReaderSelectionSnapshotFromRange,
   extractTtsBlockText,
   extractSentenceContextFromRange,
   findActiveTocPathForRange,
   findFirstVisibleTextOffset,
   findMostVisibleContentsIndex,
+  findScrolledResizeAnchorElementByText,
   findFirstVisiblePaginatedTtsBlockIndex,
   findFirstVisibleTtsBlockIndex,
   findVisibleTocPathForViewport,
@@ -17,7 +21,15 @@ import {
   readPaginatedPageIndex,
   projectRectIntoViewport,
   resolvePaginatedFollowPageIndex,
+  resolveLocationCfiFromProgress,
   resolveApproximateLocationProgress,
+  resolveHostResizeRestoreScrollTop,
+  resolveHostResizeRestoreTarget,
+  resolvePaginatedResizeAnchorScrollLeft,
+  resolveScrolledContentsTop,
+  resolveScrolledResizeAnchorScrollTop,
+  resolveScrolledResizeFallbackScrollTop,
+  resolvePreferredPaginatedLocationCfi,
   resolveStoredLocationCfi,
   resolveLocationProgressSnapshot,
   resolveLocationProgress,
@@ -163,6 +175,51 @@ describe("epubRuntime tts targeting helpers", () => {
     });
 
     expect(findFirstVisibleTtsBlockIndex(paragraphs, 640, 360, 13650)).toBe(1);
+  });
+
+  it("prefers the first visible scrolled block text when resolving a saved location quote", () => {
+    const findVisibleLocationTextQuote = (
+      epubRuntimeModule as unknown as {
+        findVisibleLocationTextQuote?: (
+          candidates: HTMLElement[],
+          readingMode: "scrolled" | "paginated",
+          viewport: { height: number; left: number; top: number; width: number },
+          maxLength?: number,
+        ) => string;
+      }
+    ).findVisibleLocationTextQuote;
+
+    expect(typeof findVisibleLocationTextQuote).toBe("function");
+    if (!findVisibleLocationTextQuote) {
+      return;
+    }
+
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>Earlier chapter paragraph.</p>
+      <p>Current chapter paragraph that should be saved for restore.</p>
+      <p>Later chapter paragraph.</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const rects = [
+      { bottom: 13087, left: 0, right: 640, top: 12998 },
+      { bottom: 13748, left: 0, right: 640, top: 13688 },
+      { bottom: 14685, left: 0, right: 640, top: 14628 },
+    ];
+
+    paragraphs.forEach((paragraph, index) => {
+      paragraph.getBoundingClientRect = () => rects[index] as DOMRect;
+    });
+
+    expect(
+      findVisibleLocationTextQuote(
+        paragraphs,
+        "scrolled",
+        { height: 360, left: 0, top: 13650, width: 640 },
+        180,
+      ),
+    ).toBe("Current chapter paragraph that should be saved for restore.");
   });
 
   it("uses column-major reading order when picking the first visible paginated paragraph", () => {
@@ -439,6 +496,126 @@ describe("epubRuntime tts targeting helpers", () => {
     doc.createRange = originalCreateRange;
   });
 
+  it("captures a stable mid-page paginated word as the resize restore anchor", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>alpha beta gamma delta</p>
+    `;
+
+    const paragraph = doc.querySelector("p");
+    const textNode = paragraph?.firstChild;
+    if (!paragraph || !textNode) {
+      throw new Error("missing paragraph text");
+    }
+
+    paragraph.getBoundingClientRect = () =>
+      ({
+        bottom: 24,
+        height: 16,
+        left: 680,
+        right: 880,
+        top: 8,
+        width: 200,
+        x: 680,
+        y: 8,
+      }) as DOMRect;
+
+    const originalCreateRange = doc.createRange.bind(doc);
+    const rangeState = {
+      startOffset: 0,
+    };
+
+    doc.createRange = (() =>
+      ({
+        collapse: vi.fn(),
+        getBoundingClientRect: () =>
+          ({
+            bottom: 24,
+            height: 16,
+            left:
+              rangeState.startOffset >= "alpha beta ".length
+                ? 960
+                : rangeState.startOffset >= "alpha ".length
+                  ? 690
+                  : 40,
+            right:
+              rangeState.startOffset >= "alpha beta ".length
+                ? 972
+                : rangeState.startOffset >= "alpha ".length
+                  ? 702
+                  : 52,
+            top: 8,
+            width: 12,
+            x:
+              rangeState.startOffset >= "alpha beta ".length
+                ? 960
+                : rangeState.startOffset >= "alpha ".length
+                  ? 690
+                  : 40,
+            y: 8,
+          }) as DOMRect,
+        getClientRects: () =>
+          ([
+            {
+              bottom: 24,
+              height: 16,
+              left:
+                rangeState.startOffset >= "alpha beta ".length
+                  ? 960
+                  : rangeState.startOffset >= "alpha ".length
+                    ? 690
+                    : 40,
+              right:
+                rangeState.startOffset >= "alpha beta ".length
+                  ? 972
+                  : rangeState.startOffset >= "alpha ".length
+                    ? 702
+                    : 52,
+              top: 8,
+              width: 12,
+              x:
+                rangeState.startOffset >= "alpha beta ".length
+                  ? 960
+                  : rangeState.startOffset >= "alpha ".length
+                    ? 690
+                    : 40,
+              y: 8,
+            },
+          ] as DOMRect[]),
+        selectNodeContents: vi.fn(),
+        setEnd: vi.fn((_node: Node, offset: number) => {
+          rangeState.startOffset = offset;
+        }),
+        setStart: vi.fn((_node: Node, offset: number) => {
+          rangeState.startOffset = offset;
+        }),
+      }) as unknown as Range) as typeof doc.createRange;
+
+    const contents = {
+      cfiFromNode: vi.fn(() => "epubcfi(/6/14!/4/12/1:0)"),
+      cfiFromRange: vi.fn(() =>
+        rangeState.startOffset >= "alpha beta ".length
+          ? "epubcfi(/6/14!/4/12/1:11)"
+          : "epubcfi(/6/14!/4/12/1:6)",
+      ),
+    };
+
+    expect(
+      capturePaginatedResizeRestoreAnchor(contents as never, [paragraph], {
+        height: 360,
+        left: 640,
+        top: 0,
+        width: 640,
+      }),
+    ).toEqual({
+      cfi: "epubcfi(/6/14!/4/12/1:11)",
+      offsetFromViewportLeft: 320,
+      textQuote: "alpha beta gamma delta",
+    });
+
+    doc.createRange = originalCreateRange;
+  });
+
   it("falls back to generated epub locations when relocated progress is missing", async () => {
     const generate = vi.fn(async () => ["loc-1", "loc-2"]);
     const percentageFromCfi = vi.fn(() => 0.58);
@@ -451,6 +628,15 @@ describe("epubRuntime tts targeting helpers", () => {
     await expect(resolveLocationProgress("epubcfi(/6/2!/4/1:0)", undefined, locations)).resolves.toBe(0.58);
     expect(generate).toHaveBeenCalledWith(1600);
     expect(percentageFromCfi).toHaveBeenCalledWith("epubcfi(/6/2!/4/1:0)");
+  });
+
+  it("derives a stable cfi from normalized reading progress", () => {
+    const cfiFromPercentage = vi.fn(() => "epubcfi(/6/14!/4/120/1:0)");
+
+    expect(resolveLocationCfiFromProgress(0.42, { cfiFromPercentage } as never)).toBe(
+      "epubcfi(/6/14!/4/120/1:0)",
+    );
+    expect(cfiFromPercentage).toHaveBeenCalledWith(0.42);
   });
 
   it("keeps the relocated percentage when epub.js already provides one", async () => {
@@ -510,6 +696,89 @@ describe("epubRuntime tts targeting helpers", () => {
     );
   });
 
+  it("keeps the exact preferred paginated cfi during host resize instead of replacing it with the resized visible cfi", () => {
+    expect(
+      resolvePreferredPaginatedLocationCfi({
+        locationStartCfi: "epubcfi(/6/14!/4/138/1:0)",
+        preferredCfi: "epubcfi(/6/14!/4/160/1:215)",
+        preservePreferredCfi: true,
+        visiblePaginatedCfi: "epubcfi(/6/14!/4/138/1:0)",
+      }),
+    ).toBe("epubcfi(/6/14!/4/160/1:215)");
+  });
+
+  it("prefers the current scrolled cfi over raw scrollTop during host resize restore", () => {
+    expect(resolveHostResizeRestoreTarget("scrolled", "epubcfi(/6/20!/4/160/1:121)")).toBe(
+      "epubcfi(/6/20!/4/160/1:121)",
+    );
+    expect(resolveHostResizeRestoreScrollTop("scrolled", "epubcfi(/6/20!/4/160/1:121)", 5600)).toBeUndefined();
+  });
+
+  it("prefers the current paginated cfi over stale saved page offsets during host resize restore", () => {
+    expect(resolveHostResizeRestoreTarget("paginated", "epubcfi(/6/20!/4/160/1:121)")).toBe(
+      "epubcfi(/6/20!/4/160/1:121)",
+    );
+  });
+
+  it("keeps raw scrollTop fallback for scrolled resize when no cfi is available", () => {
+    expect(resolveHostResizeRestoreTarget("scrolled", "")).toBeUndefined();
+    expect(resolveHostResizeRestoreScrollTop("scrolled", "", 5600)).toBe(5600);
+  });
+
+  it("captures the first visible scrolled block as the resize restore anchor", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>Earlier paragraph</p>
+      <p>Anchor paragraph</p>
+      <p>Later paragraph</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll<HTMLElement>("p"));
+    const rects = [
+      { bottom: 1100, left: 0, right: 640, top: 1000 },
+      { bottom: 1460, left: 0, right: 640, top: 1200 },
+      { bottom: 1760, left: 0, right: 640, top: 1500 },
+    ];
+
+    paragraphs.forEach((paragraph, index) => {
+      paragraph.getBoundingClientRect = () => rects[index] as DOMRect;
+    });
+
+    const contents = {
+      cfiFromNode: vi.fn(() => "epubcfi(/6/14!/4/110/3:0)"),
+      cfiFromRange: vi.fn(() => "epubcfi(/6/14!/4/110/3:0)"),
+    };
+
+    expect(
+      captureScrolledResizeRestoreAnchor(contents as never, paragraphs, {
+        height: 480,
+        left: 0,
+        top: 1325,
+        width: 640,
+      }),
+    ).toEqual({
+      cfi: "epubcfi(/6/14!/4/110/3:0)",
+      offsetFromViewportTop: -125,
+      textQuote: "Anchor paragraph",
+    });
+  });
+
+  it("restores scrolled resize scrollTop from the preserved anchor offset", () => {
+    expect(resolveScrolledResizeAnchorScrollTop(1680, -125)).toBe(1805);
+  });
+
+  it("keeps scrolled resize anchor tops in chapter document coordinates", () => {
+    expect(resolveScrolledContentsTop(1467, -258, 0)).toBe(1467);
+  });
+
+  it("restores paginated resize scrollLeft from the preserved anchor offset", () => {
+    expect(resolvePaginatedResizeAnchorScrollLeft(2140, 286)).toBe(1854);
+  });
+
+  it("falls back to proportional scrolled progress when resize anchor restore is unavailable", () => {
+    expect(resolveScrolledResizeFallbackScrollTop(6310, 6350, 4977)).toBe(4946);
+  });
+
   it("falls back to chapter-order progress when exact epub locations are not ready", () => {
     expect(
       resolveApproximateLocationProgress(
@@ -546,6 +815,45 @@ describe("epubRuntime tts targeting helpers", () => {
 
     expect(match?.tagName).toBe("P");
     expect(match?.textContent).toContain("The thing was");
+  });
+
+  it("can require strict text matching to avoid earlier contained-text paragraphs", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>The doctor was twisting something at the back of Ender's head.</p>
+      <p>But they let go of him. The doctor was twisting something at the back of Ender's head. Ender kicked out high and hard.</p>
+    `;
+
+    const paragraphs = Array.from(doc.querySelectorAll("p"));
+    const strictMatch = findTtsBlockElementByText(
+      doc.body,
+      "But they let go of him. The doctor was twisting something at the back of Ender's head. Ender kicked out high and hard.",
+      { allowContainedMatch: false },
+    );
+
+    expect(strictMatch).toBe(paragraphs[1]);
+  });
+
+  it("finds a scrolled resize anchor from truncated text even when inline markers are omitted", () => {
+    const doc = document.implementation.createHTMLDocument("chapter");
+    doc.body.innerHTML = `
+      <p>
+        <b id="v01001001">1:1</b>
+        In the beginning, God created the heavens and the earth.
+        <b id="v01001002">2</b>
+        The earth was without form and void, and darkness was over the face of the deep.
+      </p>
+    `;
+
+    const match = findScrolledResizeAnchorElementByText(
+      doc.body,
+      "In the beginning, God created the heavens and the earth. The earth was without form and void, and darkness was over the face of the deep.",
+    );
+
+    expect(match?.tagName).toBe("P");
+    expect(extractTtsBlockText(match as HTMLElement).trim()).toBe(
+      "In the beginning, God created the heavens and the earth. The earth was without form and void, and darkness was over the face of the deep.",
+    );
   });
 
   it("finds the closest paragraph block for a cfi-derived text node", () => {
