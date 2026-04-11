@@ -165,6 +165,30 @@ export function buildTocItems(items: NavItem[]): TocItem[] {
   }));
 }
 
+function sameTocItems(left: TocItem[], right: TocItem[]): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((item, index) => {
+    const other = right[index];
+    if (!other) {
+      return false;
+    }
+
+    return (
+      item.id === other.id &&
+      item.label === other.label &&
+      getTocTarget(item) === getTocTarget(other) &&
+      sameTocItems(item.children ?? [], other.children ?? [])
+    );
+  });
+}
+
 function normalizeGeneratedTocText(text: string) {
   return text.replace(/\s+/g, " ").replace(/\s*([,.;:!?])\s*/g, "$1 ").trim();
 }
@@ -293,15 +317,30 @@ export function extractGeneratedTocChildren(doc: Document, baseHref: string, par
 async function expandTocItemsFromContentsPages(
   book: ReturnType<typeof ePub>,
   items: TocItem[],
+  ancestorSpineItemIds: ReadonlySet<string> = new Set(),
 ): Promise<TocItem[]> {
   return await Promise.all(
     items.map(async (item) => {
-      const existingChildren = item.children?.length ? await expandTocItemsFromContentsPages(book, item.children) : [];
+      const spineItemId = getTocTargetSpineItemId(item);
+      const nextAncestorSpineItemIds = new Set(ancestorSpineItemIds);
+      if (spineItemId) {
+        nextAncestorSpineItemIds.add(spineItemId);
+      }
+
+      const existingChildren = item.children?.length
+        ? await expandTocItemsFromContentsPages(book, item.children, nextAncestorSpineItemIds)
+        : [];
       if (existingChildren.length) {
-        return {
-          ...item,
-          children: existingChildren,
-        };
+        return sameTocItems(existingChildren, item.children ?? [])
+          ? item
+          : {
+              ...item,
+              children: existingChildren,
+            };
+      }
+
+      if (spineItemId && ancestorSpineItemIds.has(spineItemId)) {
+        return item;
       }
 
       const target = getTocTarget(item);
@@ -2163,6 +2202,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     let lastPaginatedWheelTurnAt = 0;
     let lastPaginatedWheelDirection = 0;
     let paginatedWheelResetTimer: ReturnType<typeof setTimeout> | null = null;
+    const navigationPromise = book.loaded.navigation;
 
     const resetPaginatedWheelDelta = () => {
       paginatedWheelDelta = 0;
@@ -3709,6 +3749,25 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       await handleRelocated(displayedLocation);
     };
 
+    const skipInitialImageFrontMatter = async () => {
+      if (initialCfi) {
+        return;
+      }
+
+      syncCurrentContents();
+      if (!currentContents || getPagePresentationKind(currentContents.document) !== "image") {
+        return;
+      }
+
+      const nextSection = book.spine.first()?.next?.();
+      if (!nextSection?.href) {
+        return;
+      }
+
+      await rendition.display(nextSection.href);
+      syncCurrentContents();
+    };
+
     const settlePaginatedPosition = async (
       readingMode: ReadingMode,
       pageOffset?: number,
@@ -3969,11 +4028,9 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       hostResizeObserver.observe(element);
     }
 
-    const navigation = await book.loaded.navigation;
-    currentToc = await expandTocItemsFromContentsPages(book, buildTocItems(navigation.toc));
-    onTocChange?.(currentToc);
     await rendition.display(initialCfi);
     syncCurrentContents();
+    await skipInitialImageFrontMatter();
     if (initialCfi) {
       const resolvedInitialTarget = await resolveNavigationTarget(initialCfi);
       if (resolvedInitialTarget !== initialCfi) {
@@ -3999,6 +4056,29 @@ export const epubViewportRuntime: EpubViewportRuntime = {
       queuedHostResize = null;
       queueHostResizeSync(pendingInitialHostResize.width, pendingInitialHostResize.height);
     }
+
+    void (async () => {
+      try {
+        const navigation = await navigationPromise;
+        const baseToc = buildTocItems(navigation.toc);
+        if (isDestroyed) {
+          return;
+        }
+
+        currentToc = baseToc;
+        onTocChange?.(baseToc);
+
+        const expandedToc = await expandTocItemsFromContentsPages(book, baseToc);
+        if (isDestroyed || sameTocItems(expandedToc, baseToc)) {
+          return;
+        }
+
+        currentToc = expandedToc;
+        onTocChange?.(expandedToc);
+      } catch {
+        // Leave the existing toc state untouched when navigation metadata cannot be loaded.
+      }
+    })();
 
     return {
       async applyPreferences(preferences) {

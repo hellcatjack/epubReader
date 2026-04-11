@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
-const bibleFixturePath = process.env.BIBLE_FIXTURE_PATH ?? "tests/fixtures/local/bible-esv.epub";
+const repoBibleFixturePath =
+  "The Holy Bible English Standard Version (ESV) (Crossway Bibles) (z-library.sk, 1lib.sk, z-lib.sk).epub";
+const localBibleFixturePath = "tests/fixtures/local/bible-esv.epub";
+const bibleFixturePath = process.env.BIBLE_FIXTURE_PATH ??
+  (existsSync(localBibleFixturePath) ? localBibleFixturePath : repoBibleFixturePath);
 
 test.skip(!existsSync(bibleFixturePath), `Optional local Bible fixture not available at ${bibleFixturePath}`);
 
@@ -10,6 +14,18 @@ async function importBible(page: Parameters<typeof test>[0]["page"]) {
   await page.setInputFiles("input[type=file]", bibleFixturePath);
   await expect(page).toHaveURL(/\/books\//);
   await expect(page.getByRole("navigation", { name: /table of contents/i })).toBeVisible();
+}
+
+async function waitForBibleChapterToc(page: Parameters<typeof test>[0]["page"]) {
+  await expect(page.getByRole("button", { name: /expand genesis/i })).toBeVisible();
+}
+
+async function waitForBibleAnchor(page: Parameters<typeof test>[0]["page"], targetId: string) {
+  await expect
+    .poll(async () =>
+      page.locator(".epub-root iframe").evaluate((node, currentTargetId) => Boolean(node.contentDocument?.getElementById(currentTargetId)), targetId),
+    )
+    .toBe(true);
 }
 
 test("Bible reader top bar keeps reading status on a single compact row", async ({ page }) => {
@@ -41,6 +57,12 @@ test("Bible tts skips verse and footnote markers when starting from Genesis 1", 
   await page.addInitScript(() => {
     const calls: Array<{ text: string }> = [];
     let activeTimer: number | undefined;
+    let currentUtterance:
+      | (SpeechSynthesisUtterance & {
+          onend?: ((event: Event) => void) | null;
+          onstart?: ((event: Event) => void) | null;
+        })
+      | undefined;
 
     class MockSpeechSynthesisUtterance {
       onstart: ((event: Event) => void) | null = null;
@@ -96,6 +118,10 @@ test("Bible tts skips verse and footnote markers when starting from Genesis 1", 
           return undefined;
         },
         speak(utterance: MockSpeechSynthesisUtterance) {
+          currentUtterance = utterance as SpeechSynthesisUtterance & {
+            onend?: ((event: Event) => void) | null;
+            onstart?: ((event: Event) => void) | null;
+          };
           calls.push({ text: utterance.text });
           activeTimer = window.setTimeout(() => {
             utterance.onstart?.(new Event("start"));
@@ -115,13 +141,23 @@ test("Bible tts skips verse and footnote markers when starting from Genesis 1", 
       value: calls,
       writable: false,
     });
+
+    Object.defineProperty(window, "__finishCurrentTts", {
+      configurable: true,
+      value: () => {
+        currentUtterance?.onend?.(new Event("end"));
+      },
+      writable: false,
+    });
   });
 
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
 
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 1", exact: true }).click();
+  await waitForBibleAnchor(page, "v01001001");
   await page.getByRole("button", { name: /start tts/i }).click();
 
   await expect
@@ -132,10 +168,22 @@ test("Bible tts skips verse and footnote markers when starting from Genesis 1", 
     () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[0]?.text ?? "",
   );
 
-  expect(firstCall.startsWith("In the beginning, God created the heavens and the earth.")).toBe(true);
-  expect(firstCall).not.toMatch(/\b1\s*:\s*1\b/u);
-  expect(firstCall).not.toMatch(/\[\d+\]/u);
-  expect(firstCall).not.toMatch(/^\d+\b/u);
+  expect(firstCall).toBe("The Creation of the World.");
+
+  await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
+
+  await expect
+    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls.length))
+    .toBeGreaterThan(1);
+
+  const secondCall = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: Array<{ text: string }> }).__ttsCalls[1]?.text ?? "",
+  );
+
+  expect(secondCall.startsWith("In the beginning, God created the heavens and the earth.")).toBe(true);
+  expect(secondCall).not.toMatch(/\b1\s*:\s*1\b/u);
+  expect(secondCall).not.toMatch(/\[\d+\]/u);
+  expect(secondCall).not.toMatch(/^\d+\b/u);
 });
 
 test("Bible tts gives the Genesis 10 title its own utterance before the chapter body", async ({ page }) => {
@@ -232,8 +280,10 @@ test("Bible tts gives the Genesis 10 title its own utterance before the chapter 
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
 
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await waitForBibleAnchor(page, "h00022");
   await page.getByRole("button", { name: /start tts/i }).click();
 
   await expect
@@ -354,8 +404,10 @@ test("Bible scrolled tts leaves an audible pause after the Genesis 10 title befo
   await importBible(page);
 
   await page.getByRole("button", { name: /scrolled mode/i }).click();
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await waitForBibleAnchor(page, "h00022");
   await page.getByRole("button", { name: /start tts/i }).click();
 
   await expect
@@ -479,6 +531,7 @@ test("Bible scrolled selection-start tts keeps the Genesis 10 heading pause when
   await importBible(page);
 
   await page.getByRole("button", { name: /scrolled mode/i }).click();
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 9", exact: true }).click();
   await page.waitForTimeout(500);
@@ -522,9 +575,9 @@ test("Bible scrolled selection-start tts keeps the Genesis 10 heading pause when
   let calls = await page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.slice());
   expect(calls[0] ?? "").toBe("and he died.");
 
-  for (let attempt = 0; attempt < 4 && !calls.includes("Nations Descended from Noah."); attempt += 1) {
+  for (let attempt = 0; attempt < 8 && !calls.includes("Nations Descended from Noah."); attempt += 1) {
     await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
-    await page.waitForTimeout(120);
+    await page.waitForTimeout(180);
     calls = await page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.slice());
   }
 
@@ -649,6 +702,7 @@ test("Bible paginated follow playback keeps Genesis 10 on chapter text instead o
   await importBible(page);
 
   await page.getByRole("button", { name: /paginated mode/i }).click();
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
   await page.waitForTimeout(1200);
@@ -778,6 +832,7 @@ test("Bible scrolled mode start tts continues from a selected Genesis 10 phrase 
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
 
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
   await page.waitForTimeout(800);
@@ -868,6 +923,7 @@ test("Bible toc chapter navigation lands on the requested Genesis chapter anchor
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
 
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 1", exact: true }).click();
 
@@ -913,6 +969,7 @@ test("Bible toc chapter navigation opens Genesis 10 instead of falling back to t
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
 
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
   await page.waitForTimeout(1200);
@@ -941,6 +998,7 @@ test("Bible scrolled mode preserves the Genesis 10 viewport position across refr
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
 
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
   await page.waitForTimeout(1200);
@@ -994,6 +1052,7 @@ test("Bible mode toggles keep Genesis 10 anchored instead of jumping back to the
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
 
+  await waitForBibleChapterToc(page);
   await page.getByRole("button", { name: /expand genesis/i }).click();
   await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
   await page.waitForTimeout(1200);
