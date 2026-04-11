@@ -3370,6 +3370,159 @@ it("continues continuous reading into the next chapter after the current chapter
   });
 });
 
+it("keeps scrolled cross-chapter continuous reading alive when the first post-turn location snapshot still reports the previous spine item", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+
+  const firstChapterParagraph = "First chapter closes with one final paragraph.";
+  const secondChapterParagraph =
+    "Second chapter should begin speaking immediately after the turn, and the first line needs to stay short enough to stand alone as its own opening chunk.";
+  const secondChapterContinuation =
+    "The second chapter must keep speaking through this follow-up paragraph so the queue proves it stayed alive even when the first post-turn location snapshot still pointed at the previous chapter for a moment before the runtime finished settling into the new section.";
+  let activeChapter = 1;
+  let staleSecondChapterLocationPending = false;
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  const relocate = (chapter: number) => {
+                    const isFirstChapter = chapter === 1;
+                    onRelocated?.({
+                      cfi: isFirstChapter ? "epubcfi(/6/2!/4/1:0)" : "epubcfi(/6/4!/4/1:0)",
+                      progress: isFirstChapter ? 0.35 : 0.52,
+                      spineItemId: isFirstChapter ? "chap-1" : "chap-2",
+                      textQuote: isFirstChapter ? firstChapterParagraph : secondChapterParagraph,
+                    });
+                  };
+
+                  relocate(activeChapter);
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation: vi.fn(async () => {
+                      if (activeChapter === 2 && staleSecondChapterLocationPending) {
+                        staleSecondChapterLocationPending = false;
+                        return {
+                          cfi: "epubcfi(/6/4!/4/1:0)",
+                          progress: 0.52,
+                          spineItemId: "chap-1",
+                          textQuote: secondChapterParagraph,
+                        };
+                      }
+
+                      return {
+                        cfi: activeChapter === 1 ? "epubcfi(/6/2!/4/1:0)" : "epubcfi(/6/4!/4/1:0)",
+                        progress: activeChapter === 1 ? 0.35 : 0.52,
+                        spineItemId: activeChapter === 1 ? "chap-1" : "chap-2",
+                        textQuote: activeChapter === 1 ? firstChapterParagraph : secondChapterParagraph,
+                      };
+                    }),
+                    getTextFromCurrentLocation: vi.fn(async () =>
+                      activeChapter === 1
+                        ? firstChapterParagraph
+                        : `${secondChapterParagraph}\n\n${secondChapterContinuation}`,
+                    ),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () =>
+                      activeChapter === 1
+                        ? [
+                            {
+                              cfi: "epubcfi(/6/2!/4/2/1:0)",
+                              spineItemId: "chap-1",
+                              text: firstChapterParagraph,
+                            },
+                          ]
+                        : [
+                            {
+                              cfi: "epubcfi(/6/4!/4/2/1:0)",
+                              spineItemId: "chap-2",
+                              text: secondChapterParagraph,
+                            },
+                            {
+                              cfi: "epubcfi(/6/4!/4/4/1:0)",
+                              spineItemId: "chap-2",
+                              text: secondChapterContinuation,
+                            },
+                          ],
+                    ),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => {
+                      activeChapter = 2;
+                      staleSecondChapterLocationPending = true;
+                      window.setTimeout(() => {
+                        relocate(activeChapter);
+                      }, 0);
+                    }),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: firstChapterParagraph,
+      }),
+    );
+  });
+
+  act(() => {
+    browserTts.finishCurrent();
+  });
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: secondChapterParagraph,
+      }),
+    );
+  });
+
+  act(() => {
+    browserTts.finishCurrent();
+  });
+
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: secondChapterContinuation,
+      }),
+    );
+  });
+});
+
 it("flushes the latest reading location before page refresh", async () => {
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   installSpeechSynthesis([

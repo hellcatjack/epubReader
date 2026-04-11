@@ -282,6 +282,18 @@ function sliceChunksFromMarker(chunks: ChunkSegment[], chunkIndex: number, marke
   return [trimmedChunk, ...chunks.slice(chunkIndex + 1)];
 }
 
+function getChunkSpineItemId(chunks: ChunkSegment[]) {
+  for (const chunk of chunks) {
+    for (const marker of chunk.markers) {
+      if (marker.spineItemId) {
+        return marker.spineItemId;
+      }
+    }
+  }
+
+  return "";
+}
+
 function formatTtsError(error: unknown) {
   if (typeof error === "object" && error && "error" in error && typeof error.error === "string") {
     return error.error;
@@ -556,6 +568,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const continuousChunksRef = useRef<ChunkSegment[]>([]);
   const continuousSessionActiveRef = useRef(false);
   const continuousAdvanceInFlightRef = useRef(false);
+  const continuousSpineSyncPendingRef = useRef("");
   const lastContinuousMarkerCfiRef = useRef("");
   const lastContinuousTextRef = useRef("");
   const lastAutoPagedCfiRef = useRef("");
@@ -1349,6 +1362,15 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [bookId]);
 
   useEffect(() => {
+    const pendingSpineItemId = continuousSpineSyncPendingRef.current;
+    if (pendingSpineItemId) {
+      if (currentSpineItemId === pendingSpineItemId) {
+        continuousSpineSyncPendingRef.current = "";
+      } else {
+        return;
+      }
+    }
+
     if (
       ttsState.mode === "continuous" &&
       ttsState.status !== "idle" &&
@@ -1481,12 +1503,13 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         await runtimeHandle.next();
 
         const nextLocation = await runtimeHandle.getCurrentLocation?.();
-        const nextSpineItemId = nextLocation?.spineItemId ?? currentLocationRef.current.spineItemId;
         const nextChunks = await getContinuousTtsChunks(
           runtimeHandle,
           settingsRef.current.readingMode,
           settingsRef.current.ttsFollowPlayback,
         );
+        const nextSpineItemId =
+          getChunkSpineItemId(nextChunks) || nextLocation?.spineItemId || currentLocationRef.current.spineItemId;
         const nextFirstMarkerCfi = nextChunks[0]?.markers[0]?.cfi ?? "";
         const nextFirstText = nextChunks[0]?.markers[0]?.text ?? nextChunks[0]?.text ?? "";
         const advanced =
@@ -1545,6 +1568,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }
 
   function startContinuousQueue(chunks: ChunkSegment[], spineItemId: string) {
+    continuousSpineSyncPendingRef.current =
+      spineItemId && currentLocationRef.current.spineItemId !== spineItemId ? spineItemId : "";
     continuousSessionActiveRef.current = true;
     continuousSpineItemIdRef.current = spineItemId;
     continuousChunksRef.current = chunks;

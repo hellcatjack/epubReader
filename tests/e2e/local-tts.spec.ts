@@ -2507,6 +2507,151 @@ test("scrolled mode follow playback advances by full screens instead of jitterin
   expect(movedMetrics.activeBottom ?? 9999).toBeLessThanOrEqual(movedMetrics.clientHeight - 24);
 });
 
+test("scrolled mode keeps continuous tts reading through multiple paragraphs after auto-advancing into the next chapter", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const calls: Array<{ at: number; text: string }> = [];
+    let activeStartTimer: number | undefined;
+    let activeBoundaryTimer: number | undefined;
+    let activeEndTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeStartTimer) {
+          clearTimeout(activeStartTimer);
+          activeStartTimer = undefined;
+        }
+        if (activeBoundaryTimer) {
+          clearTimeout(activeBoundaryTimer);
+          activeBoundaryTimer = undefined;
+        }
+        if (activeEndTimer) {
+          clearTimeout(activeEndTimer);
+          activeEndTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        calls.push({
+          at: Date.now(),
+          text: utterance.text,
+        });
+        (
+          window as Window & {
+            __ttsCalls?: Array<{ at: number; text: string }>;
+          }
+        ).__ttsCalls = calls;
+        activeStartTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+          activeBoundaryTimer = window.setTimeout(() => {
+            utterance.onboundary?.({ ...(new Event("boundary")), charIndex: 0 } as Event & { charIndex: number });
+          }, 30);
+          activeEndTimer = window.setTimeout(() => {
+            utterance.onend?.(new Event("end"));
+          }, 70);
+        }, 20);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+    (
+      window as Window & {
+        __ttsCalls?: Array<{ at: number; text: string }>;
+      }
+    ).__ttsCalls = calls;
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", paginatedMultiChapterFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+  await expect(page.locator(".epub-root")).toHaveAttribute("data-reader-mode", "scrolled");
+
+  await page.getByRole("button", { name: /start tts/i }).click();
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        (
+          window as Window & {
+            __ttsCalls?: Array<{ at: number; text: string }>;
+          }
+        ).__ttsCalls?.some((call) =>
+          call.text.includes("Chapter Two opens beside the maintenance cabinet downstairs"),
+        ) ?? false,
+      ),
+    )
+    .toBe(true);
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        (
+          window as Window & {
+            __ttsCalls?: Array<{ at: number; text: string }>;
+          }
+        ).__ttsCalls?.some((call) =>
+          call.text.includes("The brass key turns so easily that Mara almost laughs"),
+        ) ?? false,
+      ),
+    )
+    .toBe(true);
+});
+
 test("paginated mode follow playback automatically turns to the next page", async ({ page }) => {
   await page.addInitScript(() => {
     let activeTimer: number | undefined;
