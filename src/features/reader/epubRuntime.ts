@@ -165,6 +165,174 @@ export function buildTocItems(items: NavItem[]): TocItem[] {
   }));
 }
 
+function normalizeGeneratedTocText(text: string) {
+  return text.replace(/\s+/g, " ").replace(/\s*([,.;:!?])\s*/g, "$1 ").trim();
+}
+
+function resolveGeneratedTocTarget(href: string, baseHref: string) {
+  const normalizedHref = href.trim();
+  if (!normalizedHref || /^(?:[a-z]+:|\/\/)/i.test(normalizedHref)) {
+    return "";
+  }
+
+  try {
+    const baseUrl = new URL(baseHref.replace(/^\//, ""), "https://epub.local/");
+    const resolved = new URL(normalizedHref, baseUrl);
+    return `${resolved.pathname.replace(/^\/+/, "")}${resolved.hash}`;
+  } catch {
+    return "";
+  }
+}
+
+function containsTocLink(node: Node) {
+  if (isElementNode(node)) {
+    return node.tagName.toLowerCase() === "a" || Boolean(node.querySelector("a[href]"));
+  }
+
+  return false;
+}
+
+function getDirectChildWithinContainer(container: Element, node: Node) {
+  let current: Node | null = node;
+
+  while (current?.parentNode && current.parentNode !== container) {
+    current = current.parentNode;
+  }
+
+  return current && current.parentNode === container ? (current as ChildNode) : null;
+}
+
+function extractGeneratedTocLinkLabel(anchor: HTMLAnchorElement) {
+  const anchorText = normalizeGeneratedTocText(anchor.textContent ?? "");
+  if (!anchorText) {
+    return "";
+  }
+
+  const container = anchor.closest("p, li, div");
+  if (!container) {
+    return anchorText;
+  }
+
+  const directChild = getDirectChildWithinContainer(container, anchor);
+  if (!directChild) {
+    return anchorText;
+  }
+
+  const siblings = Array.from(container.childNodes);
+  const anchorIndex = siblings.indexOf(directChild);
+  if (anchorIndex < 0) {
+    return anchorText;
+  }
+
+  let suffix = "";
+  for (let index = anchorIndex + 1; index < siblings.length; index += 1) {
+    const sibling = siblings[index];
+    if (containsTocLink(sibling)) {
+      break;
+    }
+
+    suffix += ` ${sibling.textContent ?? ""}`;
+  }
+
+  return normalizeGeneratedTocText(`${anchorText} ${suffix}`) || anchorText;
+}
+
+function shouldIgnoreGeneratedTocEntry(label: string, target: string, parentTarget: string) {
+  const normalizedLabel = label.toLowerCase();
+  const normalizedParentTarget = parentTarget.replace(/#.*$/, "");
+  const normalizedTarget = target.replace(/#.*$/, "");
+
+  if (!label || !target) {
+    return true;
+  }
+
+  if (target === parentTarget || (normalizedTarget === normalizedParentTarget && !target.includes("#"))) {
+    return true;
+  }
+
+  return (
+    normalizedLabel === "contents" ||
+    normalizedLabel === "table of contents" ||
+    normalizedLabel.includes("back to main contents") ||
+    normalizedLabel.includes("back to contents") ||
+    normalizedLabel.includes("main contents")
+  );
+}
+
+export function extractGeneratedTocChildren(doc: Document, baseHref: string, parentId: string, parentTarget: string): TocItem[] {
+  const body = doc.body;
+  if (!body) {
+    return [];
+  }
+
+  const children: TocItem[] = [];
+  const seenTargets = new Set<string>();
+  const anchors = Array.from(body.querySelectorAll<HTMLAnchorElement>("a[href]"));
+
+  for (const anchor of anchors) {
+    const href = anchor.getAttribute("href") ?? "";
+    const target = resolveGeneratedTocTarget(href, baseHref);
+    const label = extractGeneratedTocLinkLabel(anchor);
+
+    if (shouldIgnoreGeneratedTocEntry(label, target, parentTarget) || seenTargets.has(target)) {
+      continue;
+    }
+
+    seenTargets.add(target);
+    children.push({
+      children: [],
+      id: `${parentId}::${target}`,
+      label,
+      target,
+    });
+  }
+
+  return children;
+}
+
+async function expandTocItemsFromContentsPages(
+  book: ReturnType<typeof ePub>,
+  items: TocItem[],
+): Promise<TocItem[]> {
+  return await Promise.all(
+    items.map(async (item) => {
+      const existingChildren = item.children?.length ? await expandTocItemsFromContentsPages(book, item.children) : [];
+      if (existingChildren.length) {
+        return {
+          ...item,
+          children: existingChildren,
+        };
+      }
+
+      const target = getTocTarget(item);
+      const section = book.section(target);
+      if (!section) {
+        return item;
+      }
+
+      try {
+        await section.load(book.load.bind(book));
+        const doc = section.document;
+        if (!doc) {
+          return item;
+        }
+
+        const generatedChildren = extractGeneratedTocChildren(doc, section.href, item.id, target);
+        if (generatedChildren.length < 2) {
+          return item;
+        }
+
+        return {
+          ...item,
+          children: generatedChildren,
+        };
+      } catch {
+        return item;
+      }
+    }),
+  );
+}
+
 function sameActiveTtsSegment(left: ActiveTtsSegment | null, right: ActiveTtsSegment | null) {
   return left?.cfi === right?.cfi && left?.spineItemId === right?.spineItemId && left?.text === right?.text;
 }
@@ -3802,7 +3970,7 @@ export const epubViewportRuntime: EpubViewportRuntime = {
     }
 
     const navigation = await book.loaded.navigation;
-    currentToc = buildTocItems(navigation.toc);
+    currentToc = await expandTocItemsFromContentsPages(book, buildTocItems(navigation.toc));
     onTocChange?.(currentToc);
     await rendition.display(initialCfi);
     syncCurrentContents();

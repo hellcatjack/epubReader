@@ -7,6 +7,7 @@ import {
   createReaderSelectionSnapshotFromRange,
   extractTtsBlockText,
   extractSentenceContextFromRange,
+  extractGeneratedTocChildren,
   findActiveTocPathForRange,
   findFirstVisibleTextOffset,
   findMostVisibleContentsIndex,
@@ -1457,5 +1458,59 @@ describe("epubRuntime tts targeting helpers", () => {
     `;
 
     expect(getPagePresentationKind(doc)).toBe("prose");
+  });
+});
+
+describe("epubRuntime generated toc children", () => {
+  it("extracts chapter targets from epub2 contents pages", () => {
+    const doc = document.implementation.createHTMLDocument("contents");
+    doc.body.innerHTML = `
+      <h1>Collected Novel</h1>
+      <p><a href="chapter-1.xhtml#chapter-1">Chapter 1. The Riverbank</a></p>
+      <p><a href="chapter-2.xhtml#chapter-2">Chapter 2. The Storm Cellar</a></p>
+    `;
+
+    expect(extractGeneratedTocChildren(doc, "book-contents.xhtml", "novel", "book-contents.xhtml")).toEqual([
+      {
+        children: [],
+        id: "novel::chapter-1.xhtml#chapter-1",
+        label: "Chapter 1. The Riverbank",
+        target: "chapter-1.xhtml#chapter-1",
+      },
+      {
+        children: [],
+        id: "novel::chapter-2.xhtml#chapter-2",
+        label: "Chapter 2. The Storm Cellar",
+        target: "chapter-2.xhtml#chapter-2",
+      },
+    ]);
+  });
+
+  it("captures chapter subtitles that live outside the anchor text and ignores back-to-contents links", () => {
+    const doc = document.implementation.createHTMLDocument("contents");
+    doc.body.innerHTML = `
+      <p><a href="main-contents.xhtml">back to main contents</a></p>
+      <p>
+        <a href="chapter-1.xhtml#c1">CHAPTER I.</a>
+        <span>The Riverbank at Dawn</span>
+        <a href="chapter-2.xhtml#c2">CHAPTER II.</a>
+        <span>The Storm Cellar</span>
+      </p>
+    `;
+
+    expect(extractGeneratedTocChildren(doc, "book-contents.xhtml", "novel", "book-contents.xhtml")).toEqual([
+      {
+        children: [],
+        id: "novel::chapter-1.xhtml#c1",
+        label: "CHAPTER I. The Riverbank at Dawn",
+        target: "chapter-1.xhtml#c1",
+      },
+      {
+        children: [],
+        id: "novel::chapter-2.xhtml#c2",
+        label: "CHAPTER II. The Storm Cellar",
+        target: "chapter-2.xhtml#c2",
+      },
+    ]);
   });
 });
