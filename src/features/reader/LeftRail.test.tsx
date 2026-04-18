@@ -62,6 +62,40 @@ it("auto-expands the branch that contains the current reading location", () => {
   expect(screen.getByRole("button", { name: "Chapter 2" })).toBeInTheDocument();
 });
 
+it("prefers the explicit current section path over a shared spine item when resolving the active branch", () => {
+  render(
+    <LeftRail
+      currentSectionPath={["GENESIS", "Chapter 10"]}
+      currentSpineItemId="genesis.xhtml"
+      onNavigateToTocItem={() => undefined}
+      toc={
+        [
+          {
+            id: "toc",
+            label: "Table of Contents",
+            target: "toc.xhtml#contents",
+            children: [
+              {
+                id: "genesis",
+                label: "GENESIS",
+                target: "genesis.xhtml#book",
+                children: [
+                  { id: "genesis-1", label: "Chapter 1", target: "genesis.xhtml#c1" },
+                  { id: "genesis-10", label: "Chapter 10", target: "genesis.xhtml#c10" },
+                ],
+              },
+            ],
+          },
+        ] as never
+      }
+    />,
+  );
+
+  expect(screen.getByRole("button", { name: /collapse genesis/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Chapter 10" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "GENESIS" }).closest(".reader-toc-item")).toHaveClass("reader-toc-item-active");
+});
+
 it("lets the user collapse the active reading branch without losing the current section highlight", async () => {
   const user = userEvent.setup();
 

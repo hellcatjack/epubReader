@@ -110,6 +110,57 @@ export function findTocPathBySpineItemId(items: TocItem[], spineItemId: string):
   return [];
 }
 
+export function findTocPathBySectionPath(items: TocItem[], sectionPath: string[]): TocItem[] {
+  const normalizedSectionPath = sectionPath.map((label) => label.trim().toLowerCase()).filter(Boolean);
+  if (!normalizedSectionPath.length) {
+    return [];
+  }
+
+  let bestMatch: TocItem[] = [];
+
+  const visit = (entries: TocItem[], ancestors: TocItem[]) => {
+    for (const item of entries) {
+      const path = [...ancestors, item];
+      const normalizedPath = path.map((entry) => entry.label.trim().toLowerCase()).filter(Boolean);
+      const pathSuffix = normalizedPath.slice(-normalizedSectionPath.length);
+
+      if (
+        pathSuffix.length === normalizedSectionPath.length &&
+        pathSuffix.every((label, index) => label === normalizedSectionPath[index]) &&
+        path.length > bestMatch.length
+      ) {
+        bestMatch = path;
+      }
+
+      if (item.children?.length) {
+        visit(item.children, path);
+      }
+    }
+  };
+
+  visit(items, []);
+  return bestMatch;
+}
+
+export function findTocPathByTarget(items: TocItem[], target: string): TocItem[] {
+  if (!target) {
+    return [];
+  }
+
+  for (const item of items) {
+    const path = item.children?.length ? findTocPathByTarget(item.children, target) : [];
+    if (path.length) {
+      return [item, ...path];
+    }
+
+    if (getTocTarget(item) === target) {
+      return [item];
+    }
+  }
+
+  return [];
+}
+
 export function filterTocItems(items: TocItem[], query: string, ancestors: string[] = []): TocItem[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {

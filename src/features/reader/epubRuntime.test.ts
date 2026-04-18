@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as epubRuntimeModule from "./epubRuntime";
 import {
+  areGeneratedTocChildrenRedundant,
   buildTocItems,
   capturePaginatedResizeRestoreAnchor,
   captureScrolledResizeRestoreAnchor,
@@ -31,6 +32,7 @@ import {
   resolveScrolledResizeAnchorScrollTop,
   resolveScrolledResizeFallbackScrollTop,
   resolvePreferredPaginatedLocationCfi,
+  resolveTtsSentenceNoteReadingRect,
   resolveStoredLocationCfi,
   resolveLocationProgressSnapshot,
   resolveLocationProgress,
@@ -1319,6 +1321,53 @@ describe("epubRuntime tts targeting helpers", () => {
     });
   });
 
+  it("uses only the active paginated column when deriving the reading rect for sentence-note placement", () => {
+    expect(
+      resolveTtsSentenceNoteReadingRect({
+        activeRect: {
+          bottom: 44,
+          left: 4189,
+          right: 4247,
+          top: 27,
+        } as DOMRect,
+        readingClientRects: [
+          {
+            bottom: 48,
+            left: 4154,
+            right: 4910,
+            top: 20,
+          } as DOMRect,
+          {
+            bottom: 96,
+            left: 4154,
+            right: 4884,
+            top: 60,
+          } as DOMRect,
+          {
+            bottom: 48,
+            left: 4936,
+            right: 5672,
+            top: 20,
+          } as DOMRect,
+        ],
+        readingMode: "paginated",
+        readingRect: {
+          bottom: 96,
+          left: 4154,
+          right: 5672,
+          top: 20,
+        } as DOMRect,
+      }),
+    ).toEqual({
+      bottom: 96,
+      height: 76,
+      left: 4154,
+      right: 4910,
+      top: 20,
+      width: 756,
+    });
+  });
+
   it("does not double-count the current page index when paginated rects are already document-absolute", () => {
     expect(
       resolvePaginatedFollowPageIndex(
@@ -1462,6 +1511,71 @@ describe("epubRuntime tts targeting helpers", () => {
 });
 
 describe("epubRuntime generated toc children", () => {
+  it("treats generated contents-page children as redundant when the same targets already exist in the toc", () => {
+    expect(
+      areGeneratedTocChildrenRedundant(
+        [
+          {
+            children: [],
+            id: "toc",
+            label: "Table of Contents",
+            target: "toc.xhtml",
+          },
+          {
+            children: [
+              {
+                children: [],
+                id: "genesis-1",
+                label: "Chapter 1",
+                target: "ch004.xhtml#v01001001",
+              },
+            ],
+            id: "genesis",
+            label: "GENESIS",
+            target: "ch004.xhtml#v01000000",
+          },
+        ],
+        [
+          {
+            children: [],
+            id: "toc::genesis",
+            label: "GENESIS",
+            target: "ch004.xhtml#v01000000",
+          },
+        ],
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps generated contents-page children when they add targets missing from the toc", () => {
+    expect(
+      areGeneratedTocChildrenRedundant(
+        [
+          {
+            children: [],
+            id: "novel",
+            label: "The Gilded Age",
+            target: "dummy_split_008.html",
+          },
+        ],
+        [
+          {
+            children: [],
+            id: "novel::chapter-1",
+            label: "Chapter 1",
+            target: "chapter-1.xhtml#chapter-1",
+          },
+          {
+            children: [],
+            id: "novel::chapter-2",
+            label: "Chapter 2",
+            target: "chapter-2.xhtml#chapter-2",
+          },
+        ],
+      ),
+    ).toBe(false);
+  });
+
   it("extracts chapter targets from epub2 contents pages", () => {
     const doc = document.implementation.createHTMLDocument("contents");
     doc.body.innerHTML = `

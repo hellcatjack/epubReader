@@ -29,6 +29,7 @@ import type {
   TtsSentenceNoteMetrics,
 } from "./epubRuntime";
 import {
+  type RefreshProgressSnapshot,
   readRefreshProgressSnapshot,
   resolvePreferredProgress,
   writeRefreshProgressSnapshot,
@@ -52,7 +53,7 @@ import {
   extractCurrentSpokenSentence,
   isIgnorableSpokenSentence,
 } from "./ttsSentenceTranslation";
-import { findTocLabelBySpineItemId, findTocPathBySpineItemId } from "./tocTree";
+import { findTocLabelBySpineItemId, findTocPathBySpineItemId, findTocPathByTarget } from "./tocTree";
 
 type ReaderPageProps = {
   ai?: Pick<AiService, "explainSelection" | "translateSelection">;
@@ -113,11 +114,22 @@ const recentReleasedSelectionWindowMs = 5000;
 const selectionSpeechTranslationFallbackMs = 600;
 const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
+const autoReadSelectionEnglishLetterLimit = 30;
 const ttsSentenceNoteGapPx = 18;
 const ttsSentenceNoteMinimumLanePx = 150;
 const ttsSentenceNoteMaximumWidthPx = 280;
 const ttsSentenceNoteTabletMaximumWidthPx = 360;
 const ttsSentenceNoteTopPaddingPx = 12;
+const coarseSectionPathLabels = new Set(["contents", "table of contents"]);
+
+function normalizeSectionPathLabels(sectionPath?: string[]) {
+  return (
+    sectionPath
+      ?.map((label) => label.trim())
+      .filter(Boolean)
+      .filter((label) => !coarseSectionPathLabels.has(label.toLowerCase())) ?? []
+  );
+}
 const ttsSentenceNoteEstimatedHeightPx = 196;
 
 function getSelectionCacheKey(selection: ReaderSelection | null) {
@@ -173,22 +185,20 @@ export function resolveTtsSentenceNotePlacement(args: {
 
   if (!isTabletLayout) {
     const availableLaneWidth = stageRect.right - readingRect.right - ttsSentenceNoteGapPx;
-    if (availableLaneWidth < ttsSentenceNoteMinimumLanePx) {
-      return null;
+    if (availableLaneWidth >= ttsSentenceNoteMinimumLanePx) {
+      const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
+      const left = Math.max(ttsSentenceNoteGapPx, readingRect.right - stageRect.left + ttsSentenceNoteGapPx);
+      const maxTop = Math.max(
+        ttsSentenceNoteTopPaddingPx,
+        stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
+      );
+      const top = Math.min(
+        Math.max(ttsSentenceNoteTopPaddingPx, activeRect.top - stageRect.top - 8),
+        maxTop,
+      );
+
+      return { left, top, width };
     }
-
-    const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
-    const left = Math.max(ttsSentenceNoteGapPx, readingRect.right - stageRect.left + ttsSentenceNoteGapPx);
-    const maxTop = Math.max(
-      ttsSentenceNoteTopPaddingPx,
-      stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
-    );
-    const top = Math.min(
-      Math.max(ttsSentenceNoteTopPaddingPx, activeRect.top - stageRect.top - 8),
-      maxTop,
-    );
-
-    return { left, top, width };
   }
 
   const width = Math.min(ttsSentenceNoteTabletMaximumWidthPx, Math.max(220, stageRect.width - ttsSentenceNoteGapPx * 2));
@@ -313,6 +323,10 @@ function isAutoSpeakableSelection(text: string) {
   }
 
   return /[\p{L}\p{N}]/u.test(normalized);
+}
+
+function countEnglishLetters(text: string) {
+  return text.match(/[A-Za-z]/g)?.length ?? 0;
 }
 
 async function getContinuousTtsChunks(
@@ -558,6 +572,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     spineItemId: "",
     textQuote: "",
   });
+  const lastResolvedSectionPathRef = useRef<{ path: string[]; spineItemId: string } | null>(null);
   const runtimeHandleValueRef = useRef<RuntimeRenderHandle | null>(null);
   const translationRequestVersionRef = useRef(0);
   const explanationRequestVersionRef = useRef(0);
@@ -588,6 +603,68 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const spokenSentenceTranslationCacheRef = useRef(new Map<string, string>());
   const spokenSentenceTranslationRequestRef = useRef(0);
   const readerStageRef = useRef<HTMLElement | null>(null);
+
+  function resolveSectionPathForLocation(
+    nextLocation: {
+      cfi: string;
+      sectionPath?: string[];
+      spineItemId?: string;
+    },
+    fallbackLocation: Pick<ReaderLocationState, "cfi" | "sectionPath" | "spineItemId">,
+  ) {
+    const nextSectionPath = nextLocation.sectionPath?.map((label) => label.trim()).filter(Boolean) ?? [];
+    const fallbackSectionPath = fallbackLocation.sectionPath?.map((label) => label.trim()).filter(Boolean) ?? [];
+    const resolvedSpineItemId = (nextLocation.spineItemId ?? fallbackLocation.spineItemId ?? "").trim();
+    const retainedSectionPath =
+      fallbackSectionPath.length > 0
+        ? fallbackSectionPath
+        : resolvedSpineItemId && lastResolvedSectionPathRef.current?.spineItemId === resolvedSpineItemId
+          ? lastResolvedSectionPathRef.current.path
+          : [];
+
+    const rememberResolvedSectionPath = (sectionPath?: string[]) => {
+      const normalizedSectionPath = sectionPath?.map((label) => label.trim()).filter(Boolean) ?? [];
+      if (!normalizedSectionPath.length || !resolvedSpineItemId) {
+        return sectionPath;
+      }
+
+      lastResolvedSectionPathRef.current = {
+        path: normalizedSectionPath,
+        spineItemId: resolvedSpineItemId,
+      };
+      return normalizedSectionPath;
+    };
+
+    if (nextSectionPath.length) {
+      if ((nextLocation.spineItemId ?? "") === fallbackLocation.spineItemId && retainedSectionPath.length) {
+        const normalizedNextSectionPath = normalizeSectionPathLabels(nextSectionPath);
+        const normalizedFallbackSectionPath = normalizeSectionPathLabels(retainedSectionPath);
+        const nextSectionPathIsCoarserAncestor =
+          normalizedNextSectionPath.length > 0 &&
+          normalizedNextSectionPath.length < normalizedFallbackSectionPath.length &&
+          normalizedNextSectionPath.every((label, index) => label === normalizedFallbackSectionPath[index]);
+
+        if (nextSectionPathIsCoarserAncestor) {
+          return rememberResolvedSectionPath(retainedSectionPath);
+        }
+      }
+
+      return rememberResolvedSectionPath(nextSectionPath);
+    }
+
+    if (!retainedSectionPath.length) {
+      return undefined;
+    }
+
+    if (
+      nextLocation.cfi === fallbackLocation.cfi ||
+      ((nextLocation.spineItemId ?? "") && (nextLocation.spineItemId ?? "") === fallbackLocation.spineItemId)
+    ) {
+      return rememberResolvedSectionPath(retainedSectionPath);
+    }
+
+    return undefined;
+  }
 
   function ensureTtsQueue() {
     if (!ttsQueueRef.current) {
@@ -719,13 +796,24 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     setReaderStatus("Restoring reading position...");
 
     const refreshSnapshot = readRefreshProgressSnapshot(bookId);
-    const applyResolvedProgress = (progress: ProgressRecord | null) => {
+    const applyResolvedProgress = (progress: RefreshProgressSnapshot | ProgressRecord | null) => {
       setInitialProgress(progress ?? null);
       setInitialCfi(progress?.cfi);
       setLocationTarget(progress?.cfi);
       setLocationTargetIntent("restored");
       setExplicitLocationTarget(undefined);
       setPreferExactViewportTarget(false);
+      setCurrentLocation({
+        cfi: progress?.cfi ?? "",
+        pageIndex: progress?.pageIndex,
+        pageOffset: progress?.pageOffset,
+        progress: progress?.progress ?? 0,
+        sectionPath: progress ? resolveSectionPathForLocation(progress, currentLocationRef.current) : undefined,
+        scrollTop: progress?.scrollTop,
+        spineItemId: progress?.spineItemId ?? "",
+        textQuote: progress?.textQuote ?? "",
+      });
+      setCurrentSpineItemId(progress?.spineItemId ?? "");
     };
 
     if (refreshSnapshot) {
@@ -1290,7 +1378,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       return;
     }
 
-    if (isAutoSpeakableSelection(nextText)) {
+    if (
+      isAutoSpeakableSelection(nextText) &&
+      countEnglishLetters(nextText) <= autoReadSelectionEnglishLetterLimit
+    ) {
       let isActive = true;
       let translationStarted = false;
 
@@ -1415,6 +1506,13 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         ? {
             ...currentLocation,
             ...viewportSnapshot,
+            sectionPath: resolveSectionPathForLocation(
+              {
+                ...currentLocation,
+                ...viewportSnapshot,
+              },
+              currentLocation,
+            ),
           }
         : null;
 
@@ -1424,7 +1522,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
       void (async () => {
         const runtimeLocation = await runtimeHandle?.getCurrentLocation?.();
-        const nextLocation = runtimeLocation ?? immediateLocation;
+        const nextLocation = runtimeLocation
+          ? {
+              ...runtimeLocation,
+              sectionPath: resolveSectionPathForLocation(runtimeLocation, immediateLocation ?? currentLocation),
+            }
+          : immediateLocation;
         if (!nextLocation?.cfi) {
           return;
         }
@@ -2219,6 +2322,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const leftRail = (
     <LeftRail
       bookmarks={bookmarkItems}
+      currentSectionPath={currentLocation.sectionPath}
       currentSpineItemId={currentSpineItemId}
       highlights={highlights}
       notes={notes}
@@ -2280,6 +2384,25 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   );
 
   function navigateToLocation(target: string) {
+    const targetSectionPath = findTocPathByTarget(toc, target)
+      .map((item) => item.label.trim())
+      .filter(Boolean);
+
+    if (targetSectionPath.length) {
+      lastResolvedSectionPathRef.current = {
+        path: targetSectionPath,
+        spineItemId: target.split("#")[0] ?? "",
+      };
+      currentLocationRef.current = {
+        ...currentLocationRef.current,
+        sectionPath: targetSectionPath,
+      };
+      setCurrentLocation((current) => ({
+        ...current,
+        sectionPath: targetSectionPath,
+      }));
+    }
+
     pendingTtsStartTargetRef.current = target;
     setLocationTargetIntent("explicit");
     setExplicitLocationTarget(target);
@@ -2288,6 +2411,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       writeRefreshProgressSnapshot(bookId, {
         cfi: target,
         progress: currentLocationRef.current.progress,
+        ...(targetSectionPath.length ? { sectionPath: targetSectionPath } : {}),
         ...(typeof currentLocationRef.current.pageIndex === "number"
           ? { pageIndex: currentLocationRef.current.pageIndex }
           : {}),
@@ -2445,18 +2569,32 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                 initialProgress={initialProgress}
                 preferExactInitialTarget={preferExactViewportTarget}
                 onLocationChange={({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote }) => {
+                  const nextSectionPath = resolveSectionPathForLocation(
+                    { cfi, sectionPath, spineItemId },
+                    currentLocationRef.current,
+                  );
                   if (bookId) {
                     writeRefreshProgressSnapshot(bookId, {
                       cfi,
                       pageIndex,
                       pageOffset,
                       progress,
+                      ...(nextSectionPath?.length ? { sectionPath: nextSectionPath } : {}),
                       scrollTop,
                       spineItemId,
                       textQuote,
                     });
                   }
-                  setCurrentLocation({ cfi, pageIndex, pageOffset, progress, sectionPath, scrollTop, spineItemId, textQuote });
+                  setCurrentLocation({
+                    cfi,
+                    pageIndex,
+                    pageOffset,
+                    progress,
+                    sectionPath: nextSectionPath,
+                    scrollTop,
+                    spineItemId,
+                    textQuote,
+                  });
                   setCurrentSpineItemId(spineItemId);
                 }}
                 onReady={setRuntimeHandle}

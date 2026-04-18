@@ -1043,6 +1043,64 @@ test("Bible scrolled mode preserves the Genesis 10 viewport position across refr
   expect(Math.abs((after?.scrollTop ?? 0) - (before?.scrollTop ?? 0))).toBeLessThan(8);
 });
 
+test("Bible refresh keeps the Genesis chapter branch after delayed toc hydration", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await waitForBibleChapterToc(page);
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await waitForBibleAnchor(page, "h00022");
+
+  await expect(page.locator(".reader-current-section")).toContainText("GENESIS / Chapter 10");
+
+  await page.reload({ waitUntil: "networkidle" });
+
+  await expect
+    .poll(async () => (await page.locator(".reader-current-section").textContent())?.replace(/\s+/g, " ").trim() ?? "", {
+      timeout: 15000,
+    })
+    .toContain("GENESIS / Chapter 10");
+
+  await expect(page.getByRole("button", { name: /collapse genesis/i })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("button", { name: "Chapter 10", exact: true })).toBeVisible();
+});
+
+test("Bible refresh does not turn Table of Contents into an expandable branch", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await waitForBibleChapterToc(page);
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await waitForBibleAnchor(page, "h00022");
+
+  await expect(page.getByRole("button", { name: /expand table of contents/i })).toHaveCount(0);
+
+  await page.reload({ waitUntil: "networkidle" });
+
+  await expect(page.getByRole("button", { name: /expand table of contents/i })).toHaveCount(0);
+  await page.waitForTimeout(12000);
+  await expect(page.getByRole("button", { name: /expand table of contents/i })).toHaveCount(0);
+});
+
+test("Bible paginated mode keeps the Genesis chapter branch after delayed relocation updates", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  await waitForBibleChapterToc(page);
+  await page.getByRole("button", { name: /expand genesis/i }).click();
+  await page.getByRole("button", { name: "Chapter 10", exact: true }).click();
+  await waitForBibleAnchor(page, "h00022");
+
+  await page.getByRole("button", { name: /paginated mode/i }).click();
+  await page.waitForTimeout(12000);
+
+  await expect(page.locator(".reader-current-section")).toContainText("GENESIS / Chapter 10");
+  await expect(page.getByRole("button", { name: /collapse genesis/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Chapter 10", exact: true })).toBeVisible();
+});
+
 test("Bible mode toggles keep Genesis 10 anchored instead of jumping back to the Genesis contents page", async ({ page }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => {

@@ -812,6 +812,42 @@ it("keeps the tablet spoken sentence note horizontally stable while the active l
   expect(upperPlacement?.top).not.toBe(lowerPlacement?.top);
 });
 
+it("falls back to an above-line placement when desktop paginated layouts do not have a right-side lane", () => {
+  expect(
+    resolveTtsSentenceNotePlacement({
+      activeRect: {
+        bottom: 288,
+        height: 28,
+        left: 980,
+        right: 1040,
+        top: 260,
+        width: 60,
+      },
+      isTabletLayout: false,
+      readingRect: {
+        bottom: 640,
+        height: 420,
+        left: 720,
+        right: 1110,
+        top: 220,
+        width: 390,
+      },
+      stageRect: {
+        bottom: 980,
+        height: 860,
+        left: 80,
+        right: 1180,
+        top: 120,
+        width: 1100,
+      } as DOMRect,
+    }),
+  ).toEqual({
+    left: 655,
+    top: 186,
+    width: 360,
+  });
+});
+
 it("does not reuse the previous translation bubble content while a new tablet selection is still being dragged", async () => {
   installMatchMedia({ "(max-width: 1180px)": true });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0");
@@ -1381,6 +1417,185 @@ it("shows the deepest current section breadcrumb in the top bar instead of the l
     );
   });
   expect(screen.queryByText(/local annotations enabled/i)).not.toBeInTheDocument();
+});
+
+it("keeps the more specific chapter breadcrumb when a later same-spine relocation only reports a coarse toc ancestor path", async () => {
+  let relocatedListener:
+    | ((location: {
+        cfi: string;
+        progress: number;
+        sectionPath?: string[];
+        spineItemId: string;
+        textQuote: string;
+      }) => void)
+    | undefined;
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated, onTocChange }) => {
+                  relocatedListener = onRelocated;
+                  onTocChange?.([
+                    {
+                      children: [
+                        {
+                          children: [
+                            {
+                              id: "genesis-10",
+                              label: "Chapter 10",
+                              target: "genesis.xhtml#chapter-10",
+                            },
+                          ],
+                          id: "genesis",
+                          label: "GENESIS",
+                          target: "genesis.xhtml#book",
+                        },
+                      ],
+                      id: "toc",
+                      label: "Table of Contents",
+                      target: "contents.xhtml#book",
+                    },
+                  ]);
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/166/2[v01010001]/2/1:0)",
+                    progress: 0.42,
+                    sectionPath: ["GENESIS", "Chapter 10"],
+                    spineItemId: "genesis.xhtml",
+                    textQuote: "These are the generations of the sons of Noah.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "These are the generations of the sons of Noah."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Current section")).toHaveTextContent("GENESIS / Chapter 10");
+  });
+
+  act(() => {
+    relocatedListener?.({
+      cfi: "epubcfi(/6/2!/4/162/1:0)",
+      progress: 0.43,
+      sectionPath: ["Table of Contents", "GENESIS"],
+      spineItemId: "genesis.xhtml",
+      textQuote: "After the flood Noah lived 350 years.",
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Current section")).toHaveTextContent("GENESIS / Chapter 10");
+  });
+});
+
+it("keeps the last known chapter breadcrumb when a same-spine relocation race drops sectionPath", async () => {
+  let relocatedListener:
+    | ((location: {
+        cfi: string;
+        progress: number;
+        sectionPath?: string[];
+        spineItemId: string;
+        textQuote: string;
+      }) => void)
+    | undefined;
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated, onTocChange }) => {
+                  relocatedListener = onRelocated;
+                  onTocChange?.([
+                    {
+                      children: [
+                        {
+                          id: "genesis-1",
+                          label: "Chapter 1",
+                          target: "genesis.xhtml#chapter-1",
+                        },
+                        {
+                          id: "genesis-10",
+                          label: "Chapter 10",
+                          target: "genesis.xhtml#chapter-10",
+                        },
+                      ],
+                      id: "genesis",
+                      label: "GENESIS",
+                      target: "genesis.xhtml#book",
+                    },
+                  ]);
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "These are the generations of the sons of Noah."),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(relocatedListener).toBeTypeOf("function");
+  });
+
+  act(() => {
+    relocatedListener?.({
+      cfi: "epubcfi(/6/2!/4/166/2[v01010001]/2/1:0)",
+      progress: 0.42,
+      sectionPath: ["GENESIS", "Chapter 10"],
+      spineItemId: "genesis.xhtml",
+      textQuote: "These are the generations of the sons of Noah.",
+    });
+    relocatedListener?.({
+      cfi: "epubcfi(/6/2!/4/162/1:0)",
+      progress: 0.43,
+      spineItemId: "genesis.xhtml",
+      textQuote: "After the flood Noah lived 350 years.",
+    });
+  });
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Current section")).toHaveTextContent("GENESIS / Chapter 10");
+  });
 });
 
 it("navigates toc targets through the active runtime handle instead of reopening the viewport", async () => {

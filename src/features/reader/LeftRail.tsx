@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { TocItem } from "../../lib/types/books";
-import { collectExpandableTocIds, filterTocItems, findTocPathBySpineItemId, getTocTarget } from "./tocTree";
+import { collectExpandableTocIds, filterTocItems, findTocPathBySectionPath, findTocPathBySpineItemId, getTocTarget } from "./tocTree";
 
 type BookmarkListItem = {
   cfi: string;
@@ -20,6 +20,7 @@ type NoteListItem = {
 
 type LeftRailProps = {
   bookmarks?: BookmarkListItem[];
+  currentSectionPath?: string[];
   currentSpineItemId?: string;
   highlights?: HighlightListItem[];
   notes?: NoteListItem[];
@@ -31,6 +32,7 @@ type LeftRailProps = {
 
 export function LeftRail({
   bookmarks = [],
+  currentSectionPath = [],
   currentSpineItemId = "",
   highlights = [],
   notes = [],
@@ -43,15 +45,33 @@ export function LeftRail({
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [collapsedAutoExpandedIds, setCollapsedAutoExpandedIds] = useState<string[]>([]);
   const filteredToc = useMemo(() => filterTocItems(toc, tocQuery), [toc, tocQuery]);
+  const normalizedCurrentSectionPath = useMemo(
+    () => currentSectionPath.map((label) => label.trim()).filter(Boolean),
+    [currentSectionPath.join("\u0000")],
+  );
+  const activeTocPath = useMemo(() => {
+    if (tocQuery.trim()) {
+      return [];
+    }
+
+    if (normalizedCurrentSectionPath.length) {
+      const sectionPathMatch = findTocPathBySectionPath(toc, normalizedCurrentSectionPath);
+      if (sectionPathMatch.length) {
+        return sectionPathMatch;
+      }
+
+      return [];
+    }
+
+    return findTocPathBySpineItemId(toc, currentSpineItemId);
+  }, [currentSpineItemId, normalizedCurrentSectionPath, toc, tocQuery]);
   const autoExpandedIds = useMemo(() => {
     if (tocQuery.trim()) {
       return collectExpandableTocIds(filteredToc);
     }
 
-    return findTocPathBySpineItemId(toc, currentSpineItemId)
-      .filter((item) => item.children?.length)
-      .map((item) => item.id);
-  }, [currentSpineItemId, filteredToc, toc, tocQuery]);
+    return activeTocPath.filter((item) => item.children?.length).map((item) => item.id);
+  }, [activeTocPath, filteredToc, tocQuery]);
   const effectiveAutoExpandedIds = useMemo(
     () =>
       tocQuery.trim()
@@ -63,7 +83,7 @@ export function LeftRail({
     () => Array.from(new Set([...expandedIds, ...effectiveAutoExpandedIds])),
     [effectiveAutoExpandedIds, expandedIds],
   );
-  const activeBranchId = autoExpandedIds[0] ?? "";
+  const activeBranchId = [...activeTocPath].reverse().find((item) => item.children?.length)?.id ?? "";
 
   useEffect(() => {
     setCollapsedAutoExpandedIds((current) => current.filter((id) => autoExpandedIds.includes(id)));

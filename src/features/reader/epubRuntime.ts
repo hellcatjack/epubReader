@@ -189,6 +189,38 @@ function sameTocItems(left: TocItem[], right: TocItem[]): boolean {
   });
 }
 
+function collectTocTargets(items: TocItem[]): Set<string> {
+  const targets = new Set<string>();
+
+  const visit = (entries: TocItem[]) => {
+    for (const item of entries) {
+      const target = getTocTarget(item);
+      if (target) {
+        targets.add(target);
+      }
+
+      if (item.children?.length) {
+        visit(item.children);
+      }
+    }
+  };
+
+  visit(items);
+  return targets;
+}
+
+export function areGeneratedTocChildrenRedundant(items: TocItem[], generatedChildren: TocItem[]): boolean {
+  if (!generatedChildren.length) {
+    return false;
+  }
+
+  const existingTargets = collectTocTargets(items);
+  return generatedChildren.every((child) => {
+    const target = child.target?.trim();
+    return target ? existingTargets.has(target) : false;
+  });
+}
+
 function normalizeGeneratedTocText(text: string) {
   return text.replace(/\s+/g, " ").replace(/\s*([,.;:!?])\s*/g, "$1 ").trim();
 }
@@ -318,6 +350,7 @@ async function expandTocItemsFromContentsPages(
   book: ReturnType<typeof ePub>,
   items: TocItem[],
   ancestorSpineItemIds: ReadonlySet<string> = new Set(),
+  rootItems: TocItem[] = items,
 ): Promise<TocItem[]> {
   return await Promise.all(
     items.map(async (item) => {
@@ -328,7 +361,7 @@ async function expandTocItemsFromContentsPages(
       }
 
       const existingChildren = item.children?.length
-        ? await expandTocItemsFromContentsPages(book, item.children, nextAncestorSpineItemIds)
+        ? await expandTocItemsFromContentsPages(book, item.children, nextAncestorSpineItemIds, rootItems)
         : [];
       if (existingChildren.length) {
         return sameTocItems(existingChildren, item.children ?? [])
@@ -358,6 +391,10 @@ async function expandTocItemsFromContentsPages(
 
         const generatedChildren = extractGeneratedTocChildren(doc, section.href, item.id, target);
         if (generatedChildren.length < 2) {
+          return item;
+        }
+
+        if (areGeneratedTocChildrenRedundant(rootItems, generatedChildren)) {
           return item;
         }
 
@@ -1773,6 +1810,87 @@ export function projectRectIntoViewport(
     right,
     top,
     width: Math.max(0, right - left),
+  };
+}
+
+export function resolveTtsSentenceNoteReadingRect({
+  activeRect,
+  readingMode,
+  readingRect,
+  readingClientRects,
+}: {
+  activeRect: Pick<DOMRect, "bottom" | "left" | "right" | "top">;
+  readingClientRects: Iterable<Pick<DOMRect, "bottom" | "left" | "right" | "top">>;
+  readingMode: ReadingMode;
+  readingRect: Pick<DOMRect, "bottom" | "left" | "right" | "top">;
+}): ReaderSelectionRect {
+  const fallbackRect = {
+    bottom: readingRect.bottom,
+    height: Math.max(0, readingRect.bottom - readingRect.top),
+    left: readingRect.left,
+    right: readingRect.right,
+    top: readingRect.top,
+    width: Math.max(0, readingRect.right - readingRect.left),
+  };
+  if (readingMode !== "paginated") {
+    return fallbackRect;
+  }
+
+  const candidateRects = Array.from(readingClientRects).filter(
+    (rect) => rect.right > rect.left && rect.bottom > rect.top,
+  );
+  if (!candidateRects.length) {
+    return fallbackRect;
+  }
+
+  const anchorRect =
+    candidateRects.find((rect) => rect.right > activeRect.left && rect.left < activeRect.right) ??
+    candidateRects.reduce((best, rect) => {
+      const currentGap =
+        rect.right < activeRect.left
+          ? activeRect.left - rect.right
+          : rect.left > activeRect.right
+            ? rect.left - activeRect.right
+            : 0;
+      const bestGap =
+        best.right < activeRect.left
+          ? activeRect.left - best.right
+          : best.left > activeRect.right
+            ? best.left - activeRect.right
+            : 0;
+
+      if (currentGap !== bestGap) {
+        return currentGap < bestGap ? rect : best;
+      }
+
+      const currentVerticalDistance = Math.abs(rect.top - activeRect.top);
+      const bestVerticalDistance = Math.abs(best.top - activeRect.top);
+      return currentVerticalDistance < bestVerticalDistance ? rect : best;
+    });
+
+  const columnRects = candidateRects.filter((rect) => rect.right > anchorRect.left && rect.left < anchorRect.right);
+  const resolvedRect = columnRects.reduce(
+    (aggregate, rect) => ({
+      bottom: Math.max(aggregate.bottom, rect.bottom),
+      left: Math.min(aggregate.left, rect.left),
+      right: Math.max(aggregate.right, rect.right),
+      top: Math.min(aggregate.top, rect.top),
+    }),
+    {
+      bottom: anchorRect.bottom,
+      left: anchorRect.left,
+      right: anchorRect.right,
+      top: anchorRect.top,
+    },
+  );
+
+  return {
+    bottom: resolvedRect.bottom,
+    height: Math.max(0, resolvedRect.bottom - resolvedRect.top),
+    left: resolvedRect.left,
+    right: resolvedRect.right,
+    top: resolvedRect.top,
+    width: Math.max(0, resolvedRect.right - resolvedRect.left),
   };
 }
 
@@ -4211,7 +4329,12 @@ export const epubViewportRuntime: EpubViewportRuntime = {
         const frameRect = isElementNode(frameElement) ? frameElement.getBoundingClientRect() : null;
         const activeRect = activeTtsElement.getBoundingClientRect();
         const readingBlock = getNearestTtsBlockElement(activeTtsElement) ?? activeTtsElement;
-        const readingRect = readingBlock.getBoundingClientRect();
+        const readingRect = resolveTtsSentenceNoteReadingRect({
+          activeRect,
+          readingClientRects: Array.from(readingBlock.getClientRects()),
+          readingMode: activePreferences.readingMode,
+          readingRect: readingBlock.getBoundingClientRect(),
+        });
 
         return {
           activeRect: frameRect ? projectRectIntoViewport(frameRect, activeRect) : readRectMetrics(activeRect),

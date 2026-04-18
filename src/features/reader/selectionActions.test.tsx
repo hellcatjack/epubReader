@@ -487,6 +487,77 @@ it("does not auto-read punctuation-only selections", async () => {
   expect(browserTts.speechSynthesis.speak).not.toHaveBeenCalled();
 });
 
+it("does not auto-read released selections with more than 30 English letters", async () => {
+  installEdgeDesktopUserAgent();
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    translateSelection: vi.fn(async () => "超过阈值翻译"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "abcdefghij klmnopqrst uvwxyzabcde",
+    });
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  });
+
+  expect(browserTts.speechSynthesis.speak).not.toHaveBeenCalled();
+});
+
+it("still auto-reads released selections with exactly 30 English letters", async () => {
+  installEdgeDesktopUserAgent();
+  const browserTts = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    translateSelection: vi.fn(async () => "边界翻译"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      spineItemId: "chap-1",
+      text: "abcdefghij klmnopqrst uvwxyzabcd",
+    });
+  });
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  });
+  await waitFor(() => {
+    expect(browserTts.speechSynthesis.speak).toHaveBeenCalledTimes(1);
+  });
+});
+
 it("reads aloud the selected text through browser speech synthesis", async () => {
   const user = userEvent.setup();
   installEdgeDesktopUserAgent();
