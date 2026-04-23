@@ -9,6 +9,11 @@ import {
   createGrammarExplainUserPrompt,
   extractGrammarExplainAnswer,
 } from "./grammarExplainPrompt";
+import {
+  createEnglishDefinitionSystemPrompt,
+  createEnglishDefinitionUserPrompt,
+  extractEnglishDefinitionAnswer,
+} from "./englishDefinitionPrompt";
 
 type FetchLike = typeof fetch;
 
@@ -238,6 +243,40 @@ async function requestGrammarExplain(
   );
 }
 
+async function requestEnglishDefinition(
+  fetchFn: FetchLike,
+  endpoint: string,
+  textModel: string,
+  text: string,
+  context: RequestContext,
+) {
+  const output = await requestChatText(
+    fetchFn,
+    endpoint,
+    textModel,
+    [
+      {
+        role: "system",
+        content: createEnglishDefinitionSystemPrompt(),
+      },
+      {
+        role: "user",
+        content: createEnglishDefinitionUserPrompt(text, context.sentenceContext),
+      },
+    ],
+    context.signal,
+    {
+      chat_template_kwargs: {
+        enable_thinking: false,
+      },
+      max_tokens: 160,
+      temperature: 0.2,
+    },
+  );
+
+  return extractEnglishDefinitionAnswer(output);
+}
+
 export function normalizeOpenAIError(error: unknown): OpenAIError {
   if (error instanceof DOMException && error.name === "AbortError") {
     return { kind: "aborted" };
@@ -291,6 +330,11 @@ export function createOpenAIAdapter({
     },
     explainSelection(text: string, context: RequestContext) {
       return requestGrammarExplain(fetchFn, chatEndpoint, textModel, text, context).catch((error) => {
+        throw normalizeOpenAIError(error);
+      });
+    },
+    defineSelection(text: string, context: RequestContext) {
+      return requestEnglishDefinition(fetchFn, chatEndpoint, textModel, text, context).catch((error) => {
         throw normalizeOpenAIError(error);
       });
     },

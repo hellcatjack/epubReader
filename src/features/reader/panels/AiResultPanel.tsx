@@ -1,4 +1,5 @@
 type AiResultPanelProps = {
+  englishDefinition?: string;
   ipa?: string;
   onReadAloud?: () => void;
   selectedText?: string;
@@ -7,6 +8,7 @@ type AiResultPanelProps = {
 };
 
 export function AiResultPanel({
+  englishDefinition,
   ipa,
   onReadAloud,
   selectedText,
@@ -55,6 +57,12 @@ export function AiResultPanel({
           <p className={translation ? undefined : "reader-ai-placeholder"}>{translationText}</p>
         )}
       </section>
+      {englishDefinition ? (
+        <section className="reader-ai-surface reader-ai-surface-secondary" aria-label="English definition result">
+          <h3>English definition</h3>
+          <p>{englishDefinition}</p>
+        </section>
+      ) : null}
     </section>
   );
 }

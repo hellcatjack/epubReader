@@ -171,6 +171,7 @@ it("shows ipa for a released single-word selection", async () => {
     })),
   );
   const ai = {
+    defineSelection: vi.fn(async () => "to press something down; to force into a place"),
     translateSelection: vi.fn(async () => "按压"),
     explainSelection: vi.fn(async () => "A short contextual explanation"),
     synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
@@ -184,6 +185,12 @@ it("shows ipa for a released single-word selection", async () => {
 
   expect(await screen.findByText("按压")).toBeInTheDocument();
   expect(await screen.findByText("/prest/")).toBeInTheDocument();
+  expect(await screen.findByText("English definition")).toBeInTheDocument();
+  expect(screen.getByText("to press something down; to force into a place")).toBeInTheDocument();
+  expect(ai.defineSelection).toHaveBeenCalledWith("pressed", {
+    sentenceContext: undefined,
+    targetLanguage: "zh-CN",
+  });
 });
 
 it("does not show ipa for a multi-word selection", async () => {
@@ -213,6 +220,7 @@ it("does not show ipa for a multi-word selection", async () => {
   });
   vi.stubGlobal("fetch", fetchSpy);
   const ai = {
+    defineSelection: vi.fn(async () => "should not render"),
     translateSelection: vi.fn(async () => "事情是这样的"),
     explainSelection: vi.fn(async () => "A short contextual explanation"),
     synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
@@ -240,6 +248,8 @@ it("does not show ipa for a multi-word selection", async () => {
   expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("事情是这样的");
   expect(screen.getByLabelText("Translation result")).not.toHaveTextContent("事情是这样的");
   expect(screen.queryByText(/^IPA$/i)).not.toBeInTheDocument();
+  expect(screen.queryByText("English definition")).not.toBeInTheDocument();
+  expect(ai.defineSelection).not.toHaveBeenCalled();
   const phoneticCalls = fetchSpy.mock.calls.filter(([input]) => !String(input).endsWith("/v1/models"));
   expect(phoneticCalls).toHaveLength(0);
 });
@@ -384,6 +394,9 @@ it("keeps translation visible when explain fails", async () => {
     },
   ]);
   const ai = {
+    defineSelection: vi.fn(async () => {
+      throw new Error("provider unavailable");
+    }),
     translateSelection: vi.fn(async () => "按压"),
     explainSelection: vi.fn(async () => {
       throw new Error("provider unavailable");
@@ -398,6 +411,10 @@ it("keeps translation visible when explain fails", async () => {
   });
 
   expect(await screen.findByText("按压")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(ai.defineSelection).toHaveBeenCalledTimes(1);
+  });
+  expect(screen.queryByText("English definition")).not.toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
 

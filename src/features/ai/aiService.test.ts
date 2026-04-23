@@ -61,6 +61,7 @@ it("routes translation requests through the gemini adapter when gemini byok is s
 it("routes explain requests through grammar-specific endpoint and model when configured", async () => {
   const translateSelection = vi.fn().mockResolvedValue("翻译");
   const explainSelection = vi.fn().mockResolvedValue("语法解析");
+  const defineSelection = vi.fn().mockResolvedValue("english definition");
   const synthesizeSpeech = vi.fn().mockResolvedValue({ audio: "" });
   const loadSettings = vi.fn().mockResolvedValue({
     ...defaultSettings,
@@ -73,11 +74,13 @@ it("routes explain requests through grammar-specific endpoint and model when con
   const createLocalAdapter = vi
     .fn()
     .mockReturnValueOnce({
+      defineSelection,
       explainSelection,
       synthesizeSpeech,
       translateSelection,
     })
     .mockReturnValue({
+      defineSelection,
       explainSelection,
       synthesizeSpeech,
       translateSelection,
@@ -92,5 +95,52 @@ it("routes explain requests through grammar-specific endpoint and model when con
   expect(createLocalAdapter).toHaveBeenCalledWith({
     endpoint: "http://localhost:9001/v1/chat/completions",
     textModel: "grammar-model",
+  });
+});
+
+it("routes english definition requests through the explain adapter configuration", async () => {
+  const translateSelection = vi.fn().mockResolvedValue("翻译");
+  const explainSelection = vi.fn().mockResolvedValue("语法解析");
+  const defineSelection = vi.fn().mockResolvedValue("english definition");
+  const synthesizeSpeech = vi.fn().mockResolvedValue({ audio: "" });
+  const loadSettings = vi.fn().mockResolvedValue({
+    ...defaultSettings,
+    grammarLlmApiUrl: "http://localhost:9001/v1/chat/completions",
+    grammarLlmModel: "grammar-model",
+    llmApiUrl: "http://localhost:1234/v1",
+    localLlmModel: "translation-model",
+    translationProvider: "local_llm",
+  });
+  const createLocalAdapter = vi
+    .fn()
+    .mockReturnValueOnce({
+      defineSelection,
+      explainSelection,
+      synthesizeSpeech,
+      translateSelection,
+    })
+    .mockReturnValue({
+      defineSelection,
+      explainSelection,
+      synthesizeSpeech,
+      translateSelection,
+    });
+  const createGeminiAdapter = vi.fn();
+  const service = createAiService({ createGeminiAdapter, createLocalAdapter, loadSettings });
+
+  await expect(
+    service.defineSelection("pressed", {
+      sentenceContext: "She looked pressed for time before the meeting.",
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("english definition");
+
+  expect(createLocalAdapter).toHaveBeenCalledWith({
+    endpoint: "http://localhost:9001/v1/chat/completions",
+    textModel: "grammar-model",
+  });
+  expect(defineSelection).toHaveBeenCalledWith("pressed", {
+    sentenceContext: "She looked pressed for time before the meeting.",
+    targetLanguage: "zh-CN",
   });
 });

@@ -10,6 +10,7 @@ type TopBarProps = {
   onPrevPage?: () => void;
   onToggleBookmark?: () => void;
   progress?: number;
+  readAloudAction?: ReactNode;
   readingMode?: ReadingMode;
   sectionPath?: string[];
   selectionActions?: ReactNode;
@@ -25,6 +26,7 @@ export function TopBar({
   onPrevPage,
   onToggleBookmark,
   progress = 0,
+  readAloudAction,
   readingMode = "scrolled",
   sectionPath = [],
   selectionActions,
@@ -98,14 +100,7 @@ export function TopBar({
             Paginated mode
           </button>
         </div>
-        <div className="reader-page-controls" role="group" aria-label="Page controls">
-          <button aria-label="Previous page" className="reader-page-button" disabled={!canTurnPages} onClick={onPrevPage} type="button">
-            Prev
-          </button>
-          <button aria-label="Next page" className="reader-page-button" disabled={!canTurnPages} onClick={onNextPage} type="button">
-            Next
-          </button>
-        </div>
+        {readAloudAction}
         <button
           aria-label={bookmarkLabel}
           className="reader-bookmark-button"

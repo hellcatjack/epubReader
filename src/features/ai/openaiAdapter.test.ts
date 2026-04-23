@@ -67,6 +67,40 @@ it("sends translate requests to local completions and explain requests to local 
   expect(explainRequestBody.reasoning).toBeUndefined();
 });
 
+it("sends english definition requests to local chat completions through the explain-model path", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "<answer>to be in a hurry; to feel short of time</answer>" } }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+  const adapter = createOpenAIAdapter({ fetch: fakeFetch });
+
+  await expect(
+    adapter.defineSelection("pressed", {
+      sentenceContext: "She looked pressed for time before the meeting.",
+      targetLanguage: "zh-CN",
+    }),
+  ).resolves.toBe("to be in a hurry; to feel short of time");
+
+  const requestBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  expect(requestBody.messages[0]?.content).toContain("concise English dictionary assistant");
+  expect(requestBody.messages[0]?.content).toContain("<answer>");
+  expect(requestBody.messages[1]?.content).toContain("Word: pressed");
+  expect(requestBody.messages[1]?.content).toContain("Sentence: She looked pressed for time before the meeting.");
+  expect(requestBody.messages[1]?.content).toContain("English only");
+  expect(requestBody.chat_template_kwargs).toEqual({ enable_thinking: false });
+  expect(requestBody.max_tokens).toBe(160);
+  expect(requestBody.temperature).toBe(0.2);
+});
+
 it("normalizes a base llm api url into completions and chat-completions endpoints", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()

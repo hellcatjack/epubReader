@@ -56,7 +56,7 @@ import {
 import { findTocLabelBySpineItemId, findTocPathBySpineItemId, findTocPathByTarget } from "./tocTree";
 
 type ReaderPageProps = {
-  ai?: Pick<AiService, "explainSelection" | "translateSelection">;
+  ai?: Pick<AiService, "explainSelection" | "translateSelection"> & Partial<Pick<AiService, "defineSelection">>;
   phonetics?: Pick<ReturnType<typeof createPhoneticsService>, "lookupIpa">;
   runtime?: EpubViewportRuntime;
 };
@@ -522,6 +522,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const [aiIpa, setAiIpa] = useState("");
   const [translation, setTranslation] = useState("");
   const [translationError, setTranslationError] = useState("");
+  const [englishDefinition, setEnglishDefinition] = useState("");
   const [floatingSelectionTranslation, setFloatingSelectionTranslation] = useState<FloatingSelectionTranslation | null>(null);
   const [spokenSentenceTranslation, setSpokenSentenceTranslation] = useState("");
   const [ttsSentenceNoteMetrics, setTtsSentenceNoteMetrics] = useState<TtsSentenceNoteMetrics | null>(null);
@@ -1318,6 +1319,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     setTranslation("");
     setTranslationError("");
+    setEnglishDefinition("");
     setAiIpa("");
   }, [selectedSelection?.cfiRange, selectedSelection?.isReleased, selectedSelection?.text]);
 
@@ -1714,15 +1716,25 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     setTranslationError("");
     setAiIpa("");
     setTranslation("");
+    setEnglishDefinition("");
     setFloatingSelectionTranslation(null);
 
     try {
-      const [result, ipa] = await Promise.all([
+      const [result, ipa, nextEnglishDefinition] = await Promise.all([
         ai.translateSelection(nextText, {
           sentenceContext,
           targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
         }),
         ipaWord ? phoneticsServiceRef.current.lookupIpa(ipaWord) : Promise.resolve(null),
+        singleWordSelection && typeof ai.defineSelection === "function"
+          ? ai
+              .defineSelection(nextText, {
+                sentenceContext,
+                targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
+              })
+              .then((value) => value.trim())
+              .catch(() => "")
+          : Promise.resolve(""),
       ]);
       if (translationRequestVersionRef.current !== requestVersion) {
         return;
@@ -1736,6 +1748,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (singleWordSelection) {
         setTranslation(result);
         setAiIpa(ipa ?? "");
+        setEnglishDefinition(nextEnglishDefinition);
         if (!isTabletLayout) {
           return;
         }
@@ -1755,6 +1768,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (singleWordSelection) {
         setTranslationError(`Translate failed: ${String(error)}`);
       }
+      setEnglishDefinition("");
       setFloatingSelectionTranslation(null);
     }
   }
@@ -2369,6 +2383,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       readerStatus={readerStatus}
       selectedText={selectedText}
       translation={translation}
+      englishDefinition={englishDefinition}
       translationError={translationError}
       translationProvider={settings.translationProvider}
       ttsCurrentText={ttsState.currentText}
@@ -2488,6 +2503,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           onPrevPage={() => void runtimeHandle?.prev()}
           onToggleBookmark={handleToggleBookmark}
           progress={currentLocation.progress}
+          readAloudAction={
+            <button className="selection-action" disabled={selectedText.length === 0} onClick={handleReadAloud} type="button">
+              Read aloud
+            </button>
+          }
           readingMode={settings.readingMode}
           sectionPath={currentSectionPath}
           systemActions={
@@ -2555,6 +2575,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
               onExplain={handleExplain}
               onHighlight={handleHighlight}
               onReadAloud={handleReadAloud}
+              showReadAloud={false}
               onTranslate={handleTranslate}
             />
           }

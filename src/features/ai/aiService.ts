@@ -85,6 +85,13 @@ export function createAiService({
         throw normalizeOpenAIError(error);
       }
     },
+    async defineSelection(text: string, context: ServiceContext) {
+      try {
+        return await (await getExplainAdapter()).defineSelection(text, context);
+      } catch (error) {
+        throw normalizeOpenAIError(error);
+      }
+    },
     async synthesizeSpeech(text: string, context: SpeechContext) {
       try {
         return await (await getAdapter()).synthesizeSpeech(text, context);

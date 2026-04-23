@@ -78,4 +78,19 @@ describe("AiResultPanel", () => {
 
     expect(onReadAloud).toHaveBeenCalledTimes(1);
   });
+
+  it("renders an english definition surface below translation when provided", () => {
+    render(
+      <AiResultPanel
+        {...({
+          englishDefinition: "to press something down; to force into a place",
+          selectedText: "pressed",
+          translation: "按压",
+        } as Record<string, unknown>)}
+      />,
+    );
+
+    expect(screen.getByText("English definition")).toBeInTheDocument();
+    expect(screen.getByText("to press something down; to force into a place")).toBeInTheDocument();
+  });
 });

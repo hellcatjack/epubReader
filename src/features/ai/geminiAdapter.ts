@@ -9,6 +9,11 @@ import {
   createGrammarExplainUserPrompt,
   extractGrammarExplainAnswer,
 } from "./grammarExplainPrompt";
+import {
+  createEnglishDefinitionSystemPrompt,
+  createEnglishDefinitionUserPrompt,
+  extractEnglishDefinitionAnswer,
+} from "./englishDefinitionPrompt";
 
 type FetchLike = typeof fetch;
 
@@ -182,6 +187,25 @@ async function requestGrammarExplain(
   return extractGrammarExplainAnswer(output);
 }
 
+async function requestEnglishDefinition(
+  fetchFn: FetchLike,
+  endpoint: string,
+  apiKey: string,
+  text: string,
+  context: RequestContext,
+) {
+  const output = await requestGenerateContent(
+    fetchFn,
+    endpoint,
+    apiKey,
+    `${createEnglishDefinitionSystemPrompt()}\n\n${createEnglishDefinitionUserPrompt(text, context.sentenceContext)}`,
+    "word",
+    context.signal,
+  );
+
+  return extractEnglishDefinitionAnswer(output);
+}
+
 export function createGeminiAdapter({
   apiKey,
   fetch: fetchFn = fetch,
@@ -195,6 +219,9 @@ export function createGeminiAdapter({
     },
     explainSelection(text: string, context: RequestContext) {
       return requestGrammarExplain(fetchFn, endpoint, apiKey, text, context);
+    },
+    defineSelection(text: string, context: RequestContext) {
+      return requestEnglishDefinition(fetchFn, endpoint, apiKey, text, context);
     },
     async synthesizeSpeech(_text: string, _options: SpeechOptions) {
       throw { kind: "unsupported" } as const;

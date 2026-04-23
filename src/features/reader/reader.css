@@ -516,8 +516,7 @@
 .reader-topbar-actions,
 .reader-system-actions,
 .reader-system-actions-group,
-.reader-mode-toggle,
-.reader-page-controls {
+.reader-mode-toggle {
   display: flex;
   gap: 0.45rem;
   align-items: center;
@@ -604,7 +603,6 @@
 
 .reader-bookmark-button,
 .reader-mode-button,
-.reader-page-button,
 .reader-shell-action-button,
 .selection-action {
   border: 0;
@@ -616,7 +614,6 @@
 
 .reader-bookmark-button,
 .reader-mode-button,
-.reader-page-button,
 .reader-shell-action-button {
   padding: 0.5rem 0.85rem;
   font: inherit;
@@ -1533,14 +1530,12 @@
 
   .reader-layout-tablet .reader-system-actions-group,
   .reader-layout-tablet .reader-mode-toggle,
-  .reader-layout-tablet .reader-page-controls,
   .reader-layout-tablet .reader-system-actions {
     flex-wrap: nowrap;
   }
 
   .reader-layout-tablet .reader-bookmark-button,
   .reader-layout-tablet .reader-mode-button,
-  .reader-layout-tablet .reader-page-button,
   .reader-layout-tablet .reader-shell-action-button,
   .reader-layout-tablet .selection-action {
     padding: 0.42rem 0.72rem;

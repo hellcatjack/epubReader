@@ -42,6 +42,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onTranslationProviderChange?: (value: TranslationProvider) => void;
   readerStatus?: string;
   ttsRate?: number;
+  englishDefinition?: string;
   selectedText?: string;
   translation?: string;
   translationError?: string;
@@ -89,6 +90,7 @@ export function RightPanel({
   onTtsVolumeChange,
   onTranslationProviderChange,
   readerStatus,
+  englishDefinition,
   selectedText,
   translation,
   translationError,
@@ -130,6 +132,7 @@ export function RightPanel({
       </div>
       <div className="reader-tools-scroll" role="group" aria-label="Reader detail panels">
         <AiResultPanel
+          englishDefinition={englishDefinition}
           ipa={aiIpa}
           onReadAloud={onSelectionReadAloud}
           selectedText={selectedText}

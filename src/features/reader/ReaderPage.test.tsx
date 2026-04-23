@@ -1687,6 +1687,13 @@ it("renders selection actions in the top bar instead of below the reader stage",
   expect(within(topbar).getByRole("button", { name: "Highlight" })).toBeInTheDocument();
   expect(within(topbar).getByRole("button", { name: "Add note" })).toBeInTheDocument();
   expect(within(topbar).getByRole("button", { name: "Read aloud" })).toBeInTheDocument();
+  expect(within(topbar).queryByRole("button", { name: /previous page/i })).not.toBeInTheDocument();
+  expect(within(topbar).queryByRole("button", { name: /next page/i })).not.toBeInTheDocument();
+  const topbarButtonLabels = within(topbar)
+    .getAllByRole("button")
+    .map((button) => button.textContent?.trim());
+  expect(topbarButtonLabels.indexOf("Paginated mode")).toBeLessThan(topbarButtonLabels.indexOf("Read aloud"));
+  expect(topbarButtonLabels.indexOf("Read aloud")).toBeLessThan(topbarButtonLabels.indexOf("Bookmark"));
   expect(document.querySelector(".reader-stage .selection-popover")).toBeNull();
 });
 
@@ -1810,10 +1817,8 @@ it("turns paginated pages from host-document arrow presses when the reading ifra
   await waitFor(() => {
     expect(screen.getByRole("button", { name: /paginated mode/i })).toHaveAttribute("aria-pressed", "true");
   });
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: /next page/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /previous page/i })).toBeEnabled();
-  });
+  expect(screen.queryByRole("button", { name: /next page/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /previous page/i })).not.toBeInTheDocument();
 
   fireEvent.keyDown(document.body, { key: "ArrowRight" });
   fireEvent.keyDown(document.body, { key: "ArrowLeft" });
@@ -1825,18 +1830,24 @@ it("turns paginated pages from host-document arrow presses when the reading ifra
   (iframe as HTMLIFrameElement).focus();
   expect(document.activeElement).toBe(iframe);
 
-  fireEvent.keyDown(window, { key: "ArrowRight" });
-  fireEvent.keyDown(window, { key: "ArrowLeft" });
-  expect(nextPage).toHaveBeenCalledTimes(1);
-  expect(prevPage).toHaveBeenCalledTimes(1);
+  await waitFor(() => {
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(nextPage).toHaveBeenCalled();
+  });
+  await waitFor(() => {
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(prevPage).toHaveBeenCalled();
+  });
+  nextPage.mockClear();
+  prevPage.mockClear();
 
   const topbar = screen.getByRole("banner");
   topbar.focus();
   fireEvent.keyDown(topbar, { key: "ArrowRight" });
   fireEvent.keyDown(topbar, { key: "ArrowLeft" });
 
-  expect(nextPage).toHaveBeenCalledTimes(2);
-  expect(prevPage).toHaveBeenCalledTimes(2);
+  expect(nextPage).toHaveBeenCalledTimes(1);
+  expect(prevPage).toHaveBeenCalledTimes(1);
 });
 
 it("keeps tts queue above appearance and persists voice rate and volume changes from the reader rail", async () => {
@@ -2834,22 +2845,19 @@ it("switches reading modes and pages through the active rendition", async () => 
   await waitFor(() => {
     expect(screen.getByRole("button", { name: /paginated mode/i })).toHaveAttribute("aria-pressed", "true");
   });
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: /next page/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /previous page/i })).toBeEnabled();
-  });
-
-  await user.click(screen.getByRole("button", { name: /next page/i }));
-  expect(next).toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: /next page/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /previous page/i })).not.toBeInTheDocument();
 
   fireEvent.keyDown(window, { key: "ArrowLeft" });
   expect(prev).not.toHaveBeenCalled();
 
   const topbar = screen.getByRole("banner");
   topbar.focus();
+  fireEvent.keyDown(topbar, { key: "ArrowRight" });
   fireEvent.keyDown(topbar, { key: "ArrowLeft" });
 
   await waitFor(() => {
+    expect(next).toHaveBeenCalled();
     expect(prev).toHaveBeenCalled();
   });
 });
