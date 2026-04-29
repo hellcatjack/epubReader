@@ -740,7 +740,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     ttsState.status,
   ]);
   const currentSpokenSentenceCacheKey =
-    bookId && (activeContinuousTtsSegment?.spineItemId || currentSpineItemId) && currentSpokenSentence
+    settings.ttsSentenceTranslationEnabled &&
+    bookId &&
+    (activeContinuousTtsSegment?.spineItemId || currentSpineItemId) &&
+    currentSpokenSentence
       ? buildTtsSentenceTranslationCacheKey({
           bookId,
           sentence: currentSpokenSentence,
@@ -1085,7 +1088,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [selectedSelection?.cfiRange, selectedSelection?.isReleased, selectedSelection?.text]);
 
   useEffect(() => {
-    if (!activeContinuousTtsSegment || !runtimeHandle?.getTtsSentenceNoteMetrics) {
+    if (!settings.ttsSentenceTranslationEnabled || !activeContinuousTtsSegment || !runtimeHandle?.getTtsSentenceNoteMetrics) {
       setTtsSentenceNoteMetrics(null);
       return;
     }
@@ -1115,10 +1118,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("resize", syncMetrics);
     };
-  }, [activeContinuousTtsSegment, runtimeHandle, ttsState.markerCfi, ttsState.markerText]);
+  }, [activeContinuousTtsSegment, runtimeHandle, settings.ttsSentenceTranslationEnabled, ttsState.markerCfi, ttsState.markerText]);
 
   useEffect(() => {
     if (!currentSpokenSentenceCacheKey || !currentSpokenSentence) {
+      spokenSentenceTranslationRequestRef.current += 1;
       setSpokenSentenceTranslation("");
       return;
     }
@@ -2104,6 +2108,17 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     await updateSettings({ ttsFollowPlayback });
   }
 
+  async function handleTtsSentenceTranslationEnabledChange(ttsSentenceTranslationEnabled: boolean) {
+    if (!ttsSentenceTranslationEnabled) {
+      spokenSentenceTranslationRequestRef.current += 1;
+      setSpokenSentenceTranslation("");
+      setTtsSentenceTranslationNote(null);
+      setTtsSentenceNoteMetrics(null);
+    }
+
+    await updateSettings({ ttsSentenceTranslationEnabled });
+  }
+
   function getRecentReleasedSelectionFallback() {
     if (Date.now() - lastReleasedSelectionAtRef.current > recentReleasedSelectionWindowMs) {
       return null;
@@ -2372,6 +2387,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       onSelectionReadAloud={handleReadAloud}
       onTtsPause={handlePauseTts}
       onTtsFollowPlaybackChange={handleTtsFollowPlaybackChange}
+      onTtsSentenceTranslationEnabledChange={handleTtsSentenceTranslationEnabledChange}
       onTtsRateChange={handleQuickTtsRateChange}
       onTtsResume={handleResumeTts}
       onTtsStartPointerDown={handlePrepareStartTts}
@@ -2389,6 +2405,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       ttsCurrentText={ttsState.currentText}
       ttsError={ttsState.error}
       ttsFollowPlayback={settings.ttsFollowPlayback}
+      ttsSentenceTranslationEnabled={settings.ttsSentenceTranslationEnabled}
       ttsRate={settings.ttsRate}
       ttsStartDisabled={!ttsStartReady}
       ttsStatus={ttsState.status}

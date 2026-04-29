@@ -107,6 +107,8 @@ test("wide-screen continuous tts shows a spoken sentence translation note beside
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
+  await page.getByRole("button", { name: /voice, speed, volume/i }).click();
+  await page.getByRole("checkbox", { name: /show tts translation note/i }).click();
   await page.getByRole("button", { name: /start tts/i }).click();
 
   const note = page.getByRole("status", { name: /spoken sentence translation/i });
@@ -221,6 +223,7 @@ test("wide-screen continuous tts applies the configured now reading text size on
   await expect(page).toHaveURL(/\/books\//);
 
   await page.getByRole("button", { name: /settings/i }).click();
+  await page.getByRole("checkbox", { name: /show tts translation note/i }).click();
   await page.getByRole("button", { name: /advanced typography/i }).click();
   await page.getByRole("region", { name: /reader settings/i }).getByLabel("Now reading text size").fill("1.6");
   await page.getByRole("button", { name: /save settings/i }).click();
@@ -343,6 +346,8 @@ test("tablet-width continuous tts shows the spoken sentence translation note abo
   await expect(page).toHaveURL(/\/books\//);
 
   await page.getByRole("button", { name: /tools/i }).click();
+  await page.getByRole("button", { name: /voice, speed, volume/i }).click();
+  await page.getByRole("checkbox", { name: /show tts translation note/i }).click();
   await page.getByRole("button", { name: /start tts/i }).click();
 
   const note = page.getByRole("status", { name: /spoken sentence translation/i });

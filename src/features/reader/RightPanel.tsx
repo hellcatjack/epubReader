@@ -32,6 +32,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onSelectionReadAloud?: () => void;
   onTtsPause?: () => void;
   onTtsFollowPlaybackChange?: (enabled: boolean) => void;
+  onTtsSentenceTranslationEnabledChange?: (enabled: boolean) => void;
   onTtsRateChange?: (rate: number) => void;
   onTtsResume?: () => void;
   onTtsStartPointerDown?: () => void;
@@ -51,6 +52,7 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   ttsCurrentText?: string;
   ttsError?: string;
   ttsFollowPlayback?: boolean;
+  ttsSentenceTranslationEnabled?: boolean;
   ttsStatus?: "idle" | "loading" | "playing" | "paused" | "error";
   ttsVoice?: string;
   ttsVoices?: BrowserTtsVoice[];
@@ -81,6 +83,7 @@ export function RightPanel({
   onSelectionReadAloud,
   onTtsPause,
   onTtsFollowPlaybackChange,
+  onTtsSentenceTranslationEnabledChange,
   onTtsRateChange,
   onTtsResume,
   onTtsStartPointerDown,
@@ -99,6 +102,7 @@ export function RightPanel({
   ttsCurrentText,
   ttsError,
   ttsFollowPlayback,
+  ttsSentenceTranslationEnabled,
   ttsRate,
   ttsStatus,
   ttsVoice,
@@ -114,6 +118,7 @@ export function RightPanel({
           error={ttsError}
           followPlayback={ttsFollowPlayback}
           onFollowPlaybackChange={onTtsFollowPlaybackChange}
+          onSentenceTranslationEnabledChange={onTtsSentenceTranslationEnabledChange}
           onPause={onTtsPause}
           onRateChange={onTtsRateChange}
           onResume={onTtsResume}
@@ -121,6 +126,7 @@ export function RightPanel({
           onStart={onTtsStart}
           onStop={onTtsStop}
           rate={ttsRate}
+          sentenceTranslationEnabled={ttsSentenceTranslationEnabled}
           startDisabled={ttsStartDisabled}
           status={ttsStatus}
           voiceId={ttsVoice}

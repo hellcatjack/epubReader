@@ -136,6 +136,8 @@ test("Bible paginated TTS keeps the spoken sentence translation note visible at 
   await page.waitForTimeout(1200);
   await page.getByRole("button", { name: /paginated mode/i }).click();
   await page.waitForTimeout(1200);
+  await page.getByRole("button", { name: /voice, speed, volume/i }).click();
+  await page.getByRole("checkbox", { name: /show tts translation note/i }).click();
   await page.getByRole("button", { name: /start tts/i }).click();
 
   await expect

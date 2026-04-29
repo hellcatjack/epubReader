@@ -6,6 +6,7 @@ type TtsStatusPanelProps = {
   error?: string;
   followPlayback?: boolean;
   onFollowPlaybackChange?: (enabled: boolean) => void;
+  onSentenceTranslationEnabledChange?: (enabled: boolean) => void;
   onPause?: () => void;
   onRateChange?: (rate: number) => void;
   onResume?: () => void;
@@ -15,6 +16,7 @@ type TtsStatusPanelProps = {
   onVoiceChange?: (voiceId: string) => void;
   onVolumeChange?: (volume: number) => void;
   rate?: number;
+  sentenceTranslationEnabled?: boolean;
   startDisabled?: boolean;
   status?: "idle" | "loading" | "playing" | "paused" | "error";
   voiceId?: string;
@@ -45,6 +47,7 @@ export function TtsStatusPanel({
   error,
   followPlayback = false,
   onFollowPlaybackChange,
+  onSentenceTranslationEnabledChange,
   onPause,
   onRateChange,
   onResume,
@@ -54,6 +57,7 @@ export function TtsStatusPanel({
   onVoiceChange,
   onVolumeChange,
   rate = 1,
+  sentenceTranslationEnabled = false,
   startDisabled = false,
   status = "idle",
   voiceId = "",
@@ -131,6 +135,15 @@ export function TtsStatusPanel({
                   aria-label="Follow TTS playback"
                   checked={followPlayback}
                   onChange={(event) => onFollowPlaybackChange?.(event.target.checked)}
+                  type="checkbox"
+                />
+              </label>
+              <label className="reader-tts-field reader-tts-toggle">
+                <span>Show TTS translation note</span>
+                <input
+                  aria-label="Show TTS translation note"
+                  checked={sentenceTranslationEnabled}
+                  onChange={(event) => onSentenceTranslationEnabledChange?.(event.target.checked)}
                   type="checkbox"
                 />
               </label>

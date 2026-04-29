@@ -559,6 +559,7 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
   };
   await db.settings.put(
     createStoredSettings({
+      ttsSentenceTranslationEnabled: true,
       ttsSentenceTranslationFontScale: 1.3,
     }),
   );
@@ -652,6 +653,220 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
   expect(note).toHaveStyle({ "--reader-tts-sentence-note-text-scale": "1.3" });
 });
 
+it("does not request or show spoken sentence translations during continuous tts by default", async () => {
+  const user = userEvent.setup();
+  installMatchMedia({ "(max-width: 1180px)": false });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  const speech = installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const ai = {
+    explainSelection: vi.fn(async () => ""),
+    translateSelection: vi.fn(async () => "第一句翻译"),
+  };
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              ai={ai}
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/2/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chapter-10.xhtml",
+                    textQuote: "First paragraph.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation: vi.fn(async () => ({
+                      cfi: "epubcfi(/6/2!/4/2/1:0)",
+                      progress: 0.2,
+                      spineItemId: "chapter-10.xhtml",
+                      textQuote: "First paragraph.",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph. Second sentence."),
+                    getTtsSentenceNoteMetrics: vi.fn(() => ({
+                      activeRect: {
+                        bottom: 288,
+                        height: 28,
+                        left: 460,
+                        right: 720,
+                        top: 260,
+                        width: 260,
+                      },
+                      readingRect: {
+                        bottom: 940,
+                        height: 800,
+                        left: 120,
+                        right: 820,
+                        top: 140,
+                        width: 700,
+                      },
+                    })),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(speech.speechSynthesis.speak).toHaveBeenCalled();
+  });
+  expect(ai.translateSelection).not.toHaveBeenCalled();
+  expect(screen.queryByRole("status", { name: /spoken sentence translation/i })).not.toBeInTheDocument();
+});
+
+it("discards in-flight spoken sentence translations after the tts note setting is disabled", async () => {
+  const user = userEvent.setup();
+  installMatchMedia({ "(max-width: 1180px)": false });
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const deferredTranslation = createDeferred<string>();
+  const ai = {
+    explainSelection: vi.fn(async () => ""),
+    translateSelection: vi.fn(() => deferredTranslation.promise),
+  };
+  await db.settings.put(createStoredSettings({ ttsSentenceTranslationEnabled: true }));
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              ai={ai}
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/2/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chapter-10.xhtml",
+                    textQuote: "First paragraph.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getCurrentLocation: vi.fn(async () => ({
+                      cfi: "epubcfi(/6/2!/4/2/1:0)",
+                      progress: 0.2,
+                      spineItemId: "chapter-10.xhtml",
+                      textQuote: "First paragraph.",
+                    })),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph. Second sentence."),
+                    getTtsSentenceNoteMetrics: vi.fn(() => ({
+                      activeRect: {
+                        bottom: 288,
+                        height: 28,
+                        left: 460,
+                        right: 720,
+                        top: 260,
+                        width: 260,
+                      },
+                      readingRect: {
+                        bottom: 940,
+                        height: 800,
+                        left: 120,
+                        right: 820,
+                        top: 140,
+                        width: 700,
+                      },
+                    })),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  } as RuntimeRenderHandle;
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  const readerStage = screen.getByRole("region", { name: /reader stage/i });
+  Object.defineProperty(readerStage, "getBoundingClientRect", {
+    configurable: true,
+    value: () =>
+      ({
+        bottom: 980,
+        height: 860,
+        left: 80,
+        right: 1180,
+        top: 120,
+        width: 1100,
+      }) as DOMRect,
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+  });
+
+  await user.click(screen.getByRole("button", { name: /voice, speed, volume/i }));
+  await user.click(screen.getByRole("checkbox", { name: /show tts translation note/i }));
+
+  await act(async () => {
+    deferredTranslation.resolve("第一句翻译");
+    await deferredTranslation.promise;
+  });
+
+  expect(screen.queryByRole("status", { name: /spoken sentence translation/i })).not.toBeInTheDocument();
+  await waitFor(async () => {
+    expect(await getSettings()).toMatchObject({ ttsSentenceTranslationEnabled: false });
+  });
+});
+
 it("shows the spoken sentence translation note above the active reading region in tablet layout", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": true });
@@ -669,6 +884,7 @@ it("shows the spoken sentence translation note above the active reading region i
     explainSelection: vi.fn(async () => ""),
     translateSelection: vi.fn(async () => "第一句翻译"),
   };
+  await db.settings.put(createStoredSettings({ ttsSentenceTranslationEnabled: true }));
 
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
@@ -1825,9 +2041,14 @@ it("turns paginated pages from host-document arrow presses when the reading ifra
   expect(nextPage).not.toHaveBeenCalled();
   expect(prevPage).not.toHaveBeenCalled();
 
+  await waitFor(() => {
+    expect(document.querySelector(".epub-root iframe")).toBeInstanceOf(HTMLIFrameElement);
+  });
   const iframe = document.querySelector(".epub-root iframe");
-  expect(iframe).toBeInstanceOf(HTMLIFrameElement);
-  (iframe as HTMLIFrameElement).focus();
+  if (!(iframe instanceof HTMLIFrameElement)) {
+    throw new Error("Expected reader iframe to be mounted.");
+  }
+  iframe.focus();
   expect(document.activeElement).toBe(iframe);
 
   await waitFor(() => {
@@ -1897,12 +2118,14 @@ it("keeps tts queue above appearance and persists voice rate and volume changes 
   const ttsSettings = within(tools).getByRole("group", { name: /tts settings/i });
   await screen.findByRole("option", { name: /microsoft andrew online/i });
   await user.selectOptions(within(ttsSettings).getByLabelText(/tts voice/i), "Microsoft Andrew Online (Natural)");
+  await user.click(within(ttsSettings).getByLabelText(/show tts translation note/i));
   fireEvent.change(within(ttsSettings).getByLabelText(/^tts rate$/i), { target: { value: "1.15" } });
   fireEvent.change(within(ttsSettings).getByLabelText(/tts volume/i), { target: { value: "0.85" } });
 
   await waitFor(async () => {
     expect(await getSettings()).toMatchObject({
       ttsRate: 1.15,
+      ttsSentenceTranslationEnabled: true,
       ttsVoice: "Microsoft Andrew Online (Natural)",
       ttsVolume: 0.85,
     });

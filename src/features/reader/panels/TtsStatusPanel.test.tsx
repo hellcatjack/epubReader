@@ -95,3 +95,20 @@ it("lets the reader toggle follow playback from the advanced tts section", async
 
   expect(onFollowPlaybackChange).toHaveBeenCalledWith(true);
 });
+
+it("lets the reader toggle spoken sentence translation notes from the advanced tts section", async () => {
+  const user = userEvent.setup();
+  const onSentenceTranslationEnabledChange = vi.fn();
+
+  render(
+    <TtsStatusPanel
+      onSentenceTranslationEnabledChange={onSentenceTranslationEnabledChange}
+      sentenceTranslationEnabled={false}
+    />,
+  );
+
+  await user.click(screen.getByRole("button", { name: /voice, speed, volume/i }));
+  await user.click(screen.getByRole("checkbox", { name: /show tts translation note/i }));
+
+  expect(onSentenceTranslationEnabledChange).toHaveBeenCalledWith(true);
+});

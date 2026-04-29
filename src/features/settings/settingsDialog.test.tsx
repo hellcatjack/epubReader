@@ -84,6 +84,7 @@ it("includes a configurable llm api url in default settings", () => {
     llmApiUrl: "http://localhost:8001/v1/chat/completions",
     localLlmModel: "",
     ttsSentenceTranslationFontScale: 1,
+    ttsSentenceTranslationEnabled: false,
     ttsFollowPlayback: false,
     ttsRate: 1,
     ttsVoice: "",
@@ -125,6 +126,7 @@ it("persists browser tts settings and local llm provider configuration", async (
   const ttsRate = screen.getByLabelText(/tts rate/i);
   const ttsVolume = screen.getByLabelText(/tts volume/i);
   const ttsFollowPlayback = screen.getByRole("checkbox", { name: /follow tts playback/i });
+  const ttsSentenceTranslationEnabled = screen.getByRole("checkbox", { name: /show tts translation note/i });
   const llmApiUrl = screen.getByLabelText(/^LLM API URL$/i);
   const grammarLlmApiUrl = screen.getByLabelText(/grammar llm api url/i);
   const localLlmModel = await screen.findByRole("combobox", { name: /local llm model/i });
@@ -172,6 +174,7 @@ it("persists browser tts settings and local llm provider configuration", async (
   await user.selectOptions(fontFamily, "book");
   await user.selectOptions(ttsVoice, "Microsoft Andrew Online (Natural)");
   await user.click(ttsFollowPlayback);
+  await user.click(ttsSentenceTranslationEnabled);
   await user.clear(llmApiUrl);
   await user.type(llmApiUrl, "http://localhost:1234/v1");
   await user.clear(grammarLlmApiUrl);
@@ -206,6 +209,7 @@ it("persists browser tts settings and local llm provider configuration", async (
     columnCount: 1,
     fontFamily: "book",
     ttsSentenceTranslationFontScale: 1.35,
+    ttsSentenceTranslationEnabled: true,
     ttsRate: 1.15,
     ttsFollowPlayback: true,
     ttsVoice: "Microsoft Andrew Online (Natural)",

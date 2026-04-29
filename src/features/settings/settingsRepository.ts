@@ -29,6 +29,7 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
     theme,
     ttsRate: 1,
     ttsFollowPlayback: false,
+    ttsSentenceTranslationEnabled: false,
     ttsSentenceTranslationFontScale: 1,
     ttsVoice: "",
     ttsVolume: 1,
@@ -73,6 +74,7 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
     typeof record.columnCount !== "number" ||
     typeof record.fontFamily !== "string" ||
     typeof record.ttsFollowPlayback !== "boolean" ||
+    typeof record.ttsSentenceTranslationEnabled !== "boolean" ||
     typeof record.ttsSentenceTranslationFontScale !== "number" ||
     typeof record.ttsRate !== "number" ||
     typeof record.ttsVolume !== "number"

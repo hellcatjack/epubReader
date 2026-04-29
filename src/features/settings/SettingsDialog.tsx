@@ -450,6 +450,17 @@ export function SettingsDialog() {
                   type="checkbox"
                 />
               </label>
+              <label className="settings-field settings-field-toggle">
+                <span>Show TTS translation note</span>
+                <input
+                  aria-label="Show TTS translation note"
+                  checked={settings.ttsSentenceTranslationEnabled}
+                  onChange={(event) =>
+                    setSettings((current) => ({ ...current, ttsSentenceTranslationEnabled: event.target.checked }))
+                  }
+                  type="checkbox"
+                />
+              </label>
             </div>
           </section>
 
