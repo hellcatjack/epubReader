@@ -115,10 +115,11 @@ const selectionSpeechTranslationFallbackMs = 600;
 const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
 const autoReadSelectionEnglishLetterLimit = 30;
-const ttsSentenceNoteGapPx = 18;
-const ttsSentenceNoteMinimumLanePx = 150;
-const ttsSentenceNoteMaximumWidthPx = 280;
-const ttsSentenceNoteTabletMaximumWidthPx = 360;
+const ttsSentenceNoteGapPx = 16;
+const ttsSentenceNoteStagePaddingPx = 16;
+const ttsSentenceNoteMinimumLanePx = 240;
+const ttsSentenceNoteMaximumWidthPx = 380;
+const ttsSentenceNoteFallbackMaximumWidthPx = 420;
 const ttsSentenceNoteTopPaddingPx = 12;
 const coarseSectionPathLabels = new Set(["contents", "table of contents"]);
 
@@ -130,7 +131,7 @@ function normalizeSectionPathLabels(sectionPath?: string[]) {
       .filter((label) => !coarseSectionPathLabels.has(label.toLowerCase())) ?? []
   );
 }
-const ttsSentenceNoteEstimatedHeightPx = 196;
+const ttsSentenceNoteEstimatedHeightPx = 180;
 
 function getSelectionCacheKey(selection: ReaderSelection | null) {
   const text = selection?.text.trim() ?? "";
@@ -178,32 +179,37 @@ export function resolveTtsSentenceNotePlacement(args: {
   readingRect: TtsSentenceNoteMetrics["readingRect"];
   stageRect: DOMRect;
 }) {
-  const { activeRect, isTabletLayout, readingRect, stageRect } = args;
+  const { activeRect, readingRect, stageRect } = args;
   if (stageRect.width <= 0 || stageRect.height <= 0) {
     return null;
   }
 
-  if (!isTabletLayout) {
-    const availableLaneWidth = stageRect.right - readingRect.right - ttsSentenceNoteGapPx;
-    if (availableLaneWidth >= ttsSentenceNoteMinimumLanePx) {
-      const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
-      const left = Math.max(ttsSentenceNoteGapPx, readingRect.right - stageRect.left + ttsSentenceNoteGapPx);
-      const maxTop = Math.max(
-        ttsSentenceNoteTopPaddingPx,
-        stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
-      );
-      const top = Math.min(
-        Math.max(ttsSentenceNoteTopPaddingPx, activeRect.top - stageRect.top - 8),
-        maxTop,
-      );
+  const activeRight = activeRect.right - stageRect.left;
+  const readingRight = readingRect.right - stageRect.left;
+  const stageRight = stageRect.width - ttsSentenceNoteStagePaddingPx;
+  const sideLaneLeft = Math.max(
+    ttsSentenceNoteStagePaddingPx,
+    activeRight + ttsSentenceNoteGapPx,
+    readingRight - ttsSentenceNoteMaximumWidthPx - ttsSentenceNoteGapPx,
+  );
+  const sideLaneWidth = Math.min(ttsSentenceNoteMaximumWidthPx, stageRight - sideLaneLeft);
 
-      return { left, top, width };
-    }
+  if (sideLaneWidth >= ttsSentenceNoteMinimumLanePx) {
+    const maxTop = Math.max(
+      ttsSentenceNoteTopPaddingPx,
+      stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
+    );
+    const top = clamp(activeRect.top - stageRect.top - 8, ttsSentenceNoteTopPaddingPx, maxTop);
+
+    return { left: sideLaneLeft, top, width: sideLaneWidth };
   }
 
-  const width = Math.min(ttsSentenceNoteTabletMaximumWidthPx, Math.max(220, stageRect.width - ttsSentenceNoteGapPx * 2));
-  const minLeft = ttsSentenceNoteGapPx;
-  const maxLeft = Math.max(minLeft, stageRect.width - width - ttsSentenceNoteGapPx);
+  const width = Math.min(
+    ttsSentenceNoteFallbackMaximumWidthPx,
+    Math.max(220, stageRect.width - ttsSentenceNoteStagePaddingPx * 2),
+  );
+  const minLeft = ttsSentenceNoteStagePaddingPx;
+  const maxLeft = Math.max(minLeft, stageRect.width - width - ttsSentenceNoteStagePaddingPx);
   const readingCenter = (readingRect.left + readingRect.right) / 2 - stageRect.left;
   const left = clamp(readingCenter - width / 2, minLeft, maxLeft);
   const relativeActiveTop = activeRect.top - stageRect.top;

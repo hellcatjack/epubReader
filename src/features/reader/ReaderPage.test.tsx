@@ -867,7 +867,7 @@ it("discards in-flight spoken sentence translations after the tts note setting i
   });
 });
 
-it("shows the spoken sentence translation note above the active reading region in tablet layout", async () => {
+it("shows the spoken sentence translation note near the active reading region in tablet layout", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": true });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
@@ -973,12 +973,12 @@ it("shows the spoken sentence translation note above the active reading region i
   const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
   expect(note).toHaveTextContent("第一句翻译");
   expect(note).toHaveStyle({
-    top: "186px",
-    width: "360px",
+    top: "132px",
+    width: "380px",
   });
 });
 
-it("keeps the tablet spoken sentence note horizontally stable while the active line moves", () => {
+it("places the spoken sentence note in the nearby side lane when the stage has room", () => {
   const stageRect = {
     bottom: 980,
     height: 860,
@@ -996,7 +996,7 @@ it("keeps the tablet spoken sentence note horizontally stable while the active l
     width: 700,
   };
 
-  const upperPlacement = resolveTtsSentenceNotePlacement({
+  const placement = resolveTtsSentenceNotePlacement({
     activeRect: {
       bottom: 288,
       height: 28,
@@ -1009,26 +1009,46 @@ it("keeps the tablet spoken sentence note horizontally stable while the active l
     readingRect,
     stageRect,
   });
-  const lowerPlacement = resolveTtsSentenceNotePlacement({
+
+  expect(placement).toEqual({ left: 656, top: 132, width: 380 });
+});
+
+it("keeps the spoken sentence note inside a narrow stage when the side lane is cramped", () => {
+  const stageRect = {
+    bottom: 740,
+    height: 620,
+    left: 24,
+    right: 624,
+    top: 120,
+    width: 600,
+  } as DOMRect;
+  const readingRect = {
+    bottom: 700,
+    height: 560,
+    left: 44,
+    right: 604,
+    top: 140,
+    width: 560,
+  };
+
+  const placement = resolveTtsSentenceNotePlacement({
     activeRect: {
-      bottom: 588,
+      bottom: 488,
       height: 28,
-      left: 300,
-      right: 540,
-      top: 560,
-      width: 240,
+      left: 260,
+      right: 548,
+      top: 460,
+      width: 288,
     },
     isTabletLayout: true,
     readingRect,
     stageRect,
   });
 
-  expect(upperPlacement?.left).toBe(210);
-  expect(lowerPlacement?.left).toBe(210);
-  expect(upperPlacement?.top).not.toBe(lowerPlacement?.top);
+  expect(placement).toEqual({ left: 90, top: 144, width: 420 });
 });
 
-it("falls back to an above-line placement when desktop paginated layouts do not have a right-side lane", () => {
+it("falls back to a centered placement when desktop paginated layouts do not have a side lane", () => {
   expect(
     resolveTtsSentenceNotePlacement({
       activeRect: {
@@ -1058,9 +1078,9 @@ it("falls back to an above-line placement when desktop paginated layouts do not 
       } as DOMRect,
     }),
   ).toEqual({
-    left: 655,
-    top: 186,
-    width: 360,
+    left: 625,
+    top: 184,
+    width: 420,
   });
 });
 
