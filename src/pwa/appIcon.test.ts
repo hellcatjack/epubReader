@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pwaManifest } from "../../vite.config";
 
 function readText(relativePath: string) {
   return readFileSync(join(process.cwd(), relativePath), "utf8");
@@ -34,5 +35,22 @@ describe("app icon assets", () => {
     expect(html).toContain('href="/pwa-192.png"');
     expect(html).toContain('rel="apple-touch-icon"');
     expect(html).toContain('href="/pwa-512.png"');
+  });
+
+  it("declares install icons for standard and maskable launcher usage", () => {
+    expect(pwaManifest.icons).toEqual([
+      {
+        src: "/pwa-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any maskable",
+      },
+      {
+        src: "/pwa-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any maskable",
+      },
+    ]);
   });
 });
