@@ -190,6 +190,12 @@ rsync -a --delete dist/ /app/epubReader/
 
 项目启用了 PWA 和自动更新。部署到 Vercel 后，已经打开很久的旧标签页仍可能短时间继续运行旧 bundle；如果页面行为和最新代码不一致，优先查看 `Settings` 中的 `Current build`，必要时刷新页面或使用 `Reset local app data`。
 
+#### PWA 图标元数据
+
+安装图标的源 artwork 维护在 `public/icon.svg`，导出的 PNG 图标保存在 `public/pwa-192.png` 和 `public/pwa-512.png`。更新安装图标时，应从这个项目图标源资产重新导出，不要手工分叉出不一致的 artwork。
+
+PWA manifest 的安装图标元数据在 `vite.config.ts` 中配置。manifest 图标应覆盖常规 launcher 图标使用场景，并保留对 maskable launcher 图标用法的支持，以便不同平台可以正确裁切和展示安装后的应用图标。
+
 ## 项目结构
 
 - `src/app`: 应用外壳、路由和全局界面
