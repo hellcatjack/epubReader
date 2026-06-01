@@ -540,7 +540,7 @@ it("defers auto-selection translation until selection speech has actually starte
   expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("迁移后的翻译");
 });
 
-it("shows a spoken sentence translation note beside the reading text on wide screens during continuous tts", async () => {
+it("shows a spoken sentence translation caption over the reading column during continuous tts", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": false });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
@@ -867,7 +867,7 @@ it("discards in-flight spoken sentence translations after the tts note setting i
   });
 });
 
-it("shows the spoken sentence translation note above the active reading region in tablet layout", async () => {
+it("shows the spoken sentence translation note as a wide reading caption in tablet layout", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": true });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
@@ -973,8 +973,8 @@ it("shows the spoken sentence translation note above the active reading region i
   const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
   expect(note).toHaveTextContent("第一句翻译");
   expect(note).toHaveStyle({
-    top: "186px",
-    width: "360px",
+    top: "652px",
+    width: "640px",
   });
 });
 
@@ -1023,12 +1023,12 @@ it("keeps the tablet spoken sentence note horizontally stable while the active l
     stageRect,
   });
 
-  expect(upperPlacement?.left).toBe(210);
-  expect(lowerPlacement?.left).toBe(210);
+  expect(upperPlacement?.left).toBe(70);
+  expect(lowerPlacement?.left).toBe(70);
   expect(upperPlacement?.top).not.toBe(lowerPlacement?.top);
 });
 
-it("falls back to an above-line placement when desktop paginated layouts do not have a right-side lane", () => {
+it("uses a reading-column caption for desktop paginated layouts", () => {
   expect(
     resolveTtsSentenceNotePlacement({
       activeRect: {
@@ -1058,9 +1058,9 @@ it("falls back to an above-line placement when desktop paginated layouts do not 
       } as DOMRect,
     }),
   ).toEqual({
-    left: 655,
-    top: 186,
-    width: 360,
+    left: 640,
+    top: 652,
+    width: 390,
   });
 });
 
