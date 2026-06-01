@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pwaManifest } from "../../vite.config";
+import { pwaManifest } from "./pwaManifest";
 
 function readText(relativePath: string) {
   return readFileSync(join(process.cwd(), relativePath), "utf8");
