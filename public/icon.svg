@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">EPUB Reader project icon</title>
+  <desc id="desc">A rounded app icon with an open book, a warm bookmark, and a calm reading palette.</desc>
+
+  <rect width="512" height="512" rx="108" fill="#1f4d4c" />
+  <path d="M104 360c38 28 88 42 151 42s114-14 153-42" fill="none" stroke="#123235" stroke-width="30" stroke-linecap="round" />
+
+  <path d="M112 148c50-18 97-13 132 12 8 6 12 14 12 24v203c0 10-11 16-20 11-35-20-78-25-124-11-11 3-22-5-22-17V177c0-13 8-24 22-29Z" fill="#fff2d2" />
+  <path d="M400 148c-50-18-97-13-132 12-8 6-12 14-12 24v203c0 10 11 16 20 11 35-20 78-25 124-11 11 3 22-5 22-17V177c0-13-8-24-22-29Z" fill="#f4dfb9" />
+  <path d="M256 180v202" fill="none" stroke="#9e7744" stroke-width="10" stroke-linecap="round" />
+  <path d="M126 196c35-9 68-5 96 13M126 238c33-8 63-5 88 9M126 280c31-7 59-4 82 8" fill="none" stroke="#8d6b43" stroke-width="11" stroke-linecap="round" opacity="0.46" />
+  <path d="M386 196c-35-9-68-5-96 13M386 238c-33-8-63-5-88 9M386 280c-31-7-59-4-82 8" fill="none" stroke="#8d6b43" stroke-width="11" stroke-linecap="round" opacity="0.46" />
+  <path d="M324 134h54c8 0 14 6 14 14v153l-41-25-41 25V148c0-8 6-14 14-14Z" fill="#d96c3b" />
+  <path d="M324 134h54c8 0 14 6 14 14v36h-82v-36c0-8 6-14 14-14Z" fill="#f3a35c" />
+
+  <path d="M84 139c0-31 25-56 56-56h232c31 0 56 25 56 56" fill="none" stroke="#f7eac8" stroke-width="14" stroke-linecap="round" opacity="0.34" />
+</svg>
