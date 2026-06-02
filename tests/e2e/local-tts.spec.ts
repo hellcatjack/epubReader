@@ -1,4 +1,3 @@
-import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
@@ -9,9 +8,8 @@ const paginatedChunkedSentenceFixturePath = "tests/fixtures/epub/paginated-chunk
 const paginatedPageStartFixturePath = "tests/fixtures/epub/paginated-page-start.epub";
 const paginatedMultiChapterFixturePath = "tests/fixtures/epub/paginated-multi-chapter.epub";
 const paginatedTocHeadingFixturePath = "tests/fixtures/epub/paginated-toc-heading.epub";
-const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
 
-test("continuous tts translation note is centered on the current reading block @gateway-screenshot", async ({
+test("continuous tts translation note stays centered on the current reading block", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -106,8 +104,6 @@ test("continuous tts translation note is centered on the current reading block @
     });
   });
 
-  mkdirSync(gatewayScreenshotDir, { recursive: true });
-
   for (const viewport of [
     { height: 1400, name: "wide", width: 1366 },
     { height: 1200, name: "desktop", width: 1180 },
@@ -131,11 +127,6 @@ test("continuous tts translation note is centered on the current reading block @
     await expect(note).toBeVisible();
     await expect(note).toContainText("当前句翻译");
     await expect(page.frameLocator(".epub-root iframe").locator(".reader-tts-active-segment")).toHaveCount(1);
-
-    await page.screenshot({
-      fullPage: true,
-      path: `${gatewayScreenshotDir}/tts-translation-note-${viewport.name}.png`,
-    });
 
     const noteBox = await note.boundingBox();
     const ttsBlockBox = await page.evaluate(() => {
