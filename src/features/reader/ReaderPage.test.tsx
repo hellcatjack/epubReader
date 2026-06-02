@@ -313,12 +313,11 @@ it("does not expose paginated continuous tts markers before speech actually star
   expect(setActiveTtsSegment.mock.calls.some(([segment]) => Boolean(segment))).toBe(false);
 });
 
-it("shows toc, reading progress, bookmark toggle, and the reader tools surface", () => {
+it("shows toc, reading progress, and the reader tools surface", () => {
   render(<ReaderPage />);
 
   expect(screen.getByRole("navigation", { name: /table of contents/i })).toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: /reading progress/i })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: /reader tools/i })).toBeInTheDocument();
 });
 
@@ -1937,16 +1936,16 @@ it("renders selection actions in the top bar instead of below the reader stage",
   const topbar = screen.getByRole("banner");
   expect(within(topbar).getByRole("button", { name: "Translate" })).toBeInTheDocument();
   expect(within(topbar).getByRole("button", { name: "Explain" })).toBeInTheDocument();
-  expect(within(topbar).getByRole("button", { name: "Highlight" })).toBeInTheDocument();
-  expect(within(topbar).getByRole("button", { name: "Add note" })).toBeInTheDocument();
   expect(within(topbar).getByRole("button", { name: "Read aloud" })).toBeInTheDocument();
+  expect(within(topbar).queryByRole("button", { name: "Highlight" })).not.toBeInTheDocument();
+  expect(within(topbar).queryByRole("button", { name: "Add note" })).not.toBeInTheDocument();
+  expect(within(topbar).queryByRole("button", { name: /bookmark/i })).not.toBeInTheDocument();
   expect(within(topbar).queryByRole("button", { name: /previous page/i })).not.toBeInTheDocument();
   expect(within(topbar).queryByRole("button", { name: /next page/i })).not.toBeInTheDocument();
   const topbarButtonLabels = within(topbar)
     .getAllByRole("button")
     .map((button) => button.textContent?.trim());
   expect(topbarButtonLabels.indexOf("Paginated mode")).toBeLessThan(topbarButtonLabels.indexOf("Read aloud"));
-  expect(topbarButtonLabels.indexOf("Read aloud")).toBeLessThan(topbarButtonLabels.indexOf("Bookmark"));
   expect(document.querySelector(".reader-stage .selection-popover")).toBeNull();
 });
 
@@ -2652,7 +2651,7 @@ it("shows reader status details in the tools rail instead of below the page surf
     expect(within(toolsRail).getByText(/opened from chapter start/i)).toBeInTheDocument();
   });
 
-  expect(within(toolsRail).getByText(/0 local annotations in view/i)).toBeInTheDocument();
+  expect(within(toolsRail).queryByText(/local annotations in view/i)).not.toBeInTheDocument();
 });
 
 it("writes a same-tab refresh snapshot when the reader location changes", async () => {

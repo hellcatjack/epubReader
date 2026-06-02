@@ -112,7 +112,7 @@ async function startDragInIframe(page: Page) {
   });
 }
 
-test("ai actions translate explain and save a note for selected text", async ({ page }) => {
+test("ai actions translate and explain selected text", async ({ page }) => {
   const requestPrompts: string[] = [];
 
   await page.route("http://localhost:8001/v1/completions", async (route) => {
@@ -156,8 +156,8 @@ test("ai actions translate explain and save a note for selected text", async ({ 
   const topbar = page.getByRole("banner");
   await expect(topbar.getByRole("button", { name: "Translate" })).toBeVisible();
   await expect(topbar.getByRole("button", { name: "Explain" })).toBeVisible();
-  await expect(topbar.getByRole("button", { name: "Highlight" })).toBeVisible();
-  await expect(topbar.getByRole("button", { name: "Add note" })).toBeVisible();
+  await expect(topbar.getByRole("button", { name: "Highlight" })).toHaveCount(0);
+  await expect(topbar.getByRole("button", { name: "Add note" })).toHaveCount(0);
   await expect(topbar.getByRole("button", { name: "Read aloud" })).toBeVisible();
 
   const selectedWord = await selectWordCountInIframe(page, 1);
@@ -200,11 +200,6 @@ test("ai actions translate explain and save a note for selected text", async ({ 
 
   await grammarPopup.getByRole("button", { name: /close grammar explanation/i }).click();
   await expect(grammarPopup).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Add note" }).click();
-  await page.getByRole("textbox", { name: /note body/i }).fill("Remember this sentence");
-  await page.getByRole("button", { name: /save note/i }).click();
-  await expect(page.getByLabel("Saved notes")).toContainText("Remember this sentence");
 });
 
 test("tablet-sized viewports show a persistent translation bubble for multi-word selections", async ({ page }) => {

@@ -3,20 +3,16 @@ import type { ComponentPropsWithoutRef } from "react";
 type SelectionPopoverProps = {
   className?: string;
   hasSelection?: boolean;
-  onAddNote?: () => void;
   onExplain?: () => void;
-  onHighlight?: () => void;
   onReadAloud?: () => void;
   onTranslate?: () => void;
   showReadAloud?: boolean;
-} & Omit<ComponentPropsWithoutRef<"div">, "onAddNote" | "onExplain" | "onHighlight" | "onReadAloud" | "onTranslate">;
+} & Omit<ComponentPropsWithoutRef<"div">, "onExplain" | "onReadAloud" | "onTranslate">;
 
 export function SelectionPopover({
   className,
   hasSelection = false,
-  onAddNote,
   onExplain,
-  onHighlight,
   onReadAloud,
   onTranslate,
   showReadAloud = true,
@@ -34,12 +30,6 @@ export function SelectionPopover({
       </button>
       <button className="selection-action" disabled={!hasSelection} onClick={onExplain} type="button">
         Explain
-      </button>
-      <button className="selection-action" disabled={!hasSelection} onClick={onHighlight} type="button">
-        Highlight
-      </button>
-      <button className="selection-action" disabled={!hasSelection} onClick={onAddNote} type="button">
-        Add note
       </button>
       {showReadAloud ? (
         <button className="selection-action" disabled={!hasSelection} onClick={onReadAloud} type="button">

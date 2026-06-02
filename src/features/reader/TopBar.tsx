@@ -2,13 +2,10 @@ import type { KeyboardEvent, ReactNode } from "react";
 import type { ReadingMode } from "../../lib/types/settings";
 
 type TopBarProps = {
-  canToggleBookmark?: boolean;
   canTurnPages?: boolean;
-  isBookmarked?: boolean;
   onChangeReadingMode?: (mode: ReadingMode) => void;
   onNextPage?: () => void;
   onPrevPage?: () => void;
-  onToggleBookmark?: () => void;
   progress?: number;
   readAloudAction?: ReactNode;
   readingMode?: ReadingMode;
@@ -18,13 +15,10 @@ type TopBarProps = {
 };
 
 export function TopBar({
-  canToggleBookmark = false,
   canTurnPages = false,
-  isBookmarked = false,
   onChangeReadingMode,
   onNextPage,
   onPrevPage,
-  onToggleBookmark,
   progress = 0,
   readAloudAction,
   readingMode = "scrolled",
@@ -33,7 +27,6 @@ export function TopBar({
   systemActions,
 }: TopBarProps) {
   const progressPercent = Math.round(progress * 100);
-  const bookmarkLabel = isBookmarked ? "Remove bookmark from this location" : "Bookmark this location";
   const normalizedSectionPath = sectionPath.map((label) => label.trim()).filter(Boolean);
   const currentSectionLabel = normalizedSectionPath.at(-1) ?? "Locating current section…";
   const sectionPrefix = normalizedSectionPath.slice(0, -1).join(" / ");
@@ -101,15 +94,6 @@ export function TopBar({
           </button>
         </div>
         {readAloudAction}
-        <button
-          aria-label={bookmarkLabel}
-          className="reader-bookmark-button"
-          disabled={!canToggleBookmark}
-          onClick={onToggleBookmark}
-          type="button"
-        >
-          {isBookmarked ? "Remove bookmark" : "Bookmark"}
-        </button>
         {selectionActions}
       </div>
     </header>

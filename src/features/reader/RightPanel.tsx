@@ -3,21 +3,17 @@ import type { TranslationProvider } from "../../lib/types/settings";
 import type { ReaderPreferences } from "./readerPreferences";
 import { AiResultPanel } from "./panels/AiResultPanel";
 import { AppearancePanel } from "./panels/AppearancePanel";
-import { NoteEditorPanel } from "./panels/NoteEditorPanel";
 import { ReaderStatusPanel } from "./panels/ReaderStatusPanel";
 import { TtsStatusPanel } from "./panels/TtsStatusPanel";
 import type { BrowserTtsVoice } from "../tts/browserTtsClient";
 
 type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
-  annotationCount?: number;
   apiKey?: string;
   aiIpa?: string;
   appearance?: ReaderPreferences;
   geminiModel?: string;
   grammarLlmApiUrl?: string;
   grammarLlmModel?: string;
-  noteDraft?: string;
-  noteOpen?: boolean;
   llmApiUrl?: string;
   localLlmModel?: string;
   onApiKeyChange?: (value: string) => void;
@@ -27,8 +23,6 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   onGrammarLlmModelChange?: (value: string) => void;
   onLlmApiUrlChange?: (value: string) => void;
   onLocalLlmModelChange?: (value: string) => void;
-  onNoteDraftChange?: (value: string) => void;
-  onNoteSave?: () => void;
   onSelectionReadAloud?: () => void;
   onTtsPause?: () => void;
   onTtsFollowPlaybackChange?: (enabled: boolean) => void;
@@ -60,7 +54,6 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
 };
 
 export function RightPanel({
-  annotationCount,
   apiKey,
   aiIpa,
   appearance,
@@ -69,8 +62,6 @@ export function RightPanel({
   grammarLlmModel,
   llmApiUrl,
   localLlmModel,
-  noteDraft,
-  noteOpen,
   onApiKeyChange,
   onAppearanceChange,
   onGeminiModelChange,
@@ -78,8 +69,6 @@ export function RightPanel({
   onGrammarLlmModelChange,
   onLlmApiUrlChange,
   onLocalLlmModelChange,
-  onNoteDraftChange,
-  onNoteSave,
   onSelectionReadAloud,
   onTtsPause,
   onTtsFollowPlaybackChange,
@@ -145,7 +134,7 @@ export function RightPanel({
           translation={translation}
           translationError={translationError}
         />
-        <ReaderStatusPanel annotationCount={annotationCount} selectedText={selectedText} status={readerStatus} />
+        <ReaderStatusPanel selectedText={selectedText} status={readerStatus} />
         {appearance ? (
           <AppearancePanel
             apiKey={apiKey}
@@ -166,14 +155,6 @@ export function RightPanel({
             translationProvider={translationProvider}
           />
         ) : null}
-        <NoteEditorPanel
-          isOpen={noteOpen}
-          onChange={onNoteDraftChange}
-          onSave={onNoteSave}
-          selectedText={selectedText}
-          value={noteDraft}
-        />
-        <p className="reader-tools-hint">Bookmarks, highlights, and notes are stored only in this browser.</p>
       </div>
     </aside>
   );

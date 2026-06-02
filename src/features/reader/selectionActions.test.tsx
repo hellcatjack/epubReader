@@ -92,7 +92,7 @@ function installChromeDesktopUserAgent() {
   });
 }
 
-it("automatically translates and auto-reads a new selection while keeping explain and note actions available", async () => {
+it("automatically translates and auto-reads a new selection while keeping focused selection actions available", async () => {
   const user = userEvent.setup();
   installEdgeDesktopUserAgent();
   const browserTts = installSpeechSynthesis([
@@ -146,8 +146,9 @@ it("automatically translates and auto-reads a new selection while keeping explai
   expect(explainPopup).toHaveTextContent("A short contextual explanation");
   expect(screen.getByLabelText("Translation result")).toHaveTextContent("你好，世界");
 
-  await user.click(screen.getByRole("button", { name: /add note/i }));
-  expect(screen.getByRole("textbox", { name: /note body/i })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /add note/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /highlight/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: /note body/i })).not.toBeInTheDocument();
   expect(screen.getAllByText(/hello/i).length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: /read aloud/i })).toBeInTheDocument();
 });
@@ -673,113 +674,6 @@ it("does not auto-translate the same selection twice until the selection is clea
   });
 });
 
-it("stores local highlight and note entries for the active selection", async () => {
-  const user = userEvent.setup();
-
-  render(
-    <MemoryRouter initialEntries={["/books/book-1"]}>
-      <Routes>
-        <Route
-          path="/books/:bookId"
-          element={
-            <ReaderPage
-              runtime={{
-                render: vi.fn(async () => ({
-                  applyPreferences: vi.fn(async () => undefined),
-                  destroy() {
-                    return undefined;
-                  },
-                  findCfiFromTextQuote: vi.fn(async () => null),
-                  getTextFromCurrentLocation: vi.fn(async () => ""),
-                  goTo: vi.fn(async () => undefined),
-                  next: vi.fn(async () => undefined),
-                  prev: vi.fn(async () => undefined),
-                  setActiveTtsSegment: vi.fn(async () => undefined),
-                  setFlow: vi.fn(async () => undefined),
-                })),
-              }}
-            />
-          }
-        />
-      </Routes>
-    </MemoryRouter>,
-  );
-
-  act(() => {
-    selectionBridge.publish({
-      cfiRange: "epubcfi(/6/2!/4/1:0)",
-      spineItemId: "chap-1",
-      text: "Hello world",
-    });
-  });
-
-  await user.click(screen.getByRole("button", { name: /highlight/i }));
-  await waitFor(() => {
-    expect(screen.getByLabelText(/saved highlights/i)).toHaveTextContent("Hello world");
-  });
-
-  await user.click(screen.getByRole("button", { name: /add note/i }));
-  await user.type(screen.getByRole("textbox", { name: /note body/i }), "Remember this line");
-  await user.click(screen.getByRole("button", { name: /save note/i }));
-
-  await waitFor(() => {
-    expect(screen.getByLabelText(/saved notes/i)).toHaveTextContent("Remember this line");
-  });
-});
-
-it("removes a saved highlight from the current chapter", async () => {
-  const user = userEvent.setup();
-
-  render(
-    <MemoryRouter initialEntries={["/books/book-1"]}>
-      <Routes>
-        <Route
-          path="/books/:bookId"
-          element={
-            <ReaderPage
-              runtime={{
-                render: vi.fn(async () => ({
-                  applyPreferences: vi.fn(async () => undefined),
-                  destroy() {
-                    return undefined;
-                  },
-                  findCfiFromTextQuote: vi.fn(async () => null),
-                  getTextFromCurrentLocation: vi.fn(async () => ""),
-                  goTo: vi.fn(async () => undefined),
-                  next: vi.fn(async () => undefined),
-                  prev: vi.fn(async () => undefined),
-                  setActiveTtsSegment: vi.fn(async () => undefined),
-                  setFlow: vi.fn(async () => undefined),
-                })),
-              }}
-            />
-          }
-        />
-      </Routes>
-    </MemoryRouter>,
-  );
-
-  act(() => {
-    selectionBridge.publish({
-      cfiRange: "epubcfi(/6/2!/4/1:0)",
-      spineItemId: "chap-1",
-      text: "Hello world",
-    });
-  });
-
-  await user.click(screen.getByRole("button", { name: /highlight/i }));
-
-  await waitFor(() => {
-    expect(screen.getByLabelText(/saved highlights/i)).toHaveTextContent("Hello world");
-  });
-
-  await user.click(screen.getByRole("button", { name: /remove highlight hello world/i }));
-
-  await waitFor(() => {
-    expect(screen.getByLabelText(/saved highlights/i)).not.toHaveTextContent("Hello world");
-  });
-});
-
 it("uses the persisted target language setting for AI actions", async () => {
   const user = userEvent.setup();
   const ai = {
@@ -849,9 +743,7 @@ it("migrates legacy english defaults to chinese for translation requests", async
   });
 });
 
-it("updates reading progress and toggles a bookmark for the current location", async () => {
-  const user = userEvent.setup();
-
+it("updates reading progress for the current location", async () => {
   render(
     <MemoryRouter initialEntries={["/books/book-1"]}>
       <Routes>
@@ -894,18 +786,4 @@ it("updates reading progress and toggles a bookmark for the current location", a
     expect(screen.getByRole("progressbar", { name: /reading progress/i })).toHaveAttribute("aria-valuenow", "42");
   });
   expect(screen.getByText("42%")).toBeInTheDocument();
-
-  await user.click(screen.getByRole("button", { name: /bookmark this location/i }));
-
-  await waitFor(() => {
-    expect(screen.getByLabelText(/saved markers/i)).toHaveTextContent("Chapter One");
-    expect(screen.getByRole("button", { name: /remove bookmark from this location/i })).toBeInTheDocument();
-  });
-
-  await user.click(screen.getByRole("button", { name: /remove bookmark from this location/i }));
-
-  await waitFor(() => {
-    expect(screen.getByLabelText(/saved markers/i)).toHaveTextContent("No bookmarks saved yet.");
-    expect(screen.getByRole("button", { name: /bookmark this location/i })).toBeInTheDocument();
-  });
 });
