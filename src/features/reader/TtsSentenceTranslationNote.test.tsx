@@ -7,6 +7,7 @@ it("renders a spoken sentence translation note with anchored position", () => {
 
   const note = screen.getByRole("status", { name: /spoken sentence translation/i });
   expect(note).toHaveTextContent("挪亚的后代");
+  expect(note).toHaveAttribute("data-translation-ready", "true");
   expect(note).toHaveStyle({
     "--reader-tts-sentence-note-text-scale": "1.25",
     insetInlineStart: "32px",

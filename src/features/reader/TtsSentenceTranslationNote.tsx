@@ -20,6 +20,7 @@ export function TtsSentenceTranslationNote({
       aria-label="Spoken sentence translation"
       className="reader-tts-sentence-note"
       data-reading-center-x={typeof readingCenterX === "number" ? String(readingCenterX) : undefined}
+      data-translation-ready={translation.trim() ? "true" : "false"}
       role="status"
       style={{
         "--reader-tts-sentence-note-text-scale": String(fontScale),
