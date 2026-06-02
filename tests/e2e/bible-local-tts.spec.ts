@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 const repoBibleFixturePath =
@@ -6,10 +6,11 @@ const repoBibleFixturePath =
 const localBibleFixturePath = "tests/fixtures/local/bible-esv.epub";
 const bibleFixturePath = process.env.BIBLE_FIXTURE_PATH ??
   (existsSync(localBibleFixturePath) ? localBibleFixturePath : repoBibleFixturePath);
+const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
 
 test.skip(!existsSync(bibleFixturePath), `Optional local Bible fixture not available at ${bibleFixturePath}`);
 
-test("Bible paginated TTS keeps the spoken sentence translation note visible at 1 Kings 3:3", async ({ page }) => {
+test("Bible paginated TTS keeps the spoken sentence translation note positioned at 1 Kings 3:3 @gateway-screenshot", async ({ page }) => {
   await page.addInitScript(() => {
     const calls: string[] = [];
     let currentUtterance:
@@ -162,4 +163,60 @@ test("Bible paginated TTS keeps the spoken sentence translation note visible at 
   const note = page.getByRole("status", { name: /spoken sentence translation/i });
   await expect(note).toBeVisible();
   await expect(note).toContainText("当前句翻译");
+
+  mkdirSync(gatewayScreenshotDir, { recursive: true });
+  await page.screenshot({
+    fullPage: true,
+    path: `${gatewayScreenshotDir}/bible-esv-tts-translation-note-1-kings-3-3.png`,
+  });
+
+  const noteBox = await note.boundingBox();
+  const ttsBlockBox = await page.evaluate(() => {
+    const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
+    const iframeRect = iframe?.getBoundingClientRect();
+    const active = iframe?.contentDocument?.querySelector<HTMLElement>(".reader-tts-active-segment");
+    const block =
+      active?.closest<HTMLElement>("p, li, blockquote, h1, h2, h3, h4, h5, h6, div, section, article") ?? active;
+    const blockRect = block?.getBoundingClientRect();
+    const activeRect = active?.getBoundingClientRect();
+
+    if (!iframeRect || !blockRect || !activeRect) {
+      return null;
+    }
+
+    return {
+      active: {
+        bottom: iframeRect.top + activeRect.bottom,
+        left: iframeRect.left + activeRect.left,
+        right: iframeRect.left + activeRect.right,
+        top: iframeRect.top + activeRect.top,
+      },
+      block: {
+        bottom: iframeRect.top + blockRect.bottom,
+        left: iframeRect.left + blockRect.left,
+        right: iframeRect.left + blockRect.right,
+        top: iframeRect.top + blockRect.top,
+      },
+    };
+  });
+
+  expect(noteBox).not.toBeNull();
+  expect(ttsBlockBox).not.toBeNull();
+
+  const noteRect = {
+    bottom: noteBox!.y + noteBox!.height,
+    left: noteBox!.x,
+    right: noteBox!.x + noteBox!.width,
+    top: noteBox!.y,
+  };
+
+  expect(noteRect.left).toBeGreaterThan(ttsBlockBox!.block.right);
+  expect(noteRect.top).toBeGreaterThanOrEqual(ttsBlockBox!.active.top - 12);
+  expect(noteRect.bottom).toBeLessThanOrEqual(page.viewportSize()!.height - 12);
+  expect(
+    noteRect.right <= ttsBlockBox!.active.left ||
+      noteRect.left >= ttsBlockBox!.active.right ||
+      noteRect.bottom <= ttsBlockBox!.active.top ||
+      noteRect.top >= ttsBlockBox!.active.bottom,
+  ).toBe(true);
 });
