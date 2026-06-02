@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { mkdirSync } from "node:fs";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
@@ -8,8 +9,103 @@ const paginatedChunkedSentenceFixturePath = "tests/fixtures/epub/paginated-chunk
 const paginatedPageStartFixturePath = "tests/fixtures/epub/paginated-page-start.epub";
 const paginatedMultiChapterFixturePath = "tests/fixtures/epub/paginated-multi-chapter.epub";
 const paginatedTocHeadingFixturePath = "tests/fixtures/epub/paginated-toc-heading.epub";
+const screenshotDir = ".codex-gateway-artifacts/screenshots";
 
-test("wide-screen continuous tts shows a spoken sentence translation note beside the reading text", async ({ page }) => {
+async function installMockContinuousTts(page: import("@playwright/test").Page) {
+  await page.addInitScript(() => {
+    let activeStartTimer: number | undefined;
+    let activeBoundaryTimer: number | undefined;
+
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0",
+    });
+
+    class MockSpeechSynthesisUtterance {
+      onstart: ((event: Event) => void) | null = null;
+      onboundary: ((event: Event & { charIndex: number }) => void) | null = null;
+      onend: ((event: Event) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+
+    const voices = [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ];
+
+    const speechSynthesis = {
+      addEventListener() {
+        return undefined;
+      },
+      cancel() {
+        if (activeStartTimer) {
+          clearTimeout(activeStartTimer);
+          activeStartTimer = undefined;
+        }
+        if (activeBoundaryTimer) {
+          clearTimeout(activeBoundaryTimer);
+          activeBoundaryTimer = undefined;
+        }
+      },
+      getVoices() {
+        return voices;
+      },
+      pause() {
+        return undefined;
+      },
+      pending: false,
+      removeEventListener() {
+        return undefined;
+      },
+      resume() {
+        return undefined;
+      },
+      speak(utterance: MockSpeechSynthesisUtterance) {
+        activeStartTimer = window.setTimeout(() => {
+          utterance.onstart?.(new Event("start"));
+          activeBoundaryTimer = window.setTimeout(() => {
+            utterance.onboundary?.(new Event("boundary") as Event & { charIndex: number });
+          }, 180);
+        }, 120);
+      },
+      speaking: false,
+    };
+
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: speechSynthesis,
+    });
+    Object.defineProperty(window, "SpeechSynthesisUtterance", {
+      configurable: true,
+      value: MockSpeechSynthesisUtterance,
+    });
+  });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        choices: [{ text: "当前句翻译" }],
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+}
+
+test("wide-screen continuous tts keeps the spoken sentence translation note inside the reader stage", async ({ page }) => {
   await page.addInitScript(() => {
     let activeStartTimer: number | undefined;
     let activeBoundaryTimer: number | undefined;
@@ -121,6 +217,69 @@ test("wide-screen continuous tts shows a spoken sentence translation note beside
     (stageBox?.x ?? 0) + (stageBox?.width ?? 0),
   );
 });
+
+for (const viewportWidth of [900, 1200, 1600]) {
+  test(`continuous tts translation note is centered and avoids the active line at ${viewportWidth}px`, async ({
+    page,
+  }) => {
+    mkdirSync(screenshotDir, { recursive: true });
+    await installMockContinuousTts(page);
+
+    await page.setViewportSize({ width: viewportWidth, height: 1100 });
+    await page.goto("/");
+    await page.setInputFiles("input[type=file]", fixturePath);
+    await expect(page).toHaveURL(/\/books\//);
+
+    const toolsButton = page.getByRole("button", { name: /tools/i });
+    if (await toolsButton.isVisible()) {
+      await toolsButton.click();
+    }
+
+    const voiceButton = page.getByRole("button", { name: /voice, speed, volume/i });
+    if (await voiceButton.isVisible()) {
+      await voiceButton.click();
+    }
+
+    await page.getByRole("checkbox", { name: /show tts translation note/i }).click();
+    await page.getByRole("button", { name: /start tts/i }).click();
+
+    const note = page.getByRole("status", { name: /spoken sentence translation/i });
+    await expect(note).toBeVisible();
+    await expect(note).toContainText("当前句翻译");
+
+    const noteBox = await note.boundingBox();
+    const activeBox = await page.frameLocator(".epub-root iframe").locator(".reader-tts-active-segment").boundingBox();
+    const readingBox = await page.locator(".epub-root iframe").boundingBox();
+    expect(noteBox).not.toBeNull();
+    expect(activeBox).not.toBeNull();
+    expect(readingBox).not.toBeNull();
+
+    const noteCenter = (noteBox?.x ?? 0) + (noteBox?.width ?? 0) / 2;
+    const readingCenter = (readingBox?.x ?? 0) + (readingBox?.width ?? 0) / 2;
+    expect(Math.abs(noteCenter - readingCenter)).toBeLessThanOrEqual(2);
+    expect((noteBox?.width ?? 0)).toBeLessThanOrEqual(600);
+    if (viewportWidth >= 1200) {
+      expect((noteBox?.width ?? 0)).toBeGreaterThan(560);
+    }
+
+    const doesNotOverlapActiveLine =
+      (noteBox?.bottom ?? 0) <= (activeBox?.top ?? 0) || (noteBox?.top ?? 0) >= (activeBox?.bottom ?? 0);
+    expect(doesNotOverlapActiveLine).toBe(true);
+
+    const activeCenterY = (activeBox?.top ?? 0) + (activeBox?.height ?? 0) / 2;
+    const readingCenterY = (readingBox?.y ?? 0) + (readingBox?.height ?? 0) / 2;
+    if (activeCenterY < readingCenterY) {
+      expect((noteBox?.top ?? 0)).toBeGreaterThanOrEqual(activeBox?.bottom ?? 0);
+    } else {
+      expect((noteBox?.bottom ?? 0)).toBeLessThanOrEqual(activeBox?.top ?? 0);
+    }
+
+    await page.screenshot({
+      fullPage: true,
+      path: `${screenshotDir}/tts-translation-note-${viewportWidth}px.png`,
+    });
+  });
+}
 
 test("wide-screen continuous tts applies the configured now reading text size only to the Chinese note body", async ({
   page,

@@ -867,7 +867,7 @@ it("discards in-flight spoken sentence translations after the tts note setting i
   });
 });
 
-it("shows the spoken sentence translation note above the active reading region in tablet layout", async () => {
+it("shows the spoken sentence translation note centered below the active reading region in tablet layout", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": true });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
@@ -974,7 +974,7 @@ it("shows the spoken sentence translation note above the active reading region i
   expect(note).toHaveTextContent("第一句翻译");
   expect(note).toHaveStyle({
     top: "186px",
-    width: "360px",
+    width: "600px",
   });
 });
 
@@ -1023,12 +1023,14 @@ it("keeps the tablet spoken sentence note horizontally stable while the active l
     stageRect,
   });
 
-  expect(upperPlacement?.left).toBe(210);
-  expect(lowerPlacement?.left).toBe(210);
+  expect(upperPlacement?.left).toBe(90);
+  expect(lowerPlacement?.left).toBe(90);
+  expect(upperPlacement?.width).toBe(600);
+  expect(lowerPlacement?.width).toBe(600);
   expect(upperPlacement?.top).not.toBe(lowerPlacement?.top);
 });
 
-it("falls back to an above-line placement when desktop paginated layouts do not have a right-side lane", () => {
+it("falls back to a centered below-line placement when desktop paginated layouts do not have a right-side lane", () => {
   expect(
     resolveTtsSentenceNotePlacement({
       activeRect: {
@@ -1058,9 +1060,9 @@ it("falls back to an above-line placement when desktop paginated layouts do not 
       } as DOMRect,
     }),
   ).toEqual({
-    left: 655,
+    left: 658,
     top: 186,
-    width: 360,
+    width: 354,
   });
 });
 
