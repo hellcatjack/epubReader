@@ -117,7 +117,7 @@ const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
 const autoReadSelectionEnglishLetterLimit = 30;
 const ttsSentenceNoteGapPx = 18;
-const ttsSentenceNoteTabletMaximumWidthPx = 360;
+const ttsSentenceNoteMaximumWidthPx = 600;
 const ttsSentenceNoteTopPaddingPx = 12;
 const coarseSectionPathLabels = new Set(["contents", "table of contents"]);
 
@@ -182,7 +182,7 @@ export function resolveTtsSentenceNotePlacement(args: {
     return null;
   }
 
-  const width = Math.min(ttsSentenceNoteTabletMaximumWidthPx, Math.max(220, stageRect.width - ttsSentenceNoteGapPx * 2));
+  const width = Math.min(ttsSentenceNoteMaximumWidthPx, Math.max(220, stageRect.width - ttsSentenceNoteGapPx * 2));
   const minLeft = ttsSentenceNoteGapPx;
   const maxLeft = Math.max(minLeft, stageRect.width - width - ttsSentenceNoteGapPx);
   const readingCenter = (readingRect.left + readingRect.right) / 2 - stageRect.left;

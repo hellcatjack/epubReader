@@ -160,6 +160,7 @@ test("continuous tts translation note stays centered on the current reading bloc
 
     expect(noteBox).not.toBeNull();
     expect(ttsBlockBox).not.toBeNull();
+    expect(noteBox!.width).toBeCloseTo(600, 1);
     const noteRect = {
       bottom: noteBox!.y + noteBox!.height,
       left: noteBox!.x,
@@ -415,6 +416,7 @@ test("tablet-width continuous tts shows the spoken sentence translation note abo
   const activeBox = await page.frameLocator(".epub-root iframe").locator(".reader-tts-active-segment").boundingBox();
   expect(noteBox).not.toBeNull();
   expect(activeBox).not.toBeNull();
+  expect(noteBox!.width).toBeCloseTo(600, 1);
   expect((noteBox?.bottom ?? 0) <= (activeBox?.top ?? 0) || (noteBox?.top ?? 0) >= (activeBox?.bottom ?? 0)).toBe(
     true,
   );
