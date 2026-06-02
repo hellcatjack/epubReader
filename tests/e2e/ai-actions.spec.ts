@@ -1,17 +1,22 @@
+import { existsSync, mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
+const bibleFixturePath = "bible.epub";
+const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
 
 async function selectWordCountInIframe(page: Page, count: number) {
   await page.waitForFunction((nextCount) => {
     const frames = Array.from(document.querySelectorAll<HTMLIFrameElement>(".epub-root iframe"));
     return frames.some((frame) => {
       const doc = frame.contentDocument;
-      const paragraph = doc?.querySelector("p");
-      const text = paragraph?.textContent?.trim() ?? "";
-      const words = [...text.matchAll(/[A-Za-z]+(?:['-][A-Za-z]+)*/g)];
-      return words.length >= nextCount;
+      const paragraphs = Array.from(doc?.querySelectorAll("p") ?? []);
+      return paragraphs.some((paragraph) => {
+        const text = paragraph.textContent?.trim() ?? "";
+        const words = [...text.matchAll(/[A-Za-z]+(?:['-][A-Za-z]+)*/g)];
+        return words.length >= nextCount;
+      });
     });
   }, count);
 
@@ -20,31 +25,76 @@ async function selectWordCountInIframe(page: Page, count: number) {
 
     for (const frame of frames) {
       const doc = frame.contentDocument;
-      const paragraph = doc?.querySelector("p");
-      const textNode = paragraph?.firstChild;
-      const text = textNode?.textContent ?? "";
-      const words = [...text.matchAll(wordPattern)];
-
-      if (!doc || !paragraph || !textNode || words.length < nextCount) {
+      const paragraphs = Array.from(doc?.querySelectorAll("p") ?? []);
+      if (!doc) {
         continue;
       }
 
-      const start = words[0]?.index ?? 0;
-      const endMatch = words[nextCount - 1];
-      if (endMatch?.index == null) {
-        continue;
-      }
+      for (const paragraph of paragraphs) {
+        const textNodes: Text[] = [];
+        const walker = doc.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+        let textNode = walker.nextNode();
+        let fullText = "";
 
-      const end = endMatch.index + endMatch[0].length;
-      const range = doc.createRange();
-      range.setStart(textNode, start);
-      range.setEnd(textNode, end);
-      const selection = frame.contentWindow?.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      doc.dispatchEvent(new Event("selectionchange"));
-      frame.contentWindow?.dispatchEvent(new Event("mouseup"));
-      return text.slice(start, end);
+        while (textNode) {
+          const node = textNode as Text;
+          textNodes.push(node);
+          fullText += node.textContent ?? "";
+          textNode = walker.nextNode();
+        }
+
+        const words = [...fullText.matchAll(wordPattern)];
+        if (words.length < nextCount) {
+          continue;
+        }
+
+        const start = words[0]?.index ?? 0;
+        const endMatch = words[nextCount - 1];
+        if (endMatch?.index == null) {
+          continue;
+        }
+
+        const end = endMatch.index + endMatch[0].length;
+        let currentOffset = 0;
+        let startNode: Text | null = null;
+        let startOffset = 0;
+        let endNode: Text | null = null;
+        let endOffset = 0;
+
+        for (const node of textNodes) {
+          const nodeText = node.textContent ?? "";
+          const nextOffset = currentOffset + nodeText.length;
+
+          if (!startNode && start >= currentOffset && start <= nextOffset) {
+            startNode = node;
+            startOffset = start - currentOffset;
+          }
+
+          if (!endNode && end >= currentOffset && end <= nextOffset) {
+            endNode = node;
+            endOffset = end - currentOffset;
+          }
+
+          currentOffset = nextOffset;
+        }
+
+        if (!startNode || !endNode) {
+          continue;
+        }
+
+        const range = doc.createRange();
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
+        const selection = frame.contentWindow?.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        doc.dispatchEvent(new Event("selectionchange"));
+        frame.contentWindow?.dispatchEvent(new Event("mouseup"));
+        return words
+          .slice(0, nextCount)
+          .map((word) => word[0])
+          .join(" ");
+      }
     }
 
     return "";
@@ -373,4 +423,60 @@ test("resizing an already translated desktop multi-word selection into tablet mo
   await page.waitForTimeout(300);
 
   await expect(page.getByRole("status", { name: "Selection translation" })).toContainText("迁移后的翻译");
+});
+
+test("Bible selection translation bubble renders at 600px on desktop @gateway-screenshot", async ({ page }) => {
+  test.skip(!existsSync(bibleFixturePath), `Gateway Bible fixture not available at ${bibleFixturePath}`);
+
+  await page.setViewportSize({ width: 1440, height: 1100 });
+
+  await page.route("http://localhost:8001/v1/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ text: "中文翻译" }],
+      }),
+    });
+  });
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        choices: [{ message: { content: "中文解释" } }],
+      }),
+    });
+  });
+  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+    });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", bibleFixturePath);
+  await expect(page).toHaveURL(/\/books\//);
+  await page.getByRole("button", { name: /expand 1 kings/i }).click();
+  await page.getByRole("button", { name: "Chapter 3", exact: true }).click();
+  await expect(page.locator(".epub-root iframe")).toHaveCount(1);
+
+  const selectedPhrase = await selectWordCountInIframe(page, 2);
+  expect(selectedPhrase.split(/\s+/).length).toBe(2);
+
+  const bubble = page.getByRole("status", { name: "Selection translation" });
+  await expect(bubble).toContainText("中文翻译");
+  await expect(bubble).toBeVisible();
+
+  const bubbleBox = await bubble.boundingBox();
+  expect(bubbleBox).not.toBeNull();
+  expect(Math.round(bubbleBox!.width)).toBe(600);
+
+  mkdirSync(gatewayScreenshotDir, { recursive: true });
+  await page.screenshot({
+    fullPage: true,
+    path: `${gatewayScreenshotDir}/bible-selection-translation-bubble-600px.png`,
+  });
 });
