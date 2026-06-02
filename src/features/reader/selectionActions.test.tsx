@@ -181,10 +181,26 @@ it("shows ipa for a released single-word selection", async () => {
   render(<ReaderPage ai={ai} />);
 
   act(() => {
-    selectionBridge.publish({ cfiRange: "epubcfi(/6/2!/4/1:0)", isReleased: true, spineItemId: "chap-1", text: "pressed" });
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 196,
+        top: 222,
+        width: 76,
+      },
+      spineItemId: "chap-1",
+      text: "pressed",
+    });
   });
 
-  expect(await screen.findByText("按压")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Translation result")).toHaveTextContent("按压");
+  });
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("按压");
   expect(await screen.findByText("/prest/")).toBeInTheDocument();
   expect(await screen.findByText("English definition")).toBeInTheDocument();
   expect(screen.getByText("to press something down; to force into a place")).toBeInTheDocument();
