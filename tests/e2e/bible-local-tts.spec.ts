@@ -5,6 +5,8 @@ const repoBibleFixturePath =
   "The Holy Bible English Standard Version (ESV) (Crossway Bibles) (z-library.sk, 1lib.sk, z-lib.sk).epub";
 const gatewayBibleFixturePath = "bible.epub";
 const localBibleFixturePath = "tests/fixtures/local/bible-esv.epub";
+const requestedLlmApiUrl = "http://192.168.1.31:8001/v1/chat/completions";
+const requestedGrammarLlmApiUrl = "http://192.168.1.31:8004/v1/chat/completions";
 const bibleFixturePath = process.env.BIBLE_FIXTURE_PATH ??
   (existsSync(gatewayBibleFixturePath)
     ? gatewayBibleFixturePath
@@ -112,7 +114,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
     });
   });
 
-  await page.route("http://localhost:8001/v1/models", async (route) => {
+  await page.route("http://192.168.1.31:8001/v1/models", async (route) => {
     await route.fulfill({
       body: JSON.stringify({
         data: [{ id: "local-reader-chat", object: "model" }],
@@ -122,7 +124,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
     });
   });
 
-  await page.route("http://localhost:8001/v1/completions", async (route) => {
+  await page.route("http://192.168.1.31:8001/v1/completions", async (route) => {
     await route.fulfill({
       body: JSON.stringify({
         choices: [{ text: "当前句翻译" }],
@@ -132,8 +134,124 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
     });
   });
 
+  await page.route("http://192.168.1.31:8001/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        choices: [{ message: { content: "当前句翻译" } }],
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
+  await page.route("http://192.168.1.31:8004/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        choices: [{ message: { content: "语法解释" } }],
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
   await page.setViewportSize({ width: 1900, height: 1400 });
   await page.goto("/");
+  const storedSettings = await page.evaluate(
+    async ({ grammarLlmApiUrl, llmApiUrl }) => {
+      const request = indexedDB.open("epub-reader");
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        request.onerror = () => reject(request.error);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains("books")) {
+            const books = db.createObjectStore("books", { keyPath: "id" });
+            books.createIndex("importHash", "importHash");
+            books.createIndex("title", "title");
+            books.createIndex("author", "author");
+          }
+          if (!db.objectStoreNames.contains("bookFiles")) {
+            db.createObjectStore("bookFiles", { keyPath: "bookId" });
+          }
+          if (!db.objectStoreNames.contains("progress")) {
+            db.createObjectStore("progress", { keyPath: "bookId" });
+          }
+          if (!db.objectStoreNames.contains("annotations")) {
+            const annotations = db.createObjectStore("annotations", { keyPath: "id" });
+            annotations.createIndex("bookId", "bookId");
+            annotations.createIndex("spineItemId", "spineItemId");
+            annotations.createIndex("kind", "kind");
+            annotations.createIndex("updatedAt", "updatedAt");
+          }
+          if (!db.objectStoreNames.contains("settings")) {
+            db.createObjectStore("settings", { keyPath: "id" });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+      });
+
+      const settingsRecord = {
+        apiKey: "",
+        columnCount: 1,
+        contentBackgroundColor: "#f6edde",
+        contentPadding: 32,
+        fontFamily: "book",
+        fontScale: 1,
+        geminiModel: "gemini-2.5-flash",
+        grammarLlmApiUrl,
+        grammarLlmModel: "",
+        id: "settings",
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        llmApiUrl,
+        localLlmModel: "",
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "scrolled",
+        targetLanguage: "zh-CN",
+        targetLanguageCustomized: false,
+        theme: "sepia",
+        translationProvider: "local_llm",
+        ttsFollowPlayback: false,
+        ttsRate: 1,
+        ttsSentenceTranslationEnabled: false,
+        ttsSentenceTranslationFontScale: 1,
+        ttsVoice: "",
+        ttsVolume: 1,
+      };
+
+      const transaction = db.transaction("settings", "readwrite");
+      transaction.objectStore("settings").put(settingsRecord);
+      await new Promise<void>((resolve, reject) => {
+        transaction.onerror = () => reject(transaction.error);
+        transaction.oncomplete = () => resolve();
+      });
+
+      const readTransaction = db.transaction("settings", "readonly");
+      const getRequest = readTransaction.objectStore("settings").get("settings");
+      const settings = await new Promise<{ grammarLlmApiUrl?: string; llmApiUrl?: string } | undefined>(
+        (resolve, reject) => {
+          getRequest.onerror = () => reject(getRequest.error);
+          getRequest.onsuccess = () => resolve(getRequest.result);
+        },
+      );
+      db.close();
+
+      return {
+        grammarLlmApiUrl: settings?.grammarLlmApiUrl ?? "",
+        llmApiUrl: settings?.llmApiUrl ?? "",
+      };
+    },
+    {
+      grammarLlmApiUrl: requestedGrammarLlmApiUrl,
+      llmApiUrl: requestedLlmApiUrl,
+    },
+  );
+  expect(storedSettings).toEqual({
+    grammarLlmApiUrl: requestedGrammarLlmApiUrl,
+    llmApiUrl: requestedLlmApiUrl,
+  });
+  await page.reload();
   await page.setInputFiles("input[type=file]", bibleFixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
