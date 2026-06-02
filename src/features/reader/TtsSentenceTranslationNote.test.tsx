@@ -21,3 +21,9 @@ it("applies an explicit responsive note width when provided", () => {
     width: "600px",
   });
 });
+
+it("marks the spoken sentence note as pending while translation is loading", () => {
+  render(<TtsSentenceTranslationNote isPending left={18} top={120} translation="Translating current spoken sentence..." />);
+
+  expect(screen.getByRole("status", { name: /spoken sentence translation/i })).toHaveAttribute("data-state", "pending");
+});

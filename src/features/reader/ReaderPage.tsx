@@ -92,6 +92,7 @@ type FloatingSelectionTranslation = {
 };
 
 type SpokenSentenceTranslationNoteState = {
+  isPending: boolean;
   left: number;
   readingCenterX: number;
   top: number;
@@ -1142,7 +1143,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     if (
       !activeContinuousTtsSegment ||
       ttsState.status === "idle" ||
-      !spokenSentenceTranslation.trim() ||
+      (!spokenSentenceTranslation.trim() && !currentSpokenSentence.trim()) ||
       !ttsSentenceNoteMetrics ||
       !readerStageRef.current
     ) {
@@ -1168,20 +1169,24 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         return;
       }
 
+      const nextTranslation = spokenSentenceTranslation.trim() || "Translating current spoken sentence...";
+      const nextIsPending = !spokenSentenceTranslation.trim();
       const noteCenterX = stageRect.left + placement.left + placement.width / 2;
       setTtsSentenceTranslationNote((current) =>
         current &&
+        current.isPending === nextIsPending &&
         current.left === placement.left &&
         current.readingCenterX === noteCenterX &&
         current.top === placement.top &&
-        current.translation === spokenSentenceTranslation &&
+        current.translation === nextTranslation &&
         current.width === placement.width
           ? current
           : {
+              isPending: nextIsPending,
               left: placement.left,
               readingCenterX: noteCenterX,
               top: placement.top,
-              translation: spokenSentenceTranslation,
+              translation: nextTranslation,
               width: placement.width,
             },
       );
@@ -1190,7 +1195,14 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     syncNote();
     window.addEventListener("resize", syncNote);
     return () => window.removeEventListener("resize", syncNote);
-  }, [activeContinuousTtsSegment, isTabletLayout, spokenSentenceTranslation, ttsSentenceNoteMetrics, ttsState.status]);
+  }, [
+    activeContinuousTtsSegment,
+    currentSpokenSentence,
+    isTabletLayout,
+    spokenSentenceTranslation,
+    ttsSentenceNoteMetrics,
+    ttsState.status,
+  ]);
 
   useEffect(() => {
     if (!isTabletLayout || !runtimeHandle?.getCurrentSelectionSnapshot) {
@@ -2642,6 +2654,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
             {ttsSentenceTranslationNote ? (
               <TtsSentenceTranslationNote
                 fontScale={settings.ttsSentenceTranslationFontScale}
+                isPending={ttsSentenceTranslationNote.isPending}
                 left={ttsSentenceTranslationNote.left}
                 readingCenterX={ttsSentenceTranslationNote.readingCenterX}
                 top={ttsSentenceTranslationNote.top}

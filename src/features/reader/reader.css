@@ -748,11 +748,21 @@
   transition: top 180ms ease, opacity 160ms ease;
 }
 
+.reader-tts-sentence-note[data-state="pending"] {
+  border-color: rgba(79, 49, 24, 0.1);
+  background: rgba(255, 252, 248, 0.9);
+}
+
 .reader-tts-sentence-note-text {
   margin: 0;
   font-size: calc(0.95rem * var(--reader-tts-sentence-note-text-scale, 1));
   line-height: 1.45;
   color: #2f2118;
+}
+
+.reader-tts-sentence-note[data-state="pending"] .reader-tts-sentence-note-text {
+  color: #6b5848;
+  font-style: italic;
 }
 
 .reader-grammar-popup {

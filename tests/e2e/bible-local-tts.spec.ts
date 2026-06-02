@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import type { Route } from "@playwright/test";
 
 const repoBibleFixturePath =
   "The Holy Bible English Standard Version (ESV) (Crossway Bibles) (z-library.sk, 1lib.sk, z-lib.sk).epub";
@@ -12,6 +13,8 @@ const bibleFixturePath = process.env.BIBLE_FIXTURE_PATH ??
       ? localBibleFixturePath
       : repoBibleFixturePath);
 const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
+const verseThreeChineseTranslation =
+  "所罗门爱耶和华，遵行他父亲大卫的律例；只是他仍在邱坛献祭烧香。";
 
 test.skip(!existsSync(bibleFixturePath), `Optional local Bible fixture not available at ${bibleFixturePath}`);
 
@@ -85,7 +88,12 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
             utterance.onstart?.(new Event("start"));
           }, 20);
           window.setTimeout(() => {
-            utterance.onboundary?.(new Event("boundary") as Event & { charIndex: number });
+            utterance.onboundary?.(
+              Object.assign(new Event("boundary"), {
+                charIndex: 0,
+                name: "word",
+              }) as Event & { charIndex: number; name: string },
+            );
           }, 60);
         },
         speaking: false,
@@ -112,7 +120,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
     });
   });
 
-  await page.route("http://localhost:8001/v1/models", async (route) => {
+  const fulfillModelList = async (route: Route) => {
     await route.fulfill({
       body: JSON.stringify({
         data: [{ id: "local-reader-chat", object: "model" }],
@@ -120,17 +128,22 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
       contentType: "application/json",
       status: 200,
     });
-  });
+  };
 
-  await page.route("http://localhost:8001/v1/completions", async (route) => {
+  const fulfillTranslation = async (route: Route) => {
     await route.fulfill({
       body: JSON.stringify({
-        choices: [{ text: "当前句翻译" }],
+        choices: [{ text: verseThreeChineseTranslation }],
       }),
       contentType: "application/json",
       status: 200,
     });
-  });
+  };
+
+  await page.route("http://localhost:8001/v1/models", fulfillModelList);
+  await page.route("http://192.168.1.31:8001/v1/models", fulfillModelList);
+  await page.route("http://localhost:8001/v1/completions", fulfillTranslation);
+  await page.route("http://192.168.1.31:8001/v1/completions", fulfillTranslation);
 
   await page.setViewportSize({ width: 1900, height: 1400 });
   await page.goto("/");
@@ -145,6 +158,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
   await page.getByRole("button", { name: /voice, speed, volume/i }).click();
   await page.getByRole("checkbox", { name: /show tts translation note/i }).click();
   await page.getByRole("button", { name: /start tts/i }).click();
+  await expect(page.locator(".reader-tts-badge")).toHaveText(/playing/i);
 
   await expect
     .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
@@ -167,7 +181,8 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
 
   const note = page.getByRole("status", { name: /spoken sentence translation/i });
   await expect(note).toBeVisible();
-  await expect(note).toContainText("当前句翻译");
+  await expect(note).toHaveAttribute("data-state", "ready");
+  await expect(note).toContainText(verseThreeChineseTranslation);
 
   mkdirSync(gatewayScreenshotDir, { recursive: true });
   await page.screenshot({

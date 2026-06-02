@@ -553,9 +553,10 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
       voiceURI: "Microsoft Ava Online (Natural)",
     },
   ]);
+  const translationRequest = createDeferred<string>();
   const ai = {
     explainSelection: vi.fn(async () => ""),
-    translateSelection: vi.fn(async () => "第一句翻译"),
+    translateSelection: vi.fn(() => translationRequest.promise),
   };
   await db.settings.put(
     createStoredSettings({
@@ -648,6 +649,21 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
   await user.click(screen.getByRole("button", { name: /start tts/i }));
 
   const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
+  expect(note).toHaveTextContent("Translating current spoken sentence...");
+  expect(note).toHaveAttribute("data-state", "pending");
+
+  await waitFor(() => {
+    expect(ai.translateSelection).toHaveBeenCalled();
+  });
+
+  await act(async () => {
+    translationRequest.resolve("第一句翻译");
+  });
+
+  await waitFor(() => {
+    expect(note).toHaveTextContent("第一句翻译");
+  });
+  expect(note).toHaveAttribute("data-state", "ready");
   expect(note).toHaveTextContent("第一句翻译");
   expect(readerStage.contains(note)).toBe(true);
   expect(note).toHaveStyle({ "--reader-tts-sentence-note-text-scale": "1.3" });
