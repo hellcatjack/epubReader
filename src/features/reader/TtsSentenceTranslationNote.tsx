@@ -1,6 +1,7 @@
 type TtsSentenceTranslationNoteProps = {
   fontScale?: number;
   left: number;
+  readingCenterX?: number;
   width?: number;
   top: number;
   translation: string;
@@ -9,6 +10,7 @@ type TtsSentenceTranslationNoteProps = {
 export function TtsSentenceTranslationNote({
   fontScale = 1,
   left,
+  readingCenterX,
   width,
   top,
   translation,
@@ -17,6 +19,7 @@ export function TtsSentenceTranslationNote({
     <aside
       aria-label="Spoken sentence translation"
       className="reader-tts-sentence-note"
+      data-reading-center-x={typeof readingCenterX === "number" ? String(readingCenterX) : undefined}
       role="status"
       style={{
         "--reader-tts-sentence-note-text-scale": String(fontScale),
