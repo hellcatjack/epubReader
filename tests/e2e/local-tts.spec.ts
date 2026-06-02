@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
@@ -8,8 +9,11 @@ const paginatedChunkedSentenceFixturePath = "tests/fixtures/epub/paginated-chunk
 const paginatedPageStartFixturePath = "tests/fixtures/epub/paginated-page-start.epub";
 const paginatedMultiChapterFixturePath = "tests/fixtures/epub/paginated-multi-chapter.epub";
 const paginatedTocHeadingFixturePath = "tests/fixtures/epub/paginated-toc-heading.epub";
+const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
 
-test("wide-screen continuous tts shows a spoken sentence translation note beside the reading text", async ({ page }) => {
+test("continuous tts translation note is centered on the current reading block @gateway-screenshot", async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     let activeStartTimer: number | undefined;
     let activeBoundaryTimer: number | undefined;
@@ -102,24 +106,86 @@ test("wide-screen continuous tts shows a spoken sentence translation note beside
     });
   });
 
-  await page.setViewportSize({ width: 2200, height: 1400 });
-  await page.goto("/");
-  await page.setInputFiles("input[type=file]", fixturePath);
-  await expect(page).toHaveURL(/\/books\//);
+  mkdirSync(gatewayScreenshotDir, { recursive: true });
 
-  await page.getByRole("button", { name: /voice, speed, volume/i }).click();
-  await page.getByRole("checkbox", { name: /show tts translation note/i }).click();
-  await page.getByRole("button", { name: /start tts/i }).click();
+  for (const viewport of [
+    { height: 1400, name: "wide", width: 1366 },
+    { height: 1200, name: "desktop", width: 1180 },
+    { height: 1366, name: "tablet", width: 1024 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto("/");
+    await page.setInputFiles("input[type=file]", fixturePath);
+    await expect(page).toHaveURL(/\/books\//);
 
-  const note = page.getByRole("status", { name: /spoken sentence translation/i });
-  await expect(note).toBeVisible();
-  await expect(note).toContainText("当前句翻译");
-  const noteBox = await note.boundingBox();
-  const stageBox = await page.getByRole("region", { name: /reader stage/i }).boundingBox();
-  expect(noteBox?.x).toBeGreaterThanOrEqual(stageBox?.x ?? 0);
-  expect((noteBox?.x ?? 0) + (noteBox?.width ?? 0)).toBeLessThanOrEqual(
-    (stageBox?.x ?? 0) + (stageBox?.width ?? 0),
-  );
+    const toolsButton = page.getByRole("button", { name: /tools/i });
+    if ((await toolsButton.count()) > 0 && (await toolsButton.isVisible())) {
+      await toolsButton.click();
+    }
+
+    await page.getByRole("button", { name: /voice, speed, volume/i }).click();
+    await page.getByRole("checkbox", { name: /show tts translation note/i }).check();
+    await page.getByRole("button", { name: /start tts/i }).click();
+
+    const note = page.getByRole("status", { name: /spoken sentence translation/i });
+    await expect(note).toBeVisible();
+    await expect(note).toContainText("当前句翻译");
+    await expect(page.frameLocator(".epub-root iframe").locator(".reader-tts-active-segment")).toHaveCount(1);
+
+    await page.screenshot({
+      fullPage: true,
+      path: `${gatewayScreenshotDir}/tts-translation-note-${viewport.name}.png`,
+    });
+
+    const noteBox = await note.boundingBox();
+    const ttsBlockBox = await page.evaluate(() => {
+      const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
+      const iframeRect = iframe?.getBoundingClientRect();
+      const active = iframe?.contentDocument?.querySelector<HTMLElement>(".reader-tts-active-segment");
+      const block =
+        active?.closest<HTMLElement>("p, li, blockquote, h1, h2, h3, h4, h5, h6, div, section, article") ?? active;
+      const blockRect = block?.getBoundingClientRect();
+      const activeRect = active?.getBoundingClientRect();
+
+      if (!iframeRect || !blockRect || !activeRect) {
+        return null;
+      }
+
+      return {
+        active: {
+          bottom: iframeRect.top + activeRect.bottom,
+          left: iframeRect.left + activeRect.left,
+          right: iframeRect.left + activeRect.right,
+          top: iframeRect.top + activeRect.top,
+        },
+        block: {
+          bottom: iframeRect.top + blockRect.bottom,
+          left: iframeRect.left + blockRect.left,
+          right: iframeRect.left + blockRect.right,
+          top: iframeRect.top + blockRect.top,
+        },
+      };
+    });
+
+    expect(noteBox).not.toBeNull();
+    expect(ttsBlockBox).not.toBeNull();
+    const noteRect = {
+      bottom: noteBox!.y + noteBox!.height,
+      left: noteBox!.x,
+      right: noteBox!.x + noteBox!.width,
+      top: noteBox!.y,
+    };
+    const noteCenterX = (noteRect.left + noteRect.right) / 2;
+    const blockCenterX = (ttsBlockBox!.block.left + ttsBlockBox!.block.right) / 2;
+
+    expect(Math.abs(noteCenterX - blockCenterX)).toBeLessThanOrEqual(3);
+    expect(
+      noteRect.right <= ttsBlockBox!.active.left ||
+        noteRect.left >= ttsBlockBox!.active.right ||
+        noteRect.bottom <= ttsBlockBox!.active.top ||
+        noteRect.top >= ttsBlockBox!.active.bottom,
+    ).toBe(true);
+  }
 });
 
 test("wide-screen continuous tts applies the configured now reading text size only to the Chinese note body", async ({
