@@ -93,6 +93,7 @@ type FloatingSelectionTranslation = {
 
 type SpokenSentenceTranslationNoteState = {
   left: number;
+  readingCenterX: number;
   top: number;
   translation: string;
   width: number;
@@ -116,8 +117,6 @@ const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
 const autoReadSelectionEnglishLetterLimit = 30;
 const ttsSentenceNoteGapPx = 18;
-const ttsSentenceNoteMinimumLanePx = 150;
-const ttsSentenceNoteMaximumWidthPx = 280;
 const ttsSentenceNoteTabletMaximumWidthPx = 360;
 const ttsSentenceNoteTopPaddingPx = 12;
 const coarseSectionPathLabels = new Set(["contents", "table of contents"]);
@@ -178,27 +177,9 @@ export function resolveTtsSentenceNotePlacement(args: {
   readingRect: TtsSentenceNoteMetrics["readingRect"];
   stageRect: DOMRect;
 }) {
-  const { activeRect, isTabletLayout, readingRect, stageRect } = args;
+  const { activeRect, readingRect, stageRect } = args;
   if (stageRect.width <= 0 || stageRect.height <= 0) {
     return null;
-  }
-
-  if (!isTabletLayout) {
-    const availableLaneWidth = stageRect.right - readingRect.right - ttsSentenceNoteGapPx;
-    if (availableLaneWidth >= ttsSentenceNoteMinimumLanePx) {
-      const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
-      const left = Math.max(ttsSentenceNoteGapPx, readingRect.right - stageRect.left + ttsSentenceNoteGapPx);
-      const maxTop = Math.max(
-        ttsSentenceNoteTopPaddingPx,
-        stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
-      );
-      const top = Math.min(
-        Math.max(ttsSentenceNoteTopPaddingPx, activeRect.top - stageRect.top - 8),
-        maxTop,
-      );
-
-      return { left, top, width };
-    }
   }
 
   const width = Math.min(ttsSentenceNoteTabletMaximumWidthPx, Math.max(220, stageRect.width - ttsSentenceNoteGapPx * 2));
@@ -1187,15 +1168,18 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         return;
       }
 
+      const noteCenterX = stageRect.left + placement.left + placement.width / 2;
       setTtsSentenceTranslationNote((current) =>
         current &&
         current.left === placement.left &&
+        current.readingCenterX === noteCenterX &&
         current.top === placement.top &&
         current.translation === spokenSentenceTranslation &&
         current.width === placement.width
           ? current
           : {
               left: placement.left,
+              readingCenterX: noteCenterX,
               top: placement.top,
               translation: spokenSentenceTranslation,
               width: placement.width,
@@ -2659,6 +2643,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
               <TtsSentenceTranslationNote
                 fontScale={settings.ttsSentenceTranslationFontScale}
                 left={ttsSentenceTranslationNote.left}
+                readingCenterX={ttsSentenceTranslationNote.readingCenterX}
                 top={ttsSentenceTranslationNote.top}
                 translation={ttsSentenceTranslationNote.translation}
                 width={ttsSentenceTranslationNote.width}

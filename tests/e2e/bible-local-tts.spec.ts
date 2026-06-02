@@ -3,14 +3,19 @@ import { expect, test } from "@playwright/test";
 
 const repoBibleFixturePath =
   "The Holy Bible English Standard Version (ESV) (Crossway Bibles) (z-library.sk, 1lib.sk, z-lib.sk).epub";
+const gatewayBibleFixturePath = "bible.epub";
 const localBibleFixturePath = "tests/fixtures/local/bible-esv.epub";
 const bibleFixturePath = process.env.BIBLE_FIXTURE_PATH ??
-  (existsSync(localBibleFixturePath) ? localBibleFixturePath : repoBibleFixturePath);
+  (existsSync(gatewayBibleFixturePath)
+    ? gatewayBibleFixturePath
+    : existsSync(localBibleFixturePath)
+      ? localBibleFixturePath
+      : repoBibleFixturePath);
 const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
 
 test.skip(!existsSync(bibleFixturePath), `Optional local Bible fixture not available at ${bibleFixturePath}`);
 
-test("Bible paginated TTS keeps the spoken sentence translation note positioned at 1 Kings 3:3 @gateway-screenshot", async ({ page }) => {
+test("Bible continuous tts translation note is centered on the 1 Kings 3:3 reading block @gateway-screenshot", async ({ page }) => {
   await page.addInitScript(() => {
     const calls: string[] = [];
     let currentUtterance:
@@ -171,7 +176,7 @@ test("Bible paginated TTS keeps the spoken sentence translation note positioned 
   });
 
   const noteBox = await note.boundingBox();
-  const ttsBlockBox = await page.evaluate(() => {
+  const ttsMetrics = await page.evaluate(() => {
     const iframe = document.querySelector(".epub-root iframe") as HTMLIFrameElement | null;
     const iframeRect = iframe?.getBoundingClientRect();
     const active = iframe?.contentDocument?.querySelector<HTMLElement>(".reader-tts-active-segment");
@@ -184,6 +189,29 @@ test("Bible paginated TTS keeps the spoken sentence translation note positioned 
       return null;
     }
 
+    const candidateRects = Array.from(block.getClientRects()).filter(
+      (rect) => rect.right > rect.left && rect.bottom > rect.top,
+    );
+    const anchorRect =
+      candidateRects.find((rect) => rect.right > activeRect.left && rect.left < activeRect.right) ??
+      candidateRects[0] ??
+      blockRect;
+    const columnRects = candidateRects.filter((rect) => rect.right > anchorRect.left && rect.left < anchorRect.right);
+    const readingRect = columnRects.reduce(
+      (aggregate, rect) => ({
+        bottom: Math.max(aggregate.bottom, rect.bottom),
+        left: Math.min(aggregate.left, rect.left),
+        right: Math.max(aggregate.right, rect.right),
+        top: Math.min(aggregate.top, rect.top),
+      }),
+      {
+        bottom: anchorRect.bottom,
+        left: anchorRect.left,
+        right: anchorRect.right,
+        top: anchorRect.top,
+      },
+    );
+
     return {
       active: {
         bottom: iframeRect.top + activeRect.bottom,
@@ -191,17 +219,17 @@ test("Bible paginated TTS keeps the spoken sentence translation note positioned 
         right: iframeRect.left + activeRect.right,
         top: iframeRect.top + activeRect.top,
       },
-      block: {
-        bottom: iframeRect.top + blockRect.bottom,
-        left: iframeRect.left + blockRect.left,
-        right: iframeRect.left + blockRect.right,
-        top: iframeRect.top + blockRect.top,
+      reading: {
+        bottom: iframeRect.top + readingRect.bottom,
+        left: iframeRect.left + readingRect.left,
+        right: iframeRect.left + readingRect.right,
+        top: iframeRect.top + readingRect.top,
       },
     };
   });
 
   expect(noteBox).not.toBeNull();
-  expect(ttsBlockBox).not.toBeNull();
+  expect(ttsMetrics).not.toBeNull();
 
   const noteRect = {
     bottom: noteBox!.y + noteBox!.height,
@@ -209,14 +237,17 @@ test("Bible paginated TTS keeps the spoken sentence translation note positioned 
     right: noteBox!.x + noteBox!.width,
     top: noteBox!.y,
   };
+  const noteCenterX = (noteRect.left + noteRect.right) / 2;
+  const runtimeReadingCenterX = Number(await note.getAttribute("data-reading-center-x"));
 
-  expect(noteRect.left).toBeGreaterThan(ttsBlockBox!.block.right);
-  expect(noteRect.top).toBeGreaterThanOrEqual(ttsBlockBox!.active.top - 12);
+  expect(Number.isFinite(runtimeReadingCenterX)).toBe(true);
+  expect(Math.abs(noteCenterX - runtimeReadingCenterX)).toBeLessThanOrEqual(8);
+  expect(noteRect.top).toBeGreaterThanOrEqual(12);
   expect(noteRect.bottom).toBeLessThanOrEqual(page.viewportSize()!.height - 12);
   expect(
-    noteRect.right <= ttsBlockBox!.active.left ||
-      noteRect.left >= ttsBlockBox!.active.right ||
-      noteRect.bottom <= ttsBlockBox!.active.top ||
-      noteRect.top >= ttsBlockBox!.active.bottom,
+    noteRect.right <= ttsMetrics!.active.left ||
+      noteRect.left >= ttsMetrics!.active.right ||
+      noteRect.bottom <= ttsMetrics!.active.top ||
+      noteRect.top >= ttsMetrics!.active.bottom,
   ).toBe(true);
 });

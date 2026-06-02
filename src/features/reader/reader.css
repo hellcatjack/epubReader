@@ -734,6 +734,7 @@
 .reader-tts-sentence-note {
   position: absolute;
   z-index: 12;
+  box-sizing: border-box;
   width: clamp(150px, 18vw, 280px);
   max-width: calc(100% - 24px);
   padding: 0.78rem 0.9rem;
