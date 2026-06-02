@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import type { ReaderAppShellContext } from "../../app/readerAppShellContext";
-import type { AnnotationRecord, BookmarkRecord } from "../../lib/types/annotations";
 import type { ProgressRecord, TocItem } from "../../lib/types/books";
 import type { ReadingMode, SettingsInput, TranslationProvider } from "../../lib/types/settings";
 import { aiService, type AiService } from "../ai/aiService";
-import { annotationService } from "../annotations/annotationService";
 import { getProgress, saveProgress } from "../bookshelf/progressRepository";
 import { defaultSettings, getResolvedSettings, saveSettings } from "../settings/settingsRepository";
 import {
@@ -53,7 +51,7 @@ import {
   extractCurrentSpokenSentence,
   isIgnorableSpokenSentence,
 } from "./ttsSentenceTranslation";
-import { findTocLabelBySpineItemId, findTocPathBySpineItemId, findTocPathByTarget } from "./tocTree";
+import { findTocPathBySpineItemId, findTocPathByTarget } from "./tocTree";
 
 type ReaderPageProps = {
   ai?: Pick<AiService, "explainSelection" | "translateSelection"> & Partial<Pick<AiService, "defineSelection">>;
@@ -511,7 +509,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     null,
   );
   const [grammarExplainPopup, setGrammarExplainPopup] = useState<GrammarExplainPopupState | null>(null);
-  const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [currentLocation, setCurrentLocation] = useState<ReaderLocationState>({
     cfi: "",
     pageIndex: undefined,
@@ -522,10 +519,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     spineItemId: "",
     textQuote: "",
   });
-  const [noteDraft, setNoteDraft] = useState("");
-  const [noteOpen, setNoteOpen] = useState(false);
   const [runtimeHandle, setRuntimeHandle] = useState<RuntimeRenderHandle | null>(null);
-  const [visibleAnnotations, setVisibleAnnotations] = useState<AnnotationRecord[]>([]);
   const [isContentsDrawerOpen, setIsContentsDrawerOpen] = useState(false);
   const [isToolsDrawerOpen, setIsToolsDrawerOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsInput>(defaultSettings);
@@ -1422,27 +1416,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [currentLocation.cfi, currentLocation.pageIndex, currentLocation.pageOffset, currentLocation.scrollTop, settings.readingMode]);
 
   useEffect(() => {
-    if (!bookId || !currentSpineItemId) {
-      setVisibleAnnotations([]);
-      return;
-    }
-
-    void annotationService.queryVisible(bookId, currentSpineItemId).then(setVisibleAnnotations);
-  }, [bookId, currentSpineItemId]);
-
-  useEffect(() => {
-    if (!bookId) {
-      setBookmarks([]);
-      return;
-    }
-
-    void annotationService
-      .listByBook(bookId)
-      .then((records) => records.filter((record): record is BookmarkRecord => record.kind === "bookmark"))
-      .then(setBookmarks);
-  }, [bookId]);
-
-  useEffect(() => {
     const pendingSpineItemId = continuousSpineSyncPendingRef.current;
     if (pendingSpineItemId) {
       if (currentSpineItemId === pendingSpineItemId) {
@@ -1638,27 +1611,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   }, [runtimeHandle, ttsState.currentText, ttsState.markerCfi, ttsState.mode, ttsState.status]);
 
   const selectedText = selectedSelection?.text ?? "";
-  const selectedCfiRange = selectedSelection?.cfiRange ?? "";
-  const selectedSpineItemId = selectedSelection?.spineItemId ?? currentSpineItemId;
-
-  async function refreshAnnotations() {
-    if (!bookId || !selectedSpineItemId) {
-      return;
-    }
-
-    setVisibleAnnotations(await annotationService.queryVisible(bookId, selectedSpineItemId));
-  }
-
-  async function refreshBookmarks() {
-    if (!bookId) {
-      return;
-    }
-
-    const nextBookmarks = await annotationService
-      .listByBook(bookId)
-      .then((records) => records.filter((record): record is BookmarkRecord => record.kind === "bookmark"));
-    setBookmarks(nextBookmarks);
-  }
 
   function startContinuousQueue(chunks: ChunkSegment[], spineItemId: string) {
     continuousSpineSyncPendingRef.current =
@@ -1921,71 +1873,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
 
     await startSelectionSpeech(selectedText);
-  }
-
-  async function handleHighlight() {
-    if (!bookId || !selectedText || !selectedCfiRange || !selectedSpineItemId) {
-      return;
-    }
-
-    await annotationService.createHighlight({
-      bookId,
-      spineItemId: selectedSpineItemId,
-      startCfi: selectedCfiRange,
-      endCfi: selectedCfiRange,
-      textQuote: selectedText,
-      color: "amber",
-    });
-    await refreshAnnotations();
-  }
-
-  function handleAddNote() {
-    if (!selectedText) {
-      return;
-    }
-
-    setNoteOpen(true);
-    setNoteDraft("");
-  }
-
-  async function handleSaveNote() {
-    if (!bookId || !noteDraft || !selectedText || !selectedCfiRange || !selectedSpineItemId) {
-      return;
-    }
-
-    await annotationService.createNote({
-      body: noteDraft,
-      bookId,
-      color: "amber",
-      endCfi: selectedCfiRange,
-      spineItemId: selectedSpineItemId,
-      startCfi: selectedCfiRange,
-      textQuote: selectedText,
-    });
-    setNoteOpen(false);
-    setNoteDraft("");
-    await refreshAnnotations();
-  }
-
-  async function handleToggleBookmark() {
-    if (!bookId || !currentLocation.cfi || !currentLocation.spineItemId) {
-      return;
-    }
-
-    const existingBookmark = bookmarks.find((bookmark) => bookmark.cfi === currentLocation.cfi);
-
-    if (existingBookmark) {
-      await annotationService.removeBookmark(existingBookmark.id);
-    } else {
-      await annotationService.createBookmark(bookId, currentLocation.spineItemId, currentLocation.cfi);
-    }
-
-    await refreshBookmarks();
-  }
-
-  async function handleRemoveHighlight(id: string) {
-    await annotationService.removeAnnotation(id);
-    await refreshAnnotations();
   }
 
   async function updateSettings(patch: Partial<SettingsInput>) {
@@ -2285,24 +2172,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
   }
 
-  const highlights = visibleAnnotations
-    .filter((annotation) => annotation.kind === "highlight")
-    .map((annotation) => ({
-      id: annotation.id,
-      text: annotation.textQuote,
-    }));
-  const notes = visibleAnnotations
-    .filter((annotation) => annotation.kind === "note")
-    .map((annotation) => ({
-      id: annotation.id,
-      text: annotation.body,
-    }));
-  const bookmarkItems = bookmarks.map((bookmark, index) => ({
-    cfi: bookmark.cfi,
-    id: bookmark.id,
-    label: findTocLabelBySpineItemId(toc, bookmark.spineItemId) ?? `Saved location ${index + 1}`,
-  }));
-  const isCurrentLocationBookmarked = bookmarks.some((bookmark) => bookmark.cfi === currentLocation.cfi);
   const readerPreferences = useMemo(
     () => getEffectiveReaderPreferences(toReaderPreferences(settings)),
     [settings],
@@ -2334,13 +2203,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const nextInitialCfi = locationTarget ?? initialCfi;
   const leftRail = (
     <LeftRail
-      bookmarks={bookmarkItems}
       currentSectionPath={currentLocation.sectionPath}
       currentSpineItemId={currentSpineItemId}
-      highlights={highlights}
-      notes={notes}
-      onNavigateToBookmark={handleNavigateToBookmark}
-      onRemoveHighlight={handleRemoveHighlight}
       onNavigateToTocItem={handleNavigateToLocation}
       toc={toc}
     />
@@ -2349,7 +2213,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     <RightPanel
       apiKey={settings.apiKey}
       aiIpa={aiIpa}
-      annotationCount={visibleAnnotations.length}
       appearance={readerPreferences}
       aria-label="Reader tools"
       geminiModel={settings.geminiModel}
@@ -2357,8 +2220,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       grammarLlmModel={settings.grammarLlmModel}
       llmApiUrl={settings.llmApiUrl}
       localLlmModel={settings.localLlmModel}
-      noteDraft={noteDraft}
-      noteOpen={noteOpen}
       onApiKeyChange={handleApiKeyChange}
       onAppearanceChange={handleAppearanceChange}
       onGeminiModelChange={handleGeminiModelChange}
@@ -2366,8 +2227,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       onGrammarLlmModelChange={handleGrammarLlmModelChange}
       onLlmApiUrlChange={handleLlmApiUrlChange}
       onLocalLlmModelChange={handleLocalLlmModelChange}
-      onNoteDraftChange={setNoteDraft}
-      onNoteSave={handleSaveNote}
       onSelectionReadAloud={handleReadAloud}
       onTtsPause={handlePauseTts}
       onTtsFollowPlaybackChange={handleTtsFollowPlaybackChange}
@@ -2463,13 +2322,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     }
   }
 
-  function handleNavigateToBookmark(target: string) {
-    navigateToLocation(target);
-    if (isTabletLayout) {
-      setIsContentsDrawerOpen(false);
-    }
-  }
-
   useEffect(() => {
     if (!runtimeHandle || typeof runtimeHandle.applyPreferences !== "function") {
       appliedPreferencesRuntimeRef.current = null;
@@ -2496,13 +2348,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       {!isTabletLayout ? leftRail : null}
       <section className="reader-center" aria-label="Reading workspace">
         <TopBar
-          canToggleBookmark={Boolean(bookId && currentLocation.cfi && currentLocation.spineItemId)}
           canTurnPages={Boolean(runtimeHandle)}
-          isBookmarked={isCurrentLocationBookmarked}
           onChangeReadingMode={handleChangeReadingMode}
           onNextPage={() => void runtimeHandle?.next()}
           onPrevPage={() => void runtimeHandle?.prev()}
-          onToggleBookmark={handleToggleBookmark}
           progress={currentLocation.progress}
           readAloudAction={
             <button className="selection-action" disabled={selectedText.length === 0} onClick={handleReadAloud} type="button">
@@ -2572,9 +2421,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           selectionActions={
             <SelectionPopover
               hasSelection={selectedText.length > 0}
-              onAddNote={handleAddNote}
               onExplain={handleExplain}
-              onHighlight={handleHighlight}
               onReadAloud={handleReadAloud}
               showReadAloud={false}
               onTranslate={handleTranslate}
@@ -2626,7 +2473,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
                 readingMode={settings.readingMode}
                 runtime={runtime}
                 ttsFollowPlayback={settings.ttsFollowPlayback}
-                visibleAnnotations={visibleAnnotations}
               />
             ) : (
               <section className="epub-viewport" aria-label="Book content">

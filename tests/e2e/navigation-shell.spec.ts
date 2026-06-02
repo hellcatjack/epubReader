@@ -78,5 +78,5 @@ test("reader route opens settings without leaving the reading workspace", async 
 
   await expect(page.getByLabel("Reader settings panel")).toBeVisible();
   await expect(page.getByRole("banner")).toBeVisible();
-  await expect(page.getByRole("button", { name: /bookmark this location/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /read aloud/i })).toBeVisible();
 });

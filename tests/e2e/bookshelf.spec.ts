@@ -14,7 +14,7 @@ test("bookshelf flow imports, reopens, and deletes a book", async ({ page }) => 
 
   await page.setInputFiles("input[type=file]", fixturePath);
   await expect(page).toHaveURL(/\/books\//);
-  await expect(page.getByRole("button", { name: /bookmark this location/i })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: /table of contents/i })).toBeVisible();
 
   const viewportHeight = await page.locator(".epub-root").evaluate((node) => node.getBoundingClientRect().height);
   expect(viewportHeight).toBeGreaterThan(100);
