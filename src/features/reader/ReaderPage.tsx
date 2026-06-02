@@ -116,9 +116,8 @@ const tabletStableSelectionTranslateDelayMs = 1000;
 const tabletReaderMediaQuery = "(max-width: 1180px)";
 const autoReadSelectionEnglishLetterLimit = 30;
 const ttsSentenceNoteGapPx = 18;
-const ttsSentenceNoteMinimumLanePx = 150;
-const ttsSentenceNoteMaximumWidthPx = 280;
-const ttsSentenceNoteTabletMaximumWidthPx = 360;
+const ttsSentenceNoteMaximumWidthPx = 600;
+const ttsSentenceNoteMinimumWidthPx = 220;
 const ttsSentenceNoteTopPaddingPx = 12;
 const coarseSectionPathLabels = new Set(["contents", "table of contents"]);
 
@@ -178,47 +177,38 @@ export function resolveTtsSentenceNotePlacement(args: {
   readingRect: TtsSentenceNoteMetrics["readingRect"];
   stageRect: DOMRect;
 }) {
-  const { activeRect, isTabletLayout, readingRect, stageRect } = args;
+  const { activeRect, readingRect, stageRect } = args;
   if (stageRect.width <= 0 || stageRect.height <= 0) {
     return null;
   }
 
-  if (!isTabletLayout) {
-    const availableLaneWidth = stageRect.right - readingRect.right - ttsSentenceNoteGapPx;
-    if (availableLaneWidth >= ttsSentenceNoteMinimumLanePx) {
-      const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableLaneWidth);
-      const left = Math.max(ttsSentenceNoteGapPx, readingRect.right - stageRect.left + ttsSentenceNoteGapPx);
-      const maxTop = Math.max(
-        ttsSentenceNoteTopPaddingPx,
-        stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
-      );
-      const top = Math.min(
-        Math.max(ttsSentenceNoteTopPaddingPx, activeRect.top - stageRect.top - 8),
-        maxTop,
-      );
-
-      return { left, top, width };
-    }
-  }
-
-  const width = Math.min(ttsSentenceNoteTabletMaximumWidthPx, Math.max(220, stageRect.width - ttsSentenceNoteGapPx * 2));
+  const availableStageWidth = Math.max(ttsSentenceNoteMinimumWidthPx, stageRect.width - ttsSentenceNoteGapPx * 2);
+  const availableReadingWidth = Math.max(ttsSentenceNoteMinimumWidthPx, readingRect.width);
+  const width = Math.min(ttsSentenceNoteMaximumWidthPx, availableReadingWidth, availableStageWidth);
   const minLeft = ttsSentenceNoteGapPx;
   const maxLeft = Math.max(minLeft, stageRect.width - width - ttsSentenceNoteGapPx);
   const readingCenter = (readingRect.left + readingRect.right) / 2 - stageRect.left;
   const left = clamp(readingCenter - width / 2, minLeft, maxLeft);
   const relativeActiveTop = activeRect.top - stageRect.top;
   const relativeActiveBottom = activeRect.bottom - stageRect.top;
+  const readingCenterY = (readingRect.top + readingRect.bottom) / 2;
+  const activeCenterY = (activeRect.top + activeRect.bottom) / 2;
   const aboveTop = relativeActiveTop - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteGapPx;
   const belowTop = relativeActiveBottom + ttsSentenceNoteGapPx;
   const maxTop = Math.max(
     ttsSentenceNoteTopPaddingPx,
     stageRect.height - ttsSentenceNoteEstimatedHeightPx - ttsSentenceNoteTopPaddingPx,
   );
-
-  const top =
-    aboveTop >= ttsSentenceNoteTopPaddingPx
+  const hasRoomAbove = aboveTop >= ttsSentenceNoteTopPaddingPx;
+  const hasRoomBelow = belowTop <= maxTop;
+  const prefersBelow = activeCenterY < readingCenterY;
+  const top = prefersBelow
+    ? hasRoomBelow || !hasRoomAbove
+      ? belowTop
+      : aboveTop
+    : hasRoomAbove || !hasRoomBelow
       ? aboveTop
-      : clamp(belowTop, ttsSentenceNoteTopPaddingPx, maxTop);
+      : belowTop;
 
   return { left, top, width };
 }

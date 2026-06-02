@@ -540,7 +540,7 @@ it("defers auto-selection translation until selection speech has actually starte
   expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("迁移后的翻译");
 });
 
-it("shows a spoken sentence translation note beside the reading text on wide screens during continuous tts", async () => {
+it("shows a spoken sentence translation note centered with the reading text during continuous tts", async () => {
   const user = userEvent.setup();
   installMatchMedia({ "(max-width: 1180px)": false });
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
@@ -650,7 +650,12 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
   const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
   expect(note).toHaveTextContent("第一句翻译");
   expect(readerStage.contains(note)).toBe(true);
-  expect(note).toHaveStyle({ "--reader-tts-sentence-note-text-scale": "1.3" });
+  expect(note).toHaveStyle({
+    "--reader-tts-sentence-note-text-scale": "1.3",
+    insetInlineStart: "90px",
+    top: "186px",
+    width: "600px",
+  });
 });
 
 it("does not request or show spoken sentence translations during continuous tts by default", async () => {
@@ -973,8 +978,9 @@ it("shows the spoken sentence translation note above the active reading region i
   const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
   expect(note).toHaveTextContent("第一句翻译");
   expect(note).toHaveStyle({
+    insetInlineStart: "90px",
     top: "186px",
-    width: "360px",
+    width: "600px",
   });
 });
 
@@ -1023,12 +1029,16 @@ it("keeps the tablet spoken sentence note horizontally stable while the active l
     stageRect,
   });
 
-  expect(upperPlacement?.left).toBe(210);
-  expect(lowerPlacement?.left).toBe(210);
+  expect(upperPlacement?.left).toBe(90);
+  expect(lowerPlacement?.left).toBe(90);
+  expect(upperPlacement?.top).toBe(186);
+  expect(lowerPlacement?.top).toBe(226);
+  expect(upperPlacement?.width).toBe(600);
+  expect(lowerPlacement?.width).toBe(600);
   expect(upperPlacement?.top).not.toBe(lowerPlacement?.top);
 });
 
-it("falls back to an above-line placement when desktop paginated layouts do not have a right-side lane", () => {
+it("centers the spoken sentence note over narrow desktop paginated reading columns", () => {
   expect(
     resolveTtsSentenceNotePlacement({
       activeRect: {
@@ -1058,9 +1068,9 @@ it("falls back to an above-line placement when desktop paginated layouts do not 
       } as DOMRect,
     }),
   ).toEqual({
-    left: 655,
+    left: 640,
     top: 186,
-    width: 360,
+    width: 390,
   });
 });
 
