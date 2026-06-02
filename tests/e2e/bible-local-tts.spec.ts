@@ -15,7 +15,7 @@ const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
 
 test.skip(!existsSync(bibleFixturePath), `Optional local Bible fixture not available at ${bibleFixturePath}`);
 
-test("Bible continuous tts translation note is centered on the 1 Kings 3:3 reading block @gateway-screenshot", async ({ page }) => {
+test("Bible continuous tts translation note is centered on the 2 Kings 1:1 reading block @gateway-screenshot", async ({ page }) => {
   await page.addInitScript(() => {
     const calls: string[] = [];
     let currentUtterance:
@@ -112,7 +112,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
     });
   });
 
-  await page.route("http://localhost:8001/v1/models", async (route) => {
+  await page.route("**/v1/models", async (route) => {
     await route.fulfill({
       body: JSON.stringify({
         data: [{ id: "local-reader-chat", object: "model" }],
@@ -122,7 +122,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
     });
   });
 
-  await page.route("http://localhost:8001/v1/completions", async (route) => {
+  await page.route("**/v1/completions", async (route) => {
     await route.fulfill({
       body: JSON.stringify({
         choices: [{ text: "当前句翻译" }],
@@ -134,11 +134,17 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
 
   await page.setViewportSize({ width: 1900, height: 1400 });
   await page.goto("/");
+  await page.getByRole("button", { name: /settings/i }).click();
+  await page.getByLabel(/^llm api url$/i).fill("http://192.168.1.31:8001/v1/chat/completions");
+  await page.getByLabel(/grammar llm api url/i).fill("http://192.168.1.31:8004/v1/chat/completions");
+  await page.getByRole("button", { name: /save settings/i }).click();
+  await page.getByRole("button", { name: /close settings/i }).click();
+  await expect(page.getByLabel("Reader settings panel")).not.toBeVisible();
   await page.setInputFiles("input[type=file]", bibleFixturePath);
   await expect(page).toHaveURL(/\/books\//);
 
-  await page.getByRole("button", { name: /expand 1 kings/i }).click();
-  await page.getByRole("button", { name: "Chapter 3", exact: true }).click();
+  await page.getByRole("button", { name: /expand 2 kings/i }).click();
+  await page.getByRole("button", { name: "Chapter 1", exact: true }).click();
   await page.waitForTimeout(1200);
   await page.getByRole("button", { name: /paginated mode/i }).click();
   await page.waitForTimeout(1200);
@@ -150,20 +156,24 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
     .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
     .toBeGreaterThan(0);
 
-  await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
-  await expect
-    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
-    .toBeGreaterThan(1);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const currentUtterance = await page.evaluate(
+      () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.at(-1) ?? "",
+    );
+    if (currentUtterance.startsWith("After the death of Ahab")) {
+      break;
+    }
 
-  await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
-  await expect
-    .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
-    .toBeGreaterThan(2);
+    await page.evaluate(() => (window as typeof window & { __finishCurrentTts: () => void }).__finishCurrentTts());
+    await expect
+      .poll(async () => page.evaluate(() => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.length))
+      .toBeGreaterThan(attempt + 1);
+  }
 
-  const verseThreeUtterance = await page.evaluate(
-    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls[2] ?? "",
+  const verseOneUtterance = await page.evaluate(
+    () => (window as typeof window & { __ttsCalls: string[] }).__ttsCalls.at(-1) ?? "",
   );
-  expect(verseThreeUtterance.startsWith("Solomon loved the LORD")).toBe(true);
+  expect(verseOneUtterance.startsWith("After the death of Ahab")).toBe(true);
 
   const note = page.getByRole("status", { name: /spoken sentence translation/i });
   await expect(note).toBeVisible();
@@ -172,7 +182,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
   mkdirSync(gatewayScreenshotDir, { recursive: true });
   await page.screenshot({
     fullPage: true,
-    path: `${gatewayScreenshotDir}/bible-esv-tts-translation-note-1-kings-3-3.png`,
+    path: `${gatewayScreenshotDir}/bible-esv-tts-translation-note-2-kings-1-1.png`,
   });
 
   const noteBox = await note.boundingBox();
