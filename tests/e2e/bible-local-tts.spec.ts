@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 const repoBibleFixturePath =
@@ -12,6 +12,7 @@ const bibleFixturePath = process.env.BIBLE_FIXTURE_PATH ??
       ? localBibleFixturePath
       : repoBibleFixturePath);
 const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
+const ttsTranslationNoteScreenshotPath = `${gatewayScreenshotDir}/bible-esv-tts-translation-note-1-kings-3-3.png`;
 
 test.skip(!existsSync(bibleFixturePath), `Optional local Bible fixture not available at ${bibleFixturePath}`);
 
@@ -170,10 +171,13 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
   await expect(note).toContainText("当前句翻译");
 
   mkdirSync(gatewayScreenshotDir, { recursive: true });
+  rmSync(ttsTranslationNoteScreenshotPath, { force: true });
+  const screenshotStartedAt = Date.now();
   await page.screenshot({
     fullPage: true,
-    path: `${gatewayScreenshotDir}/bible-esv-tts-translation-note-1-kings-3-3.png`,
+    path: ttsTranslationNoteScreenshotPath,
   });
+  expect(statSync(ttsTranslationNoteScreenshotPath).mtimeMs).toBeGreaterThanOrEqual(screenshotStartedAt - 1000);
 
   const noteBox = await note.boundingBox();
   const ttsMetrics = await page.evaluate(() => {
