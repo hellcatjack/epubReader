@@ -230,6 +230,7 @@ test("Bible continuous tts translation note is centered on the 1 Kings 3:3 readi
 
   expect(noteBox).not.toBeNull();
   expect(ttsMetrics).not.toBeNull();
+  expect(noteBox!.width).toBeCloseTo(600, 1);
 
   const noteRect = {
     bottom: noteBox!.y + noteBox!.height,

@@ -13,3 +13,11 @@ it("renders a spoken sentence translation note with anchored position", () => {
     top: "180px",
   });
 });
+
+it("applies an explicit responsive note width when provided", () => {
+  render(<TtsSentenceTranslationNote left={18} top={120} translation="当前句翻译" width={600} />);
+
+  expect(screen.getByRole("status", { name: /spoken sentence translation/i })).toHaveStyle({
+    width: "600px",
+  });
+});

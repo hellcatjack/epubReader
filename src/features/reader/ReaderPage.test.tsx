@@ -651,6 +651,7 @@ it("shows a spoken sentence translation note beside the reading text on wide scr
   expect(note).toHaveTextContent("第一句翻译");
   expect(readerStage.contains(note)).toBe(true);
   expect(note).toHaveStyle({ "--reader-tts-sentence-note-text-scale": "1.3" });
+  expect(note).toHaveStyle({ width: "600px" });
 });
 
 it("does not request or show spoken sentence translations during continuous tts by default", async () => {
@@ -973,8 +974,9 @@ it("shows the spoken sentence translation note above the active reading region i
   const note = await screen.findByRole("status", { name: /spoken sentence translation/i });
   expect(note).toHaveTextContent("第一句翻译");
   expect(note).toHaveStyle({
+    insetInlineStart: "90px",
     top: "186px",
-    width: "360px",
+    width: "600px",
   });
 });
 
@@ -1023,9 +1025,44 @@ it("keeps the tablet spoken sentence note horizontally stable while the active l
     stageRect,
   });
 
-  expect(upperPlacement?.left).toBe(210);
-  expect(lowerPlacement?.left).toBe(210);
+  expect(upperPlacement?.left).toBe(90);
+  expect(lowerPlacement?.left).toBe(90);
   expect(upperPlacement?.top).not.toBe(lowerPlacement?.top);
+});
+
+it("shrinks the spoken sentence note inside narrow reader stages", () => {
+  expect(
+    resolveTtsSentenceNotePlacement({
+      activeRect: {
+        bottom: 288,
+        height: 28,
+        left: 120,
+        right: 260,
+        top: 260,
+        width: 140,
+      },
+      isTabletLayout: true,
+      readingRect: {
+        bottom: 940,
+        height: 800,
+        left: 40,
+        right: 340,
+        top: 140,
+        width: 300,
+      },
+      stageRect: {
+        bottom: 760,
+        height: 640,
+        left: 0,
+        right: 360,
+        top: 120,
+        width: 360,
+      } as DOMRect,
+    }),
+  ).toMatchObject({
+    left: 18,
+    width: 324,
+  });
 });
 
 it("falls back to an above-line placement when desktop paginated layouts do not have a right-side lane", () => {
@@ -1058,9 +1095,9 @@ it("falls back to an above-line placement when desktop paginated layouts do not 
       } as DOMRect,
     }),
   ).toEqual({
-    left: 655,
+    left: 482,
     top: 186,
-    width: 360,
+    width: 600,
   });
 });
 
