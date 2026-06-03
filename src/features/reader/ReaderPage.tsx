@@ -1263,10 +1263,8 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     const nextSelectionText = selectedSelection?.text.trim() ?? "";
     const bubbleSelection = resolveSelectionForFloatingBubble(selectedSelection, nextSelectionText);
     const selectionRect = bubbleSelection?.selectionRect;
-    const shouldShowBubble = isTabletLayout || !isSingleWordSelection(nextSelectionText);
     if (
       selectedSelection?.isReleased === false ||
-      !shouldShowBubble ||
       !translation.trim() ||
       !selectionRect ||
       !nextSelectionText
@@ -1689,9 +1687,6 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         setTranslation(result);
         setAiIpa(ipa ?? "");
         setEnglishDefinition(nextEnglishDefinition);
-        if (!isTabletLayout) {
-          return;
-        }
       }
 
       const bubbleSelection = resolveSelectionForFloatingBubble(selectionForBubble, nextText);
