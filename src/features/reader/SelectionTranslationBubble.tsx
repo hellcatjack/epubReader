@@ -7,7 +7,7 @@ type SelectionTranslationBubbleProps = {
   translation: string;
 };
 
-const preferredBubbleWidth = 600;
+const maximumBubbleWidth = 600;
 const fallbackBubbleHeight = 72;
 const viewportInset = 16;
 const bubbleOffset = 12;
@@ -44,32 +44,43 @@ function getSidePlacement(
   return null;
 }
 
-function getBubbleWidth(viewportWidth: number) {
-  return Math.max(0, Math.min(preferredBubbleWidth, viewportWidth - viewportInset * 2));
+function getMaximumBubbleWidth(viewportWidth: number) {
+  return Math.max(0, Math.min(maximumBubbleWidth, viewportWidth - viewportInset * 2));
+}
+
+function getPlacementBubbleWidth(viewportWidth: number, measuredBubbleWidth?: number) {
+  const maxWidth = getMaximumBubbleWidth(viewportWidth);
+  if (typeof measuredBubbleWidth !== "number" || measuredBubbleWidth <= 0) {
+    return maxWidth;
+  }
+
+  return Math.min(measuredBubbleWidth, maxWidth);
 }
 
 export function buildSelectionTranslationBubbleStyle(
   anchorRect: ReaderSelectionRect,
   bubbleHeight = fallbackBubbleHeight,
+  measuredBubbleWidth?: number,
 ): CSSProperties {
   const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1024;
   const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 768;
-  const bubbleWidth = getBubbleWidth(viewportWidth);
+  const maxWidth = getMaximumBubbleWidth(viewportWidth);
+  const bubbleWidth = getPlacementBubbleWidth(viewportWidth, measuredBubbleWidth);
   const preferredLeft = anchorRect.left + anchorRect.width / 2 - bubbleWidth / 2;
   const centeredLeft = clamp(preferredLeft, viewportInset, viewportWidth - bubbleWidth - viewportInset);
   const sidePlacement = getSidePlacement(anchorRect, bubbleWidth, bubbleHeight, viewportWidth, viewportHeight);
   const shouldPreferSidePlacement = anchorRect.height >= multiLineSelectionHeightThreshold;
 
   if (shouldPreferSidePlacement && sidePlacement) {
-    return { ...sidePlacement, width: bubbleWidth };
+    return { ...sidePlacement, maxWidth };
   }
 
   const canPlaceAbove = anchorRect.top - bubbleHeight - bubbleOffset >= viewportInset;
   if (canPlaceAbove) {
     return {
       left: centeredLeft,
+      maxWidth,
       top: anchorRect.top - bubbleHeight - bubbleOffset,
-      width: bubbleWidth,
     };
   }
 
@@ -77,19 +88,19 @@ export function buildSelectionTranslationBubbleStyle(
   if (canPlaceBelow) {
     return {
       left: centeredLeft,
+      maxWidth,
       top: anchorRect.bottom + bubbleOffset,
-      width: bubbleWidth,
     };
   }
 
   if (sidePlacement) {
-    return { ...sidePlacement, width: bubbleWidth };
+    return { ...sidePlacement, maxWidth };
   }
 
   return {
     left: centeredLeft,
+    maxWidth,
     top: clamp(anchorRect.bottom + bubbleOffset, viewportInset, viewportHeight - bubbleHeight - viewportInset),
-    width: bubbleWidth,
   };
 }
 
@@ -99,7 +110,10 @@ export function SelectionTranslationBubble({
   translation,
 }: SelectionTranslationBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement | null>(null);
-  const [bubbleHeight, setBubbleHeight] = useState(fallbackBubbleHeight);
+  const [bubbleSize, setBubbleSize] = useState({
+    height: fallbackBubbleHeight,
+    width: 0,
+  });
 
   useLayoutEffect(() => {
     const bubble = bubbleRef.current;
@@ -108,9 +122,17 @@ export function SelectionTranslationBubble({
     }
 
     const updateHeight = () => {
-      const nextHeight = Math.ceil(bubble.getBoundingClientRect().height);
-      if (nextHeight > 0) {
-        setBubbleHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
+      const rect = bubble.getBoundingClientRect();
+      const nextHeight = Math.ceil(rect.height);
+      const nextWidth = Math.ceil(rect.width);
+      if (nextHeight > 0 || nextWidth > 0) {
+        setBubbleSize((currentSize) => {
+          const nextSize = {
+            height: nextHeight > 0 ? nextHeight : currentSize.height,
+            width: nextWidth > 0 ? nextWidth : currentSize.width,
+          };
+          return currentSize.height === nextSize.height && currentSize.width === nextSize.width ? currentSize : nextSize;
+        });
       }
     };
 
@@ -132,7 +154,7 @@ export function SelectionTranslationBubble({
       onPointerDown={onDismiss}
       ref={bubbleRef}
       role="status"
-      style={buildSelectionTranslationBubbleStyle(anchorRect, bubbleHeight)}
+      style={buildSelectionTranslationBubbleStyle(anchorRect, bubbleSize.height, bubbleSize.width)}
     >
       <p className="reader-selection-translation-value">{translation}</p>
     </div>

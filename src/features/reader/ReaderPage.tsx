@@ -86,6 +86,7 @@ type ReaderLocationState = {
 
 type FloatingSelectionTranslation = {
   anchorRect: NonNullable<ReaderSelection["selectionRect"]>;
+  selectionKey: string;
   translation: string;
 };
 
@@ -501,6 +502,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
   const [aiIpa, setAiIpa] = useState("");
   const [translation, setTranslation] = useState("");
   const [translationError, setTranslationError] = useState("");
+  const [translationSelectionKey, setTranslationSelectionKey] = useState("");
   const [englishDefinition, setEnglishDefinition] = useState("");
   const [floatingSelectionTranslation, setFloatingSelectionTranslation] = useState<FloatingSelectionTranslation | null>(null);
   const [spokenSentenceTranslation, setSpokenSentenceTranslation] = useState("");
@@ -1033,6 +1035,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
       if (!selection?.text.trim() || selection?.isReleased === false) {
         setFloatingSelectionTranslation(null);
+      } else {
+        const nextSelectionKey = getSelectionCacheKey(selection);
+        setFloatingSelectionTranslation((current) =>
+          current && current.selectionKey !== nextSelectionKey ? null : current,
+        );
       }
 
       if (selection?.text.trim()) {
@@ -1263,9 +1270,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     const nextSelectionText = selectedSelection?.text.trim() ?? "";
     const bubbleSelection = resolveSelectionForFloatingBubble(selectedSelection, nextSelectionText);
     const selectionRect = bubbleSelection?.selectionRect;
+    const selectionKey = getSelectionCacheKey(bubbleSelection ?? selectedSelection);
     if (
       selectedSelection?.isReleased === false ||
       !translation.trim() ||
+      !translationSelectionKey ||
+      translationSelectionKey !== selectionKey ||
       !selectionRect ||
       !nextSelectionText
     ) {
@@ -1275,6 +1285,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     setFloatingSelectionTranslation((current) => {
       if (
         current &&
+        current.selectionKey === selectionKey &&
         current.translation === translation &&
         current.anchorRect.top === selectionRect.top &&
         current.anchorRect.left === selectionRect.left &&
@@ -1286,10 +1297,11 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
       return {
         anchorRect: selectionRect,
+        selectionKey,
         translation,
       };
     });
-  }, [isTabletLayout, selectedSelection, translation]);
+  }, [isTabletLayout, selectedSelection, translation, translationSelectionKey]);
 
   useEffect(() => {
     const nextText = selectedSelection?.text.trim() ?? "";
@@ -1299,6 +1311,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
     setTranslation("");
     setTranslationError("");
+    setTranslationSelectionKey("");
     setEnglishDefinition("");
     setAiIpa("");
   }, [selectedSelection?.cfiRange, selectedSelection?.isReleased, selectedSelection?.text]);
@@ -1654,6 +1667,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     setTranslationError("");
     setAiIpa("");
     setTranslation("");
+    setTranslationSelectionKey("");
     setEnglishDefinition("");
     setFloatingSelectionTranslation(null);
 
@@ -1685,6 +1699,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       }
       if (singleWordSelection) {
         setTranslation(result);
+        setTranslationSelectionKey(requestSelectionKey);
         setAiIpa(ipa ?? "");
         setEnglishDefinition(nextEnglishDefinition);
       }
@@ -1693,6 +1708,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       if (bubbleSelection?.selectionRect) {
         setFloatingSelectionTranslation({
           anchorRect: bubbleSelection.selectionRect,
+          selectionKey: requestSelectionKey,
           translation: result,
         });
       }

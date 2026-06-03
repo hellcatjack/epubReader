@@ -682,7 +682,8 @@
   position: fixed;
   z-index: 48;
   box-sizing: border-box;
-  width: min(600px, calc(100vw - 2rem));
+  width: max-content;
+  max-width: min(600px, calc(100vw - 2rem));
   padding: 0.7rem 0.8rem;
   border: 1px solid rgba(79, 49, 24, 0.14);
   border-radius: 0.95rem;

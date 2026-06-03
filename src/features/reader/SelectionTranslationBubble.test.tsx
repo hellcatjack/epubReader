@@ -47,7 +47,7 @@ it("prefers to place the translation bubble above the current selection when the
   });
 });
 
-it("uses a 600px desktop width for placement and rendered sizing", () => {
+it("uses a 600px desktop maximum width for placement and rendered sizing", () => {
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
     value: 1280,
@@ -74,7 +74,37 @@ it("uses a 600px desktop width for placement and rendered sizing", () => {
   const bubble = screen.getByRole("status", { name: /selection translation/i });
   expect(bubble).toHaveStyle({
     left: "300px",
-    width: "600px",
+    maxWidth: "600px",
+  });
+});
+
+it("uses the measured compact content width for desktop placement while keeping a 600px maximum", () => {
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: 1280,
+  });
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    value: 768,
+  });
+
+  expect(
+    buildSelectionTranslationBubbleStyle(
+      {
+        bottom: 424,
+        height: 24,
+        left: 500,
+        right: 700,
+        top: 400,
+        width: 200,
+      },
+      72,
+      180,
+    ),
+  ).toEqual({
+    left: 510,
+    maxWidth: 600,
+    top: 316,
   });
 });
 
@@ -164,7 +194,7 @@ it("shrinks placement width to fit narrow viewports", () => {
 
   expect(screen.getByRole("status", { name: /selection translation/i })).toHaveStyle({
     left: "16px",
-    width: "388px",
+    maxWidth: "388px",
   });
 });
 
@@ -192,7 +222,7 @@ it("uses the measured bubble height when placing above a selection", () => {
 
   expect(style).toEqual({
     left: 300,
+    maxWidth: 600,
     top: 44,
-    width: 600,
   });
 });

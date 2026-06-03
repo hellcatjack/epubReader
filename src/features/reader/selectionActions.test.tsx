@@ -210,6 +210,79 @@ it("shows ipa for a released single-word selection", async () => {
   });
 });
 
+it("hides the stale translation bubble immediately after a new released single-word selection", async () => {
+  installEdgeDesktopUserAgent();
+  const speech = installSpeechSynthesis(
+    [
+      {
+        default: true,
+        lang: "en-US",
+        localService: false,
+        name: "Microsoft Ava Online (Natural)",
+        voiceURI: "Microsoft Ava Online (Natural)",
+      },
+    ],
+    { autoStart: false },
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      json: async () => [{ phonetics: [{ text: "/prest/" }] }],
+      ok: true,
+    })),
+  );
+  const ai = {
+    defineSelection: vi.fn(async () => ""),
+    translateSelection: vi.fn(async () => "按压"),
+    explainSelection: vi.fn(async () => "A short contextual explanation"),
+    synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
+  };
+
+  render(<ReaderPage ai={ai} />);
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:0)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 246,
+        height: 24,
+        left: 120,
+        right: 196,
+        top: 222,
+        width: 76,
+      },
+      spineItemId: "chap-1",
+      text: "pressed",
+    });
+  });
+  act(() => {
+    speech.startCurrent();
+  });
+
+  expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("按压");
+
+  act(() => {
+    selectionBridge.publish({
+      cfiRange: "epubcfi(/6/2!/4/1:10)",
+      isReleased: true,
+      selectionRect: {
+        bottom: 276,
+        height: 24,
+        left: 220,
+        right: 284,
+        top: 252,
+        width: 64,
+      },
+      spineItemId: "chap-1",
+      text: "second",
+    });
+  });
+
+  expect(screen.queryByRole("status", { name: /selection translation/i })).not.toBeInTheDocument();
+  expect(ai.translateSelection).toHaveBeenCalledTimes(1);
+});
+
 it("does not show ipa for a multi-word selection", async () => {
   installEdgeDesktopUserAgent();
   installSpeechSynthesis([
