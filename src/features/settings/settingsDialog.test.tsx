@@ -94,6 +94,14 @@ it("includes a configurable llm api url in default settings", () => {
   expect(keys.some((key) => /llmapiurl/i.test(key))).toBe(true);
 });
 
+it("migrates the old sepia default paper color to the printed reading default", async () => {
+  await db.settings.put(createStoredSettings({ contentBackgroundColor: "#f6edde", theme: "sepia" }));
+
+  await expect(getSettings()).resolves.toMatchObject({
+    contentBackgroundColor: "#f8f1e6",
+  });
+});
+
 it("persists browser tts settings and local llm provider configuration", async () => {
   const user = userEvent.setup();
   installSpeechSynthesis([

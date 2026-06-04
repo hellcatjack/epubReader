@@ -2,6 +2,8 @@ import { db } from "../../lib/db/appDb";
 import type { SettingsInput, SettingsPatch, ThemeName } from "../../lib/types/settings";
 import { DEFAULT_LLM_API_URL } from "../ai/aiEndpoints";
 
+const LEGACY_SEPIA_DEFAULT_CONTENT_BACKGROUND_COLOR = "#f6edde";
+
 export function getDefaultContentBackgroundColor(theme: ThemeName) {
   if (theme === "light") {
     return "#fffdf8";
@@ -11,7 +13,17 @@ export function getDefaultContentBackgroundColor(theme: ThemeName) {
     return "#1f1b18";
   }
 
-  return "#f6edde";
+  return "#f8f1e6";
+}
+
+export function normalizeContentBackgroundColor(theme: ThemeName, contentBackgroundColor: unknown) {
+  const recordBackgroundColor = typeof contentBackgroundColor === "string" ? contentBackgroundColor.trim() : "";
+
+  if (theme === "sepia" && recordBackgroundColor.toLowerCase() === LEGACY_SEPIA_DEFAULT_CONTENT_BACKGROUND_COLOR) {
+    return getDefaultContentBackgroundColor(theme);
+  }
+
+  return recordBackgroundColor || getDefaultContentBackgroundColor(theme);
 }
 
 export function createDefaultSettings(_hostname?: string): SettingsInput {
@@ -86,13 +98,13 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
     return null;
   }
 
+  const recordTheme = (record.theme as ThemeName | undefined) ?? defaultSettings.theme;
+  const contentBackgroundColor = normalizeContentBackgroundColor(recordTheme, record.contentBackgroundColor);
+
   const migratedSettings: SettingsInput = {
     ...defaultSettings,
     ...record,
-    contentBackgroundColor:
-      typeof record.contentBackgroundColor === "string" && record.contentBackgroundColor.trim()
-        ? record.contentBackgroundColor
-        : getDefaultContentBackgroundColor((record.theme as ThemeName | undefined) ?? defaultSettings.theme),
+    contentBackgroundColor,
   };
 
   if (record.targetLanguageCustomized !== true && migratedSettings.targetLanguage === "en") {
@@ -115,6 +127,7 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
 
   if (
     isLegacySettingsRecord(record) ||
+    migratedSettings.contentBackgroundColor !== record.contentBackgroundColor ||
     record.targetLanguageCustomized !== migratedSettings.targetLanguageCustomized ||
     migratedSettings.targetLanguage !== record.targetLanguage
   ) {

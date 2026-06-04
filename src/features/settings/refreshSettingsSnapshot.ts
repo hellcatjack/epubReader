@@ -1,5 +1,5 @@
 import type { SettingsInput } from "../../lib/types/settings";
-import { defaultSettings } from "./settingsRepository";
+import { defaultSettings, normalizeContentBackgroundColor } from "./settingsRepository";
 
 const refreshSettingsSnapshotKey = "reader-refresh-settings";
 export const settingsUpdatedEventName = "reader:settings-updated";
@@ -39,6 +39,10 @@ export function readRefreshSettingsSnapshot(): RefreshSettingsSnapshot | null {
       settings: {
         ...defaultSettings,
         ...parsed.settings,
+        contentBackgroundColor: normalizeContentBackgroundColor(
+          parsed.settings.theme ?? defaultSettings.theme,
+          parsed.settings.contentBackgroundColor,
+        ),
       },
       updatedAt: parsed.updatedAt,
     };

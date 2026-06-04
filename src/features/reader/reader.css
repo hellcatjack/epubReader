@@ -491,9 +491,12 @@
 
 .reader-tools-scroll {
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   align-content: start;
   padding-right: 0.15rem;
+  padding-bottom: 1.25rem;
+  scroll-padding-bottom: 1.25rem;
 }
 
 .reader-topbar-actions,
@@ -1391,6 +1394,8 @@
   .reader-tools-scroll {
     overflow: visible;
     padding-right: 0;
+    padding-bottom: 0;
+    scroll-padding-bottom: 0;
   }
 
   .reader-tts-settings {

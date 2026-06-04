@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyReaderThemeToRendition, buildReaderTheme, getEffectiveReaderPreferences, toEpubFlow } from "./readerPreferences";
+import {
+  applyReaderThemeToRendition,
+  buildReaderTheme,
+  defaultReaderPreferences,
+  getEffectiveReaderPreferences,
+  toEpubFlow,
+} from "./readerPreferences";
 
 describe("readerPreferences", () => {
   it("maps reader modes to epub rendition flow values", () => {
@@ -31,16 +37,22 @@ describe("readerPreferences", () => {
         "text-size-adjust": "100%",
       },
       body: {
+        "-moz-osx-font-smoothing": "grayscale",
         "-webkit-text-size-adjust": "100%",
+        "-webkit-font-smoothing": "antialiased",
         "background-color": "#c0ffee",
         "column-gap": "40px",
+        "color": "#211812",
+        "font-feature-settings": '"kern" 1, "liga" 1, "clig" 1',
         "font-family": '"Iowan Old Style", Georgia, serif',
+        "font-kerning": "normal",
         "font-size": "115%",
         "letter-spacing": "0.03em",
         "line-height": "1.9",
         "margin": "0 auto",
         "max-width": "780px",
         "padding": "40px",
+        "text-rendering": "optimizeLegibility",
         "text-size-adjust": "100%",
       },
       p: {
@@ -75,6 +87,10 @@ describe("readerPreferences", () => {
         "transition": "none",
       },
     });
+  });
+
+  it("uses a lighter book-paper default background for printed-style reading", () => {
+    expect(defaultReaderPreferences.contentBackgroundColor).toBe("#f8f1e6");
   });
 
   it("does not override epub pagination columns with a body column-count rule", () => {

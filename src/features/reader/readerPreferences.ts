@@ -20,7 +20,7 @@ export type ReaderPreferences = Pick<
 export const defaultReaderPreferences: ReaderPreferences = {
   columnCount: 1,
   contentPadding: 32,
-  contentBackgroundColor: "#f6edde",
+  contentBackgroundColor: "#f8f1e6",
   fontFamily: "book",
   fontScale: 1,
   letterSpacing: 0,
@@ -68,17 +68,23 @@ export function buildReaderTheme(preferences: ReaderPreferences) {
       ? effectivePreferences.maxLineWidth + SCROLLED_MODE_WIDTH_BOOST
       : effectivePreferences.maxLineWidth;
   const bodyTheme: Record<string, string> = {
+    "-moz-osx-font-smoothing": "grayscale",
+    "-webkit-font-smoothing": "antialiased",
     "-webkit-text-size-adjust": "100%",
     "background-color": effectivePreferences.contentBackgroundColor,
     "box-sizing": "border-box",
     "column-gap": `${columnGap}px`,
+    "color": "#211812",
+    "font-feature-settings": '"kern" 1, "liga" 1, "clig" 1',
     "font-family": resolveReaderFontFamily(effectivePreferences.fontFamily),
+    "font-kerning": "normal",
     "font-size": fontSize,
     "letter-spacing": `${effectivePreferences.letterSpacing}em`,
     "line-height": String(effectivePreferences.lineHeight),
     "margin": "0 auto",
     "max-width": `${maxLineWidth}px`,
     "padding": `${effectivePreferences.contentPadding}px`,
+    "text-rendering": "optimizeLegibility",
     "text-size-adjust": "100%",
   };
 

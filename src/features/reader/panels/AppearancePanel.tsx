@@ -195,6 +195,17 @@ export function AppearancePanel({
             value={preferences.contentBackgroundColor}
           />
         </label>
+        <label className="appearance-field appearance-field-wide">
+          <span>Max line width</span>
+          <input
+            aria-label="Max line width"
+            min="480"
+            onChange={(event) => parseNumericPatch(event.target.value, onChange, "maxLineWidth")}
+            step="10"
+            type="number"
+            value={preferences.maxLineWidth}
+          />
+        </label>
         <label className="appearance-field">
           <span>Translation provider</span>
           <select
@@ -324,17 +335,6 @@ export function AppearancePanel({
             </label>
           </>
         )}
-        <label className="appearance-field">
-          <span>Max line width</span>
-          <input
-            aria-label="Max line width"
-            min="480"
-            onChange={(event) => parseNumericPatch(event.target.value, onChange, "maxLineWidth")}
-            step="10"
-            type="number"
-            value={preferences.maxLineWidth}
-          />
-        </label>
       </div>
     </section>
   );

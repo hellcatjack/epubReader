@@ -71,6 +71,46 @@ it("renders a now reading text size input and emits updates", () => {
   expect(onChange).toHaveBeenCalledWith({ ttsSentenceTranslationFontScale: 1.3 });
 });
 
+it("keeps max line width with core appearance controls before translation settings", () => {
+  const onChange = vi.fn();
+
+  render(
+    <AppearancePanel
+      onChange={onChange}
+      preferences={{
+        columnCount: 1,
+        contentPadding: 32,
+        contentBackgroundColor: "#f6edde",
+        fontFamily: "book",
+        fontScale: 1,
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "scrolled",
+        theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
+      }}
+    />,
+  );
+
+  const maxLineWidthInput = screen.getByLabelText(/max line width/i);
+  const maxLineWidthField = maxLineWidthInput.closest("label");
+  const translationProviderField = screen.getByLabelText(/translation provider/i).closest("label");
+
+  if (!maxLineWidthField || !translationProviderField) {
+    throw new Error("Expected max line width and translation provider fields to render.");
+  }
+
+  expect(maxLineWidthField).toHaveClass("appearance-field-wide");
+  expect(maxLineWidthField.compareDocumentPosition(translationProviderField) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  fireEvent.change(maxLineWidthInput, { target: { value: "820" } });
+
+  expect(onChange).toHaveBeenCalledWith({ maxLineWidth: 820 });
+});
+
 it("renders an llm api url input and emits direct updates", async () => {
   const onLlmApiUrlChange = vi.fn();
   const onGrammarLlmApiUrlChange = vi.fn();

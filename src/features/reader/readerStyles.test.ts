@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest";
 
 const readerCss = readFileSync(resolve(process.cwd(), "src/features/reader/reader.css"), "utf8");
 
+function getCssRule(selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = readerCss.match(new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{(?<body>[\\s\\S]*?)\\}`, "i"));
+  return match?.groups?.body ?? "";
+}
+
 describe("reader stage background styles", () => {
   it("uses the reader page background variable for the epub viewport shell", () => {
     expect(readerCss).toMatch(/\.epub-viewport\s*\{[\s\S]*background:\s*var\(--reader-page-background/i);
@@ -26,5 +32,13 @@ describe("reader stage background styles", () => {
     expect(readerCss).toMatch(
       /\.reader-grammar-popup-(?:body|list-item|placeholder|error|paragraph)\s*\{[\s\S]*font-size:\s*calc\(0\.95rem \* var\(--reader-tts-sentence-note-text-scale,\s*1\)\)/i,
     );
+  });
+
+  it("keeps the right detail panels independently scrollable with bottom room for appearance controls", () => {
+    const rule = getCssRule(".reader-tools-scroll");
+
+    expect(rule).toMatch(/overflow-y:\s*auto/i);
+    expect(rule).toMatch(/padding-bottom:\s*1\.25rem/i);
+    expect(rule).toMatch(/scroll-padding-bottom:\s*1\.25rem/i);
   });
 });
