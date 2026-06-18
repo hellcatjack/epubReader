@@ -15,6 +15,7 @@ import {
 import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
 import { chunkTextSegments, chunkTextSegmentsFromBlocks, type ChunkSegment } from "../tts/chunkText";
 import { createTtsQueue } from "../tts/ttsQueue";
+import { useTtsScreenWakeLock } from "../tts/useTtsScreenWakeLock";
 import { createPhoneticsService, getEligibleIpaWord } from "./phoneticsService";
 import "./reader.css";
 import { EpubViewport } from "./EpubViewport";
@@ -727,6 +728,10 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
           spineItemId: activeContinuousTtsSegment?.spineItemId || currentSpineItemId,
         })
       : "";
+  const shouldKeepScreenAwakeForTts =
+    ttsState.mode === "continuous" && (ttsState.status === "loading" || ttsState.status === "playing");
+
+  useTtsScreenWakeLock(shouldKeepScreenAwakeForTts);
 
   useEffect(() => {
     let cancelled = false;

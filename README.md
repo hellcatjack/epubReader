@@ -198,7 +198,8 @@ rsync -a --delete dist/ /app/epubReader/
 - `src/features/ai`: 翻译、解释和 endpoint 规范化
 - `src/features/settings`: 阅读与 AI 配置持久化
 - `tests/e2e`: Playwright 端到端测试
-- `docs/`: 设计文档、计划和补充资料
+- `docs/`: [项目文档索引](docs/README.md)、设计文档、计划和补充资料
+- `docs/tts-implementation.md`: TTS 主链路、正文朗读高亮、播放跟随、翻译侧注和屏幕常亮实现说明
 
 ## 隐私与仓库规范
 

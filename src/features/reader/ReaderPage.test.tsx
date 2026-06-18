@@ -33,6 +33,10 @@ vi.mock("../bookshelf/progressRepository", async () => {
 afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  Object.defineProperty(window.navigator, "wakeLock", {
+    configurable: true,
+    value: undefined,
+  });
   Object.defineProperty(window.navigator, "maxTouchPoints", {
     configurable: true,
     value: 0,
@@ -123,6 +127,30 @@ function installSpeechSynthesis(voices: SpeechSynthesisVoice[], options: { autoS
       currentUtterance?.onend?.(new Event("end") as SpeechSynthesisEvent);
     },
     speechSynthesis,
+  };
+}
+
+function installWakeLock() {
+  const release = vi.fn(async () => undefined);
+  const sentinel = {
+    addEventListener: vi.fn(),
+    release,
+    removeEventListener: vi.fn(),
+    released: false,
+  };
+  const request = vi.fn(async () => sentinel);
+
+  Object.defineProperty(window.navigator, "wakeLock", {
+    configurable: true,
+    value: {
+      request,
+    },
+  });
+
+  return {
+    release,
+    request,
+    sentinel,
   };
 }
 
@@ -3536,6 +3564,94 @@ it("tracks the active continuous tts segment for viewport highlighting", async (
         text: "First",
       }),
     );
+  });
+});
+
+it("keeps the screen awake only while continuous tts is active", async () => {
+  const user = userEvent.setup();
+  setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
+  installSpeechSynthesis([
+    {
+      default: true,
+      lang: "en-US",
+      localService: false,
+      name: "Microsoft Ava Online (Natural)",
+      voiceURI: "Microsoft Ava Online (Natural)",
+    },
+  ]);
+  const wakeLock = installWakeLock();
+
+  render(
+    <MemoryRouter initialEntries={["/books/book-1"]}>
+      <Routes>
+        <Route
+          path="/books/:bookId"
+          element={
+            <ReaderPage
+              runtime={{
+                render: vi.fn(async ({ onRelocated }) => {
+                  onRelocated?.({
+                    cfi: "epubcfi(/6/2!/4/1:0)",
+                    progress: 0.2,
+                    spineItemId: "chap-1",
+                    textQuote: "First paragraph for keeping the screen awake.",
+                  });
+
+                  return {
+                    applyPreferences: vi.fn(async () => undefined),
+                    destroy() {
+                      return undefined;
+                    },
+                    findCfiFromTextQuote: vi.fn(async () => null),
+                    getTextFromCurrentLocation: vi.fn(async () => "First paragraph for keeping the screen awake."),
+                    getTtsBlocksFromCurrentLocation: vi.fn(async () => [
+                      {
+                        cfi: "epubcfi(/6/2!/4/2/1:0)",
+                        spineItemId: "chap-1",
+                        text: "First paragraph for keeping the screen awake.",
+                      },
+                    ]),
+                    goTo: vi.fn(async () => undefined),
+                    next: vi.fn(async () => undefined),
+                    prev: vi.fn(async () => undefined),
+                    setActiveTtsSegment: vi.fn(async () => undefined),
+                    setFlow: vi.fn(async () => undefined),
+                  };
+                }),
+              }}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /start tts/i })).toBeEnabled();
+  });
+
+  await user.click(screen.getByRole("button", { name: /start tts/i }));
+
+  await waitFor(() => {
+    expect(wakeLock.request).toHaveBeenCalledWith("screen");
+  });
+
+  await user.click(screen.getByRole("button", { name: /pause tts/i }));
+
+  await waitFor(() => {
+    expect(wakeLock.release).toHaveBeenCalledTimes(1);
+  });
+
+  await user.click(screen.getByRole("button", { name: /resume tts/i }));
+
+  await waitFor(() => {
+    expect(wakeLock.request).toHaveBeenCalledTimes(2);
+  });
+
+  await user.click(screen.getByRole("button", { name: /stop tts/i }));
+
+  await waitFor(() => {
+    expect(wakeLock.release).toHaveBeenCalledTimes(2);
   });
 });
 
