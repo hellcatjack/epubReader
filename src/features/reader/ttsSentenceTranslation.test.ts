@@ -31,23 +31,36 @@ describe("ttsSentenceTranslation helpers", () => {
     ).toBe("book-1::chapter-10.xhtml::Nations Descended from Noah.");
   });
 
-  it("extracts the full sentence containing the current spoken offsets from the locator text", () => {
+  it("extracts a bounded segment from the current spoken offset without waiting for sentence punctuation", () => {
+    const locatorText =
+      "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec " +
+      "romeo sierra tango uniform victor whiskey xray yankee zulu and the line keeps going with many more words " +
+      "that should not be translated all at once because the TTS side note should stay compact while reading";
+
     expect(
       extractCurrentSpokenSentence({
-        fallbackText: "generations",
-        locatorText: "Nations Descended from Noah. These are the generations of the sons of Noah.",
-        startOffset: 42,
+        fallbackText: "romeo",
+        locatorText,
+        startOffset: locatorText.indexOf("romeo"),
       }),
-    ).toBe("These are the generations of the sons of Noah.");
+    ).toBe(
+      "romeo sierra tango uniform victor whiskey xray yankee zulu and the line keeps going with many more words that should not be translated all",
+    );
   });
 
-  it("falls back to the current chunk text when no locator sentence can be resolved", () => {
+  it("limits fallback chunk text when no locator segment can be resolved", () => {
+    const fallbackText =
+      "Nations Descended from Noah and the line keeps going with many more words that should not be translated " +
+      "all at once because the TTS side note should stay compact while reading";
+
     expect(
       extractCurrentSpokenSentence({
-        fallbackText: "Nations Descended from Noah.",
+        fallbackText,
         locatorText: "",
         startOffset: -1,
       }),
-    ).toBe("Nations Descended from Noah.");
+    ).toBe(
+      "Nations Descended from Noah and the line keeps going with many more words that should not be translated all at once because the TTS side",
+    );
   });
 });

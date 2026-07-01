@@ -1,5 +1,7 @@
 const numberOnlyPattern = /^(?:\d+(?::\d+)?|\[\d+\])$/;
-const sentenceTerminatorPattern = /[.!?。！？]/;
+const segmentBoundaryPattern = /[\s,，、;；:：.!?。！？()[\]{}"“”'‘’]/;
+const spokenTranslationSegmentMaxLength = 140;
+const spokenTranslationSoftMinimumLength = 80;
 
 export function normalizeSpokenSentence(text: string) {
   return text.replace(/\s+/g, " ").trim();
@@ -26,6 +28,47 @@ export function buildTtsSentenceTranslationCacheKey({
   return `${bookId}::${spineItemId}::${normalizeSpokenSentence(sentence)}`;
 }
 
+function clampOffset(offset: number, length: number) {
+  return Math.max(0, Math.min(offset, Math.max(0, length - 1)));
+}
+
+function findCurrentWordStart(text: string, offset: number) {
+  let start = clampOffset(offset, text.length);
+
+  while (start > 0 && !segmentBoundaryPattern.test(text[start - 1] ?? "")) {
+    start -= 1;
+  }
+
+  return start;
+}
+
+function findSegmentEnd(text: string, start: number) {
+  const hardEnd = Math.min(text.length, start + spokenTranslationSegmentMaxLength);
+  if (hardEnd >= text.length) {
+    return text.length;
+  }
+
+  const minimumSoftEnd = Math.min(hardEnd, start + spokenTranslationSoftMinimumLength);
+  for (let end = hardEnd; end > minimumSoftEnd; end -= 1) {
+    if (segmentBoundaryPattern.test(text[end] ?? "")) {
+      return end;
+    }
+  }
+
+  return hardEnd;
+}
+
+function extractBoundedSpokenSegment(text: string, startOffset = 0) {
+  const normalized = normalizeSpokenSentence(text);
+  if (!normalized) {
+    return "";
+  }
+
+  const start = findCurrentWordStart(normalized, startOffset);
+  const end = findSegmentEnd(normalized, start);
+  return normalizeSpokenSentence(normalized.slice(start, end)) || normalized.slice(start, start + spokenTranslationSegmentMaxLength);
+}
+
 export function extractCurrentSpokenSentence({
   fallbackText,
   locatorText,
@@ -37,32 +80,13 @@ export function extractCurrentSpokenSentence({
 }) {
   const normalizedLocator = normalizeSpokenSentence(locatorText ?? "");
   if (!normalizedLocator) {
-    return normalizeSpokenSentence(fallbackText);
+    return extractBoundedSpokenSegment(fallbackText);
   }
 
-  const safeOffset = Math.max(0, Math.min(startOffset ?? -1, Math.max(0, normalizedLocator.length - 1)));
   if (typeof startOffset !== "number" || startOffset < 0) {
-    return normalizeSpokenSentence(fallbackText);
+    return extractBoundedSpokenSegment(fallbackText);
   }
 
-  let sentenceStart = safeOffset;
-  while (sentenceStart > 0 && !sentenceTerminatorPattern.test(normalizedLocator[sentenceStart - 1] ?? "")) {
-    sentenceStart -= 1;
-  }
-
-  while (sentenceStart < normalizedLocator.length && /\s/.test(normalizedLocator[sentenceStart] ?? "")) {
-    sentenceStart += 1;
-  }
-
-  let sentenceEnd = safeOffset;
-  while (sentenceEnd < normalizedLocator.length && !sentenceTerminatorPattern.test(normalizedLocator[sentenceEnd] ?? "")) {
-    sentenceEnd += 1;
-  }
-
-  if (sentenceEnd < normalizedLocator.length) {
-    sentenceEnd += 1;
-  }
-
-  const candidate = normalizeSpokenSentence(normalizedLocator.slice(sentenceStart, sentenceEnd));
-  return candidate || normalizeSpokenSentence(fallbackText);
+  const candidate = extractBoundedSpokenSegment(normalizedLocator, startOffset);
+  return candidate || extractBoundedSpokenSegment(fallbackText);
 }

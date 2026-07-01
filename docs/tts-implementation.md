@@ -42,7 +42,7 @@ TTS 控制面板
 | `src/features/reader/epubRuntime.ts` | epub.js 集成层，负责从 iframe 文档抽取 TTS blocks、定位 active segment、插入高亮 DOM、跟随滚动/翻页。 |
 | `src/features/reader/readerPreferences.ts` | 注入 epub iframe 的阅读主题，其中包含 `.reader-tts-active-segment` 样式。 |
 | `src/features/reader/panels/TtsStatusPanel.tsx` | TTS 控制面板 UI。 |
-| `src/features/reader/ttsSentenceTranslation.ts` 和 `TtsSentenceTranslationNote.tsx` | 当前朗读句子的中文侧注逻辑和展示组件。 |
+| `src/features/reader/ttsSentenceTranslation.ts` 和 `TtsSentenceTranslationNote.tsx` | 当前朗读片段的中文侧注逻辑和展示组件。 |
 | `src/lib/types/settings.ts`、`src/features/settings/settingsRepository.ts` | TTS 相关设置类型、默认值、迁移与持久化。 |
 | `helper/windows-tts-helper/` | Windows WinRT localhost TTS helper，当前不在主应用 TTS 路径中使用。 |
 
@@ -552,19 +552,27 @@ paginated 模式用高亮 rect 的 left/right 和页面宽度计算它所在的 
 - 自动朗读有英文字符数阈值；
 - 翻译失败不阻断 TTS，TTS 失败也不阻断翻译。
 
-## 正在朗读句子的中文侧注
+## 正在朗读片段的中文侧注
 
 中文侧注是连续朗读的附加功能，依赖同一个 active segment。
 
-### 当前句子提取
+### 当前朗读片段提取
 
-`ReaderPage` 用 `extractCurrentSpokenSentence()` 从以下信息提取当前句子：
+`ReaderPage` 用 `extractCurrentSpokenSentence()` 从以下信息提取当前朗读片段。函数名仍沿用早期的 sentence 命名，但当前行为已经不是强制整句提取：
 
 - `fallbackText`：当前 utterance 文本；
 - `locatorText`：当前正文块完整文本；
 - `startOffset`：当前单词在正文块中的偏移。
 
-如果句子为空或只是数字/脚注号，会被忽略。
+提取策略：
+
+- 以 `startOffset` 对应的当前朗读词为起点；
+- 最多截取约 140 个字符；
+- 优先在空格、逗号、顿号、分号、冒号、句末标点、括号、引号等软边界截断；
+- 找不到合适软边界时按长度硬截断；
+- `locatorText` 不可用或 offset 无效时，对 `fallbackText` 也执行同样的长度限制。
+
+如果片段为空或只是数字/脚注号，会被忽略。
 
 ### 翻译请求和缓存
 
@@ -574,7 +582,7 @@ paginated 模式用高亮 rect 的 left/right 和页面宽度计算它所在的 
 bookId::spineItemId::normalizedSentence
 ```
 
-如果缓存没有命中，则调用 `ai.translateSelection(currentSpokenSentence, { targetLanguage })`。请求用递增版本号防止过期结果覆盖当前句子。
+如果缓存没有命中，则调用 `ai.translateSelection(currentSpokenSentence, { targetLanguage })`。这里的 `currentSpokenSentence` 是当前朗读片段，变量名保留历史命名。请求用递增版本号防止过期结果覆盖当前片段。
 
 ### 侧注定位
 
