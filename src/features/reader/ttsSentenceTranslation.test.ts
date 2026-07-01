@@ -31,7 +31,7 @@ describe("ttsSentenceTranslation helpers", () => {
     ).toBe("book-1::chapter-10.xhtml::Nations Descended from Noah.");
   });
 
-  it("extracts a bounded segment from the current spoken offset without waiting for sentence punctuation", () => {
+  it("extracts the bounded translation segment containing the current spoken offset", () => {
     const locatorText =
       "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec " +
       "romeo sierra tango uniform victor whiskey xray yankee zulu and the line keeps going with many more words " +
@@ -44,7 +44,52 @@ describe("ttsSentenceTranslation helpers", () => {
         startOffset: locatorText.indexOf("romeo"),
       }),
     ).toBe(
-      "romeo sierra tango uniform victor whiskey xray yankee zulu and the line keeps going with many more words that should not be translated all",
+      "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor",
+    );
+  });
+
+  it("keeps the same translation segment while spoken offsets remain in the same range", () => {
+    const locatorText =
+      "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec " +
+      "romeo sierra tango uniform victor whiskey xray yankee zulu and the line keeps going with many more words " +
+      "that should not be translated all at once because the TTS side note should stay compact while reading";
+
+    const firstSegment = extractCurrentSpokenSentence({
+      fallbackText: "alpha",
+      locatorText,
+      startOffset: locatorText.indexOf("alpha"),
+    });
+
+    expect(
+      extractCurrentSpokenSentence({
+        fallbackText: "golf",
+        locatorText,
+        startOffset: locatorText.indexOf("golf"),
+      }),
+    ).toBe(firstSegment);
+    expect(
+      extractCurrentSpokenSentence({
+        fallbackText: "romeo",
+        locatorText,
+        startOffset: locatorText.indexOf("romeo"),
+      }),
+    ).toBe(firstSegment);
+  });
+
+  it("moves to the next translation segment only after the spoken offset crosses the current range", () => {
+    const locatorText =
+      "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec " +
+      "romeo sierra tango uniform victor whiskey xray yankee zulu and the line keeps going with many more words " +
+      "that should not be translated all at once because the TTS side note should stay compact while reading";
+
+    expect(
+      extractCurrentSpokenSentence({
+        fallbackText: "because",
+        locatorText,
+        startOffset: locatorText.indexOf("because"),
+      }),
+    ).toBe(
+      "whiskey xray yankee zulu and the line keeps going with many more words that should not be translated all at once because the TTS side note",
     );
   });
 

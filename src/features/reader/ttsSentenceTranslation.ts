@@ -42,6 +42,15 @@ function findCurrentWordStart(text: string, offset: number) {
   return start;
 }
 
+function findNextSegmentStart(text: string, offset: number) {
+  let start = Math.max(0, Math.min(offset, text.length));
+  while (start < text.length && segmentBoundaryPattern.test(text[start] ?? "")) {
+    start += 1;
+  }
+
+  return start;
+}
+
 function findSegmentEnd(text: string, start: number) {
   const hardEnd = Math.min(text.length, start + spokenTranslationSegmentMaxLength);
   if (hardEnd >= text.length) {
@@ -58,13 +67,31 @@ function findSegmentEnd(text: string, start: number) {
   return hardEnd;
 }
 
-function extractBoundedSpokenSegment(text: string, startOffset = 0) {
+function extractStableSpokenSegment(text: string, startOffset = 0) {
   const normalized = normalizeSpokenSentence(text);
   if (!normalized) {
     return "";
   }
 
-  const start = findCurrentWordStart(normalized, startOffset);
+  const targetOffset = findCurrentWordStart(normalized, startOffset);
+  let start = 0;
+
+  while (start < normalized.length) {
+    const end = findSegmentEnd(normalized, start);
+    if (targetOffset < end || end >= normalized.length) {
+      return (
+        normalizeSpokenSentence(normalized.slice(start, end)) ||
+        normalized.slice(start, start + spokenTranslationSegmentMaxLength)
+      );
+    }
+
+    const nextStart = findNextSegmentStart(normalized, end);
+    if (nextStart <= start) {
+      break;
+    }
+    start = nextStart;
+  }
+
   const end = findSegmentEnd(normalized, start);
   return normalizeSpokenSentence(normalized.slice(start, end)) || normalized.slice(start, start + spokenTranslationSegmentMaxLength);
 }
@@ -80,13 +107,13 @@ export function extractCurrentSpokenSentence({
 }) {
   const normalizedLocator = normalizeSpokenSentence(locatorText ?? "");
   if (!normalizedLocator) {
-    return extractBoundedSpokenSegment(fallbackText);
+    return extractStableSpokenSegment(fallbackText);
   }
 
   if (typeof startOffset !== "number" || startOffset < 0) {
-    return extractBoundedSpokenSegment(fallbackText);
+    return extractStableSpokenSegment(fallbackText);
   }
 
-  const candidate = extractBoundedSpokenSegment(normalizedLocator, startOffset);
-  return candidate || extractBoundedSpokenSegment(fallbackText);
+  const candidate = extractStableSpokenSegment(normalizedLocator, startOffset);
+  return candidate || extractStableSpokenSegment(fallbackText);
 }
