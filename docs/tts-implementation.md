@@ -38,6 +38,7 @@ TTS 控制面板
 | `src/features/tts/ttsQueue.ts` | 连续朗读队列，按 chunk 串行发声，并把 boundary 的 `charIndex` 转换成当前 marker、当前词和正文 source offsets。 |
 | `src/features/tts/chunkText.ts` | 将正文块拆成适合 TTS 的 `ChunkSegment`，保留 CFI、spine、locatorText、sourceStart/sourceEnd 等回正文定位信息。 |
 | `src/features/reader/ReaderPage.tsx` | TTS 编排层：抽取正文、启动/暂停/继续/停止队列、维护 `ttsState`、生成 active segment、处理设置和翻译侧注。 |
+| `src/features/reader/useDocumentVisibility.ts` | 将 Page Visibility API 转成 React 可见状态，用于在窗口最小化或标签页进入后台时暂停自动翻译。 |
 | `src/features/reader/EpubViewport.tsx` | React 到 epub runtime 的桥接层，把 `activeTtsSegment` 和 `ttsFollowPlayback` 转发给 runtime handle。 |
 | `src/features/reader/epubRuntime.ts` | epub.js 集成层，负责从 iframe 文档抽取 TTS blocks、定位 active segment、插入高亮 DOM、跟随滚动/翻页。 |
 | `src/features/reader/readerPreferences.ts` | 注入 epub iframe 的阅读主题，其中包含 `.reader-tts-active-segment` 样式。 |
@@ -584,6 +585,17 @@ bookId::spineItemId::normalizedSentence
 ```
 
 如果缓存没有命中，则调用 `ai.translateSelection(currentSpokenSentence, { targetLanguage })`。这里的 `currentSpokenSentence` 是当前朗读片段，变量名保留历史命名。请求用递增版本号防止过期结果覆盖当前片段。
+
+### 前后台切换
+
+TTS 自动翻译通过 `useDocumentVisibility()` 监听 Page Visibility API。浏览器窗口最小化或用户切换到其他标签页时，外层文档的 `visibilityState` 会变为 `hidden`，此时：
+
+- 当前朗读翻译片段被视为空，不再为后续 TTS marker 发起翻译请求；
+- 已显示的翻译侧注会被清空；
+- 翻译请求版本号递增，页面隐藏前已经发出但尚未返回的结果会被丢弃，不能写入缓存或重新显示；
+- TTS 发声、队列推进、正文 marker 更新和 EPUB 正文高亮仍继续运行。
+
+文档恢复为 `visible` 后，`ReaderPage` 会根据最新 TTS marker 重新计算当前稳定翻译片段。已有缓存时直接复用；没有缓存时只为当前片段发起一次新请求。隐藏期间经过的中间片段不会补发翻译。
 
 ### 侧注定位
 

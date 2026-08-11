@@ -37,7 +37,7 @@
 - Consumes: browser `Document.visibilityState`, `visibilitychange`, React `useEffect`, and React `useState`.
 - Produces: `useDocumentVisibility(documentLike?: Document): boolean`; `true` means automatic translation may run.
 
-- [ ] **Step 1: Write the failing hook test**
+- [x] **Step 1: Write the failing hook test**
 
 Create a test that renders the hook against the jsdom document, changes its visibility state, dispatches `visibilitychange`, and verifies the returned boolean. Preserve and restore the original property descriptor so other tests remain isolated.
 
@@ -82,13 +82,13 @@ it("tracks whether the document is visible", () => {
 });
 ```
 
-- [ ] **Step 2: Run the hook test and verify RED**
+- [x] **Step 2: Run the hook test and verify RED**
 
 Run: `npm test -- src/features/reader/useDocumentVisibility.test.tsx`
 
 Expected: FAIL because `./useDocumentVisibility` does not exist.
 
-- [ ] **Step 3: Implement the hook**
+- [x] **Step 3: Implement the hook**
 
 Create the hook with a visible fallback when no document exists. Read once in the state initializer, synchronize again when the effect subscribes, and remove the exact listener on cleanup.
 
@@ -117,13 +117,13 @@ export function useDocumentVisibility(
 }
 ```
 
-- [ ] **Step 4: Run the hook test and verify GREEN**
+- [x] **Step 4: Run the hook test and verify GREEN**
 
 Run: `npm test -- src/features/reader/useDocumentVisibility.test.tsx`
 
 Expected: PASS with no React act warnings.
 
-- [ ] **Step 5: Commit the hook**
+- [x] **Step 5: Commit the hook**
 
 ```bash
 git add src/features/reader/useDocumentVisibility.ts src/features/reader/useDocumentVisibility.test.tsx
@@ -140,7 +140,7 @@ git commit -m "feat: track reader document visibility"
 - Consumes: `useDocumentVisibility(): boolean` from Task 1 and the existing `spokenSentenceTranslationRequestRef` request-version guard.
 - Produces: no automatic translation calls while hidden; one current-segment cache lookup or request after visibility returns.
 
-- [ ] **Step 1: Add test visibility controls**
+- [x] **Step 1: Add test visibility controls**
 
 In `ReaderPage.test.tsx`, preserve the original descriptor, add a helper, and restore it from the existing `afterEach`.
 
@@ -158,7 +158,7 @@ function setDocumentVisibility(state: DocumentVisibilityState) {
 
 The cleanup branch restores `originalDocumentVisibilityState` when present and otherwise deletes the test-owned property.
 
-- [ ] **Step 2: Write the hidden-playback integration test**
+- [x] **Step 2: Write the hidden-playback integration test**
 
 Reuse the continuous-TTS fixture shape from `does not repeat spoken segment translation while tts advances inside the same translation range`. Start visibly and assert one translation call. Set visibility to hidden, emit a speech boundary at the `because` token so playback enters a later stable translation segment, and assert the call count stays at one and the note is absent. Restore visible state and assert the second call contains `because`; dispatch another visible event and confirm the count remains two.
 
@@ -186,7 +186,7 @@ act(() => setDocumentVisibility("visible"));
 expect(ai.translateSelection).toHaveBeenCalledTimes(2);
 ```
 
-- [ ] **Step 3: Write the stale in-flight result test**
+- [x] **Step 3: Write the stale in-flight result test**
 
 Start TTS with a deferred first translation. After the first request starts, hide the document, resolve the deferred promise, and verify no note is shown. Restore visibility and verify a second call translates the current segment and renders its result.
 
@@ -212,13 +212,13 @@ expect(await screen.findByText("恢复后的翻译")).toBeInTheDocument();
 expect(ai.translateSelection).toHaveBeenCalledTimes(2);
 ```
 
-- [ ] **Step 4: Run the reader tests and verify RED**
+- [x] **Step 4: Run the reader tests and verify RED**
 
 Run: `npm test -- src/features/reader/ReaderPage.test.tsx -t "document is hidden|after the document becomes hidden"`
 
 Expected: FAIL because `ReaderPage` continues deriving translation segments and calling `translateSelection` while hidden.
 
-- [ ] **Step 5: Gate spoken translation in ReaderPage**
+- [x] **Step 5: Gate spoken translation in ReaderPage**
 
 Import and call the hook:
 
@@ -238,13 +238,13 @@ if (!documentVisible || !activeContinuousTtsSegment || ttsState.mode !== "contin
 
 No translation-effect branch is added. Returning an empty spoken segment deliberately uses the existing reset path to increment `spokenSentenceTranslationRequestRef`, clear the note, and invalidate older promises.
 
-- [ ] **Step 6: Run focused tests and verify GREEN**
+- [x] **Step 6: Run focused tests and verify GREEN**
 
 Run: `npm test -- src/features/reader/useDocumentVisibility.test.tsx src/features/reader/ReaderPage.test.tsx`
 
 Expected: both files pass, including the existing stable-segment and setting-disable cases.
 
-- [ ] **Step 7: Commit reader behavior**
+- [x] **Step 7: Commit reader behavior**
 
 ```bash
 git add src/features/reader/ReaderPage.tsx src/features/reader/ReaderPage.test.tsx
@@ -260,7 +260,7 @@ git commit -m "fix: pause tts translation while hidden"
 - Consumes: final behavior from Tasks 1 and 2.
 - Produces: maintainers can identify the visibility hook and understand hidden/visible translation behavior.
 
-- [ ] **Step 1: Update the implementation document**
+- [x] **Step 1: Update the implementation document**
 
 Add `src/features/reader/useDocumentVisibility.ts` to the key-file table. Under `正在朗读片段的中文侧注`, add a `前后台切换` subsection documenting:
 
@@ -270,32 +270,32 @@ Add `src/features/reader/useDocumentVisibility.ts` to the key-file table. Under 
 - TTS playback, marker advancement, and EPUB highlighting continue;
 - visible transition derives only the latest segment and uses cache before requesting.
 
-- [ ] **Step 2: Run formatting and diff checks**
+- [x] **Step 2: Run formatting and diff checks**
 
 Run: `git diff --check`
 
 Expected: exit code 0 with no output.
 
-- [ ] **Step 3: Run all unit tests**
+- [x] **Step 3: Run all unit tests**
 
 Run: `npm test`
 
 Expected: all Vitest files and tests pass.
 
-- [ ] **Step 4: Run the production build**
+- [x] **Step 4: Run the production build**
 
 Run: `npm run build`
 
 Expected: TypeScript checking and Vite production build pass. The repository's existing large-chunk warning is acceptable.
 
-- [ ] **Step 5: Commit documentation**
+- [x] **Step 5: Commit documentation**
 
 ```bash
 git add docs/tts-implementation.md docs/superpowers/plans/2026-08-11-tts-background-translation-pause.md
 git commit -m "docs: explain background tts translation pause"
 ```
 
-- [ ] **Step 6: Inspect final scope**
+- [x] **Step 6: Inspect final scope**
 
 Run: `git status --short && git log -4 --oneline && git diff HEAD~3 --stat`
 
