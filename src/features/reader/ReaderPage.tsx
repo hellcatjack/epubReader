@@ -45,6 +45,7 @@ import { SelectionTranslationBubble } from "./SelectionTranslationBubble";
 import { SelectionPopover } from "./SelectionPopover";
 import { TtsSentenceTranslationNote } from "./TtsSentenceTranslationNote";
 import { TopBar } from "./TopBar";
+import { useDocumentVisibility } from "./useDocumentVisibility";
 import { getEffectiveReaderPreferences, toReaderPreferences, type ReaderPreferences } from "./readerPreferences";
 import { selectionBridge, type ReaderSelection } from "./selectionBridge";
 import {
@@ -697,8 +698,9 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     ttsState.mode,
     ttsState.status,
   ]);
+  const documentVisible = useDocumentVisibility();
   const currentSpokenSentence = useMemo(() => {
-    if (!activeContinuousTtsSegment || ttsState.mode !== "continuous" || ttsState.status === "idle") {
+    if (!documentVisible || !activeContinuousTtsSegment || ttsState.mode !== "continuous" || ttsState.status === "idle") {
       return "";
     }
 
@@ -710,6 +712,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     return isIgnorableSpokenSentence(sentence) ? "" : sentence;
   }, [
     activeContinuousTtsSegment,
+    documentVisible,
     ttsState.currentText,
     ttsState.markerLocatorText,
     ttsState.markerStartOffset,
