@@ -298,6 +298,42 @@ function formatTtsError(error: unknown) {
   return "Browser speech synthesis error.";
 }
 
+function formatAiError(error: unknown) {
+  if (typeof error === "object" && error !== null && "kind" in error) {
+    const kind = Reflect.get(error, "kind");
+
+    if (kind === "network-or-cors") {
+      return "无法连接 AI 服务，请检查接口地址、网络连接和 CORS 配置。";
+    }
+
+    if (kind === "quota-or-billing") {
+      return "AI 服务额度不足或请求过于频繁。";
+    }
+
+    if (kind === "unsupported") {
+      return "当前 AI 服务不支持此操作。";
+    }
+
+    if (kind === "aborted") {
+      return "请求已取消。";
+    }
+
+    if (kind === "provider") {
+      return "AI 服务返回错误，请检查 Token、模型和接口配置。";
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+
+  return "未知错误。";
+}
+
 function isAutoSpeakableSelection(text: string) {
   const normalized = text.trim();
   if (!normalized) {
@@ -1725,7 +1761,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         return;
       }
       if (singleWordSelection) {
-        setTranslationError(`Translate failed: ${String(error)}`);
+        setTranslationError(`Translate failed: ${formatAiError(error)}`);
       }
       setEnglishDefinition("");
       setFloatingSelectionTranslation(null);
@@ -1764,7 +1800,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         return;
       }
       setGrammarExplainPopup({
-        error: `语法解析失败：${String(error)}`,
+        error: `语法解析失败：${formatAiError(error)}`,
         explanation: "",
         isLoading: false,
         selectedText: nextText,

@@ -489,7 +489,7 @@ it("keeps translation visible when explain fails", async () => {
     }),
     translateSelection: vi.fn(async () => "按压"),
     explainSelection: vi.fn(async () => {
-      throw new Error("provider unavailable");
+      throw { kind: "provider" };
     }),
     synthesizeSpeech: vi.fn(async () => new Blob(["audio"], { type: "audio/wav" })),
   };
@@ -508,7 +508,10 @@ it("keeps translation visible when explain fails", async () => {
 
   await user.click(screen.getByRole("button", { name: /explain/i }));
 
-  expect(await screen.findByText(/语法解析失败：/)).toBeInTheDocument();
+  expect(
+    await screen.findByText("语法解析失败：AI 服务返回错误，请检查 Token、模型和接口配置。"),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument();
   expect(screen.getByLabelText("Translation result")).toHaveTextContent("按压");
 });
 

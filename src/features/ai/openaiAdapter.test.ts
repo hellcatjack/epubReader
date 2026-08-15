@@ -548,4 +548,6 @@ it("reports local network errors and marks speech synthesis as unsupported for n
     kind: "unsupported",
   });
   expect(normalizeOpenAIError(new Error("unsupported"))).toEqual({ kind: "unsupported" });
+  expect(normalizeOpenAIError({ kind: "network-or-cors" })).toEqual({ kind: "network-or-cors" });
+  expect(normalizeOpenAIError({ kind: "quota-or-billing" })).toEqual({ kind: "quota-or-billing" });
 });

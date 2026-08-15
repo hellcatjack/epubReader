@@ -49,6 +49,16 @@ export type OpenAIError = {
   kind: OpenAIErrorKind;
 };
 
+function isOpenAIErrorKind(value: unknown): value is OpenAIErrorKind {
+  return (
+    value === "aborted" ||
+    value === "network-or-cors" ||
+    value === "provider" ||
+    value === "quota-or-billing" ||
+    value === "unsupported"
+  );
+}
+
 function extractChatOutputText(payload: unknown) {
   if (!payload || typeof payload !== "object") {
     return "";
@@ -311,13 +321,11 @@ export function normalizeOpenAIError(error: unknown): OpenAIError {
     return { kind: "unsupported" };
   }
 
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "kind" in error &&
-    Reflect.get(error, "kind") === "unsupported"
-  ) {
-    return { kind: "unsupported" };
+  if (typeof error === "object" && error !== null && "kind" in error) {
+    const kind = Reflect.get(error, "kind");
+    if (isOpenAIErrorKind(kind)) {
+      return { kind };
+    }
   }
 
   return { kind: "provider" };
