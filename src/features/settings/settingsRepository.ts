@@ -1,8 +1,12 @@
 import { db } from "../../lib/db/appDb";
-import type { SettingsInput, SettingsPatch, ThemeName } from "../../lib/types/settings";
+import type { LlmReasoningEffort, SettingsInput, SettingsPatch, ThemeName } from "../../lib/types/settings";
 import { DEFAULT_LLM_API_URL } from "../ai/aiEndpoints";
 
 const LEGACY_SEPIA_DEFAULT_CONTENT_BACKGROUND_COLOR = "#f6edde";
+
+function isLlmReasoningEffort(value: unknown): value is LlmReasoningEffort {
+  return value === "default" || value === "low" || value === "medium" || value === "high";
+}
 
 export function getDefaultContentBackgroundColor(theme: ThemeName) {
   if (theme === "light") {
@@ -32,8 +36,11 @@ export function createDefaultSettings(_hostname?: string): SettingsInput {
   return {
     apiKey: "",
     geminiModel: "gemini-2.5-flash",
+    grammarLlmApiKey: "",
     grammarLlmApiUrl: "",
     grammarLlmModel: "",
+    grammarLlmReasoningEffort: "default",
+    llmApiKey: "",
     llmApiUrl: DEFAULT_LLM_API_URL,
     localLlmModel: "",
     targetLanguage: "zh-CN",
@@ -70,8 +77,11 @@ function isLegacySettingsRecord(record: Partial<SettingsInput> | undefined | nul
 
   return (
     typeof record.llmApiUrl !== "string" ||
+    typeof record.llmApiKey !== "string" ||
+    typeof record.grammarLlmApiKey !== "string" ||
     typeof record.grammarLlmApiUrl !== "string" ||
     typeof record.grammarLlmModel !== "string" ||
+    !isLlmReasoningEffort(record.grammarLlmReasoningEffort) ||
     typeof record.localLlmModel !== "string" ||
     typeof record.geminiModel !== "string" ||
     typeof record.translationProvider !== "string" ||
@@ -123,6 +133,10 @@ async function migrateSettings(record: Partial<SettingsInput> | null) {
 
   if (migratedSettings.translationProvider !== "local_llm" && migratedSettings.translationProvider !== "gemini_byok") {
     migratedSettings.translationProvider = defaultSettings.translationProvider;
+  }
+
+  if (!isLlmReasoningEffort(migratedSettings.grammarLlmReasoningEffort)) {
+    migratedSettings.grammarLlmReasoningEffort = defaultSettings.grammarLlmReasoningEffort;
   }
 
   if (

@@ -2,13 +2,17 @@ export type ThemeName = "light" | "sepia" | "dark";
 export type ReadingMode = "scrolled" | "paginated";
 export type ReaderFontFamily = "serif" | "sans" | "book";
 export type TranslationProvider = "local_llm" | "gemini_byok";
+export type LlmReasoningEffort = "default" | "low" | "medium" | "high";
 
 export type SettingsRecord = {
   id: "settings";
   apiKey: string;
   geminiModel: string;
+  grammarLlmApiKey: string;
   grammarLlmApiUrl: string;
   grammarLlmModel: string;
+  grammarLlmReasoningEffort: LlmReasoningEffort;
+  llmApiKey: string;
   llmApiUrl: string;
   localLlmModel: string;
   targetLanguage: string;
