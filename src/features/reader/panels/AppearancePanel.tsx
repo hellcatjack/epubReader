@@ -1,20 +1,26 @@
-import type { TranslationProvider } from "../../../lib/types/settings";
-import { geminiModelOptions, translationProviderOptions } from "../../ai/providerOptions";
+import type { LlmReasoningEffort, TranslationProvider } from "../../../lib/types/settings";
+import { geminiModelOptions, llmReasoningEffortOptions, translationProviderOptions } from "../../ai/providerOptions";
 import { useLocalLlmModels } from "../../ai/useLocalLlmModels";
 import type { ReaderPreferences } from "../readerPreferences";
 
 type AppearancePanelProps = {
   apiKey?: string;
   geminiModel?: string;
+  grammarLlmApiKey?: string;
   grammarLlmApiUrl?: string;
   grammarLlmModel?: string;
+  grammarLlmReasoningEffort?: LlmReasoningEffort;
+  llmApiKey?: string;
   llmApiUrl?: string;
   localLlmModel?: string;
   onApiKeyChange?: (value: string) => void;
   onChange?: (patch: Partial<ReaderPreferences>) => void;
   onGeminiModelChange?: (value: string) => void;
+  onGrammarLlmApiKeyChange?: (value: string) => void;
   onGrammarLlmApiUrlChange?: (value: string) => void;
   onGrammarLlmModelChange?: (value: string) => void;
+  onGrammarLlmReasoningEffortChange?: (value: LlmReasoningEffort) => void;
+  onLlmApiKeyChange?: (value: string) => void;
   onLlmApiUrlChange?: (value: string) => void;
   onLocalLlmModelChange?: (value: string) => void;
   onTranslationProviderChange?: (value: TranslationProvider) => void;
@@ -43,12 +49,8 @@ function getLocalModelDiscoveryNote(status: "idle" | "loading" | "ready" | "erro
     return "Loading models from /v1/models…";
   }
 
-  if (status === "blocked") {
+  if (message) {
     return message;
-  }
-
-  if (status === "error") {
-    return "Could not load models from the current endpoint. You can still type the model id manually.";
   }
 
   return "Models are discovered automatically from /v1/models.";
@@ -57,26 +59,38 @@ function getLocalModelDiscoveryNote(status: "idle" | "loading" | "ready" | "erro
 export function AppearancePanel({
   apiKey = "",
   geminiModel = "gemini-2.5-flash",
+  grammarLlmApiKey = "",
   grammarLlmApiUrl = "",
   grammarLlmModel = "",
+  grammarLlmReasoningEffort = "default",
+  llmApiKey = "",
   llmApiUrl = "",
   localLlmModel = "",
   onApiKeyChange,
   onChange,
   onGeminiModelChange,
+  onGrammarLlmApiKeyChange,
   onGrammarLlmApiUrlChange,
   onGrammarLlmModelChange,
+  onGrammarLlmReasoningEffortChange,
+  onLlmApiKeyChange,
   onLlmApiUrlChange,
   onLocalLlmModelChange,
   onTranslationProviderChange,
   preferences,
   translationProvider = "local_llm",
 }: AppearancePanelProps) {
-  const localModelState = useLocalLlmModels(llmApiUrl, translationProvider === "local_llm");
+  const localModelState = useLocalLlmModels(llmApiUrl, {
+    apiKey: llmApiKey,
+    enabled: translationProvider === "local_llm",
+  });
   const localModelOptions = mergeModelOptions(localLlmModel, localModelState.models);
   const useManualLocalModelInput = localModelState.status === "blocked" || localModelState.status === "error";
   const grammarModelDiscoveryEndpoint = grammarLlmApiUrl || llmApiUrl;
-  const grammarModelState = useLocalLlmModels(grammarModelDiscoveryEndpoint, translationProvider === "local_llm");
+  const grammarModelState = useLocalLlmModels(grammarModelDiscoveryEndpoint, {
+    apiKey: grammarLlmApiKey || llmApiKey,
+    enabled: translationProvider === "local_llm",
+  });
   const grammarModelOptions = mergeModelOptions(grammarLlmModel, grammarModelState.models);
   const useManualGrammarModelInput = grammarModelState.status === "blocked" || grammarModelState.status === "error";
 
@@ -235,6 +249,19 @@ export function AppearancePanel({
               <small className="appearance-field-note">Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
             </label>
             <label className="appearance-field appearance-field-wide">
+              <span>LLM API Token</span>
+              <input
+                aria-label="LLM API Token"
+                autoComplete="off"
+                onChange={(event) => onLlmApiKeyChange?.(event.target.value)}
+                placeholder="Bearer token"
+                spellCheck={false}
+                type="password"
+                value={llmApiKey}
+              />
+              <small className="appearance-field-note">Stored only in this browser and sent as a Bearer token.</small>
+            </label>
+            <label className="appearance-field appearance-field-wide">
               <span>Grammar LLM API URL</span>
               <input
                 aria-label="Grammar LLM API URL"
@@ -245,6 +272,19 @@ export function AppearancePanel({
                 value={grammarLlmApiUrl}
               />
               <small className="appearance-field-note">Used only for Explain grammar analysis.</small>
+            </label>
+            <label className="appearance-field appearance-field-wide">
+              <span>Grammar LLM API Token</span>
+              <input
+                aria-label="Grammar LLM API Token"
+                autoComplete="off"
+                onChange={(event) => onGrammarLlmApiKeyChange?.(event.target.value)}
+                placeholder="Reuse translation token"
+                spellCheck={false}
+                type="password"
+                value={grammarLlmApiKey}
+              />
+              <small className="appearance-field-note">Leave blank to reuse the normal translation token.</small>
             </label>
             <label className="appearance-field appearance-field-wide">
               <span>Local LLM model</span>
@@ -306,6 +346,23 @@ export function AppearancePanel({
                 {getLocalModelDiscoveryNote(grammarModelState.status, grammarModelState.message)} Leave blank to reuse the
                 normal translation model.
               </small>
+            </label>
+            <label className="appearance-field appearance-field-wide">
+              <span>Grammar reasoning effort</span>
+              <select
+                aria-label="Grammar reasoning effort"
+                onChange={(event) =>
+                  onGrammarLlmReasoningEffortChange?.(event.target.value as LlmReasoningEffort)
+                }
+                value={grammarLlmReasoningEffort}
+              >
+                {llmReasoningEffortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small className="appearance-field-note">Applied only to Explain requests.</small>
             </label>
           </>
         ) : (

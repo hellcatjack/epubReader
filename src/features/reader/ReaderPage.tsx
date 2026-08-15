@@ -1925,8 +1925,16 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     await updateSettings({ llmApiUrl });
   }
 
+  async function handleLlmApiKeyChange(llmApiKey: string) {
+    await updateSettings({ llmApiKey });
+  }
+
   async function handleGrammarLlmApiUrlChange(grammarLlmApiUrl: string) {
     await updateSettings({ grammarLlmApiUrl });
+  }
+
+  async function handleGrammarLlmApiKeyChange(grammarLlmApiKey: string) {
+    await updateSettings({ grammarLlmApiKey });
   }
 
   async function handleTranslationProviderChange(translationProvider: TranslationProvider) {
@@ -1939,6 +1947,12 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
 
   async function handleGrammarLlmModelChange(grammarLlmModel: string) {
     await updateSettings({ grammarLlmModel });
+  }
+
+  async function handleGrammarLlmReasoningEffortChange(
+    grammarLlmReasoningEffort: SettingsInput["grammarLlmReasoningEffort"],
+  ) {
+    await updateSettings({ grammarLlmReasoningEffort });
   }
 
   async function handleApiKeyChange(apiKey: string) {
@@ -2235,15 +2249,21 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
       appearance={readerPreferences}
       aria-label="Reader tools"
       geminiModel={settings.geminiModel}
+      grammarLlmApiKey={settings.grammarLlmApiKey}
       grammarLlmApiUrl={settings.grammarLlmApiUrl}
       grammarLlmModel={settings.grammarLlmModel}
+      grammarLlmReasoningEffort={settings.grammarLlmReasoningEffort}
+      llmApiKey={settings.llmApiKey}
       llmApiUrl={settings.llmApiUrl}
       localLlmModel={settings.localLlmModel}
       onApiKeyChange={handleApiKeyChange}
       onAppearanceChange={handleAppearanceChange}
       onGeminiModelChange={handleGeminiModelChange}
+      onGrammarLlmApiKeyChange={handleGrammarLlmApiKeyChange}
       onGrammarLlmApiUrlChange={handleGrammarLlmApiUrlChange}
       onGrammarLlmModelChange={handleGrammarLlmModelChange}
+      onGrammarLlmReasoningEffortChange={handleGrammarLlmReasoningEffortChange}
+      onLlmApiKeyChange={handleLlmApiKeyChange}
       onLlmApiUrlChange={handleLlmApiUrlChange}
       onLocalLlmModelChange={handleLocalLlmModelChange}
       onSelectionReadAloud={handleReadAloud}

@@ -204,6 +204,55 @@ it("exposes grammar llm api controls in the reader appearance panel", () => {
   expect(screen.getByLabelText(/grammar llm model/i)).toBeInTheDocument();
 });
 
+it("renders API Token and reasoning effort controls and emits updates", () => {
+  const onGrammarLlmApiKeyChange = vi.fn();
+  const onGrammarLlmReasoningEffortChange = vi.fn();
+  const onLlmApiKeyChange = vi.fn();
+
+  render(
+    <AppearancePanel
+      grammarLlmApiKey="grammar-token"
+      grammarLlmReasoningEffort="high"
+      llmApiKey="translation-token"
+      onGrammarLlmApiKeyChange={onGrammarLlmApiKeyChange}
+      onGrammarLlmReasoningEffortChange={onGrammarLlmReasoningEffortChange}
+      onLlmApiKeyChange={onLlmApiKeyChange}
+      preferences={{
+        columnCount: 1,
+        contentPadding: 32,
+        contentBackgroundColor: "#f6edde",
+        fontFamily: "book",
+        fontScale: 1,
+        letterSpacing: 0,
+        lineHeight: 1.7,
+        maxLineWidth: 760,
+        paragraphIndent: 1.8,
+        paragraphSpacing: 0.85,
+        readingMode: "scrolled",
+        theme: "sepia",
+        ttsSentenceTranslationFontScale: 1,
+      }}
+    />,
+  );
+
+  const llmApiKey = screen.getByLabelText("LLM API Token");
+  const grammarLlmApiKey = screen.getByLabelText("Grammar LLM API Token");
+  const reasoningEffort = screen.getByLabelText("Grammar reasoning effort");
+
+  expect(llmApiKey).toHaveAttribute("type", "password");
+  expect(llmApiKey).toHaveValue("translation-token");
+  expect(grammarLlmApiKey).toHaveValue("grammar-token");
+  expect(reasoningEffort).toHaveValue("high");
+
+  fireEvent.change(llmApiKey, { target: { value: "next-translation-token" } });
+  fireEvent.change(grammarLlmApiKey, { target: { value: "next-grammar-token" } });
+  fireEvent.change(reasoningEffort, { target: { value: "medium" } });
+
+  expect(onLlmApiKeyChange).toHaveBeenCalledWith("next-translation-token");
+  expect(onGrammarLlmApiKeyChange).toHaveBeenCalledWith("next-grammar-token");
+  expect(onGrammarLlmReasoningEffortChange).toHaveBeenCalledWith("medium");
+});
+
 it("switches to gemini byok controls inside the appearance panel", () => {
   const onTranslationProviderChange = vi.fn();
   const onApiKeyChange = vi.fn();

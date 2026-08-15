@@ -234,6 +234,52 @@ it("shows grammar llm api and model fields", async () => {
   expect(screen.getByLabelText(/grammar llm model/i)).toBeInTheDocument();
 });
 
+it("persists OpenAI API Token and Grammar reasoning effort", async () => {
+  const user = userEvent.setup();
+  await db.settings.put(
+    createStoredSettings({
+      grammarLlmApiKey: "grammar-token",
+      grammarLlmReasoningEffort: "high",
+      llmApiKey: "translation-token",
+    }),
+  );
+  installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
+  );
+
+  render(<SettingsDialog />);
+
+  const llmApiKey = await screen.findByLabelText("LLM API Token");
+  const grammarLlmApiKey = screen.getByLabelText("Grammar LLM API Token");
+  const reasoningEffort = screen.getByLabelText("Grammar reasoning effort");
+
+  expect(llmApiKey).toHaveAttribute("type", "password");
+  expect(llmApiKey).toHaveValue("translation-token");
+  expect(grammarLlmApiKey).toHaveAttribute("type", "password");
+  expect(grammarLlmApiKey).toHaveValue("grammar-token");
+  expect(reasoningEffort).toHaveValue("high");
+
+  await user.clear(llmApiKey);
+  await user.type(llmApiKey, "next-translation-token");
+  await user.clear(grammarLlmApiKey);
+  await user.type(grammarLlmApiKey, "next-grammar-token");
+  await user.selectOptions(reasoningEffort, "medium");
+  await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+  await expect(getSettings()).resolves.toMatchObject({
+    grammarLlmApiKey: "next-grammar-token",
+    grammarLlmReasoningEffort: "medium",
+    llmApiKey: "next-translation-token",
+  });
+});
+
 it("switches to gemini byok fields and persists the gemini provider settings", async () => {
   const user = userEvent.setup();
   installSpeechSynthesis([buildVoice("Microsoft Ava Online (Natural)", "en-US", true)]);

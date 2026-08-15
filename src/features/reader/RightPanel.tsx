@@ -1,5 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
-import type { TranslationProvider } from "../../lib/types/settings";
+import type { LlmReasoningEffort, TranslationProvider } from "../../lib/types/settings";
 import type { ReaderPreferences } from "./readerPreferences";
 import { AiResultPanel } from "./panels/AiResultPanel";
 import { AppearancePanel } from "./panels/AppearancePanel";
@@ -12,15 +12,21 @@ type RightPanelProps = ComponentPropsWithoutRef<"aside"> & {
   aiIpa?: string;
   appearance?: ReaderPreferences;
   geminiModel?: string;
+  grammarLlmApiKey?: string;
   grammarLlmApiUrl?: string;
   grammarLlmModel?: string;
+  grammarLlmReasoningEffort?: LlmReasoningEffort;
+  llmApiKey?: string;
   llmApiUrl?: string;
   localLlmModel?: string;
   onApiKeyChange?: (value: string) => void;
   onAppearanceChange?: (patch: Partial<ReaderPreferences>) => void;
   onGeminiModelChange?: (value: string) => void;
+  onGrammarLlmApiKeyChange?: (value: string) => void;
   onGrammarLlmApiUrlChange?: (value: string) => void;
   onGrammarLlmModelChange?: (value: string) => void;
+  onGrammarLlmReasoningEffortChange?: (value: LlmReasoningEffort) => void;
+  onLlmApiKeyChange?: (value: string) => void;
   onLlmApiUrlChange?: (value: string) => void;
   onLocalLlmModelChange?: (value: string) => void;
   onSelectionReadAloud?: () => void;
@@ -58,15 +64,21 @@ export function RightPanel({
   aiIpa,
   appearance,
   geminiModel,
+  grammarLlmApiKey,
   grammarLlmApiUrl,
   grammarLlmModel,
+  grammarLlmReasoningEffort,
+  llmApiKey,
   llmApiUrl,
   localLlmModel,
   onApiKeyChange,
   onAppearanceChange,
   onGeminiModelChange,
+  onGrammarLlmApiKeyChange,
   onGrammarLlmApiUrlChange,
   onGrammarLlmModelChange,
+  onGrammarLlmReasoningEffortChange,
+  onLlmApiKeyChange,
   onLlmApiUrlChange,
   onLocalLlmModelChange,
   onSelectionReadAloud,
@@ -139,15 +151,21 @@ export function RightPanel({
           <AppearancePanel
             apiKey={apiKey}
             geminiModel={geminiModel}
+            grammarLlmApiKey={grammarLlmApiKey}
             grammarLlmApiUrl={grammarLlmApiUrl}
             grammarLlmModel={grammarLlmModel}
+            grammarLlmReasoningEffort={grammarLlmReasoningEffort}
+            llmApiKey={llmApiKey}
             llmApiUrl={llmApiUrl}
             localLlmModel={localLlmModel}
             onApiKeyChange={onApiKeyChange}
             onChange={onAppearanceChange}
             onGeminiModelChange={onGeminiModelChange}
+            onGrammarLlmApiKeyChange={onGrammarLlmApiKeyChange}
             onGrammarLlmApiUrlChange={onGrammarLlmApiUrlChange}
             onGrammarLlmModelChange={onGrammarLlmModelChange}
+            onGrammarLlmReasoningEffortChange={onGrammarLlmReasoningEffortChange}
+            onLlmApiKeyChange={onLlmApiKeyChange}
             onLlmApiUrlChange={onLlmApiUrlChange}
             onLocalLlmModelChange={onLocalLlmModelChange}
             onTranslationProviderChange={onTranslationProviderChange}

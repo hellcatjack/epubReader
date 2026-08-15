@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { APP_BUILD_ID } from "../../app/buildInfo";
-import type { ReaderFontFamily, ReadingMode, SettingsInput, ThemeName, TranslationProvider } from "../../lib/types/settings";
-import { geminiModelOptions, translationProviderOptions } from "../ai/providerOptions";
+import type {
+  LlmReasoningEffort,
+  ReaderFontFamily,
+  ReadingMode,
+  SettingsInput,
+  ThemeName,
+  TranslationProvider,
+} from "../../lib/types/settings";
+import { geminiModelOptions, llmReasoningEffortOptions, translationProviderOptions } from "../ai/providerOptions";
 import { useLocalLlmModels } from "../ai/useLocalLlmModels";
 import { createBrowserTtsClient, type BrowserTtsVoice } from "../tts/browserTtsClient";
 import { dispatchSettingsUpdated, writeRefreshSettingsSnapshot } from "./refreshSettingsSnapshot";
@@ -31,12 +38,8 @@ function getLocalModelDiscoveryNote(status: "idle" | "loading" | "ready" | "erro
     return "Loading models from /v1/models…";
   }
 
-  if (status === "blocked") {
+  if (message) {
     return message;
-  }
-
-  if (status === "error") {
-    return "Could not load models from the current endpoint. You can still type the model id manually.";
   }
 
   return "Models are discovered automatically from /v1/models.";
@@ -63,13 +66,19 @@ export function SettingsDialog() {
   const [status, setStatus] = useState(
     "AI translation is configurable per provider. Microsoft Edge on desktop is recommended for the best TTS listening experience.",
   );
-  const localModelState = useLocalLlmModels(settings.llmApiUrl, isReady && settings.translationProvider === "local_llm");
+  const localModelState = useLocalLlmModels(settings.llmApiUrl, {
+    apiKey: settings.llmApiKey,
+    enabled: isReady && settings.translationProvider === "local_llm",
+  });
   const localModelOptions = mergeModelOptions(settings.localLlmModel, localModelState.models);
   const useManualLocalModelInput = localModelState.status === "blocked" || localModelState.status === "error";
   const grammarModelDiscoveryEndpoint = settings.grammarLlmApiUrl || settings.llmApiUrl;
   const grammarModelState = useLocalLlmModels(
     grammarModelDiscoveryEndpoint,
-    isReady && settings.translationProvider === "local_llm",
+    {
+      apiKey: settings.grammarLlmApiKey || settings.llmApiKey,
+      enabled: isReady && settings.translationProvider === "local_llm",
+    },
   );
   const grammarModelOptions = mergeModelOptions(settings.grammarLlmModel, grammarModelState.models);
   const useManualGrammarModelInput = grammarModelState.status === "blocked" || grammarModelState.status === "error";
@@ -308,6 +317,19 @@ export function SettingsDialog() {
                     <small>Accepts `/v1`, `/chat/completions`, or `/completions`.</small>
                   </label>
                   <label className="settings-field settings-field-wide">
+                    <span>LLM API Token</span>
+                    <input
+                      aria-label="LLM API Token"
+                      autoComplete="off"
+                      onChange={(event) => setSettings((current) => ({ ...current, llmApiKey: event.target.value }))}
+                      placeholder="Bearer token"
+                      spellCheck={false}
+                      type="password"
+                      value={settings.llmApiKey}
+                    />
+                    <small>Stored only in this browser and sent as a Bearer token.</small>
+                  </label>
+                  <label className="settings-field settings-field-wide">
                     <span>Grammar LLM API URL</span>
                     <input
                       aria-label="Grammar LLM API URL"
@@ -320,6 +342,21 @@ export function SettingsDialog() {
                       value={settings.grammarLlmApiUrl}
                     />
                     <small>Used only for Explain grammar analysis. Leave blank to reuse the normal translation endpoint.</small>
+                  </label>
+                  <label className="settings-field settings-field-wide">
+                    <span>Grammar LLM API Token</span>
+                    <input
+                      aria-label="Grammar LLM API Token"
+                      autoComplete="off"
+                      onChange={(event) =>
+                        setSettings((current) => ({ ...current, grammarLlmApiKey: event.target.value }))
+                      }
+                      placeholder="Reuse translation token"
+                      spellCheck={false}
+                      type="password"
+                      value={settings.grammarLlmApiKey}
+                    />
+                    <small>Leave blank to reuse the normal translation token.</small>
                   </label>
                   <label className="settings-field settings-field-wide">
                     <span>Local LLM model</span>
@@ -381,6 +418,26 @@ export function SettingsDialog() {
                       {getLocalModelDiscoveryNote(grammarModelState.status, grammarModelState.message)} Leave blank to reuse
                       the normal translation model.
                     </small>
+                  </label>
+                  <label className="settings-field settings-field-wide">
+                    <span>Grammar reasoning effort</span>
+                    <select
+                      aria-label="Grammar reasoning effort"
+                      onChange={(event) =>
+                        setSettings((current) => ({
+                          ...current,
+                          grammarLlmReasoningEffort: event.target.value as LlmReasoningEffort,
+                        }))
+                      }
+                      value={settings.grammarLlmReasoningEffort}
+                    >
+                      {llmReasoningEffortOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <small>Applied only to Explain requests when the compatible server supports reasoning effort.</small>
                   </label>
                 </>
               ) : (

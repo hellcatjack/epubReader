@@ -3544,7 +3544,7 @@ it("applies live appearance changes through the active rendition handle", async 
   });
 });
 
-it("persists llm api url changes from the reader tools panel", async () => {
+it("persists llm api url, API Token, and reasoning effort changes from the reader tools panel", async () => {
   setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/123.0");
   installSpeechSynthesis([
     { default: true, lang: "en-US", localService: false, name: "Microsoft Ava Online (Natural)", voiceURI: "Microsoft Ava Online (Natural)" },
@@ -3583,10 +3583,22 @@ it("persists llm api url changes from the reader tools panel", async () => {
     fireEvent.change(await screen.findByLabelText(/^LLM API URL$/i), {
       target: { value: "http://localhost:1234/v1" },
     });
+    fireEvent.change(screen.getByLabelText("LLM API Token"), {
+      target: { value: "translation-token" },
+    });
+    fireEvent.change(screen.getByLabelText("Grammar LLM API Token"), {
+      target: { value: "grammar-token" },
+    });
+    fireEvent.change(screen.getByLabelText("Grammar reasoning effort"), {
+      target: { value: "high" },
+    });
   });
 
   await waitFor(async () => {
     expect(await getSettings()).toMatchObject({
+      grammarLlmApiKey: "grammar-token",
+      grammarLlmReasoningEffort: "high",
+      llmApiKey: "translation-token",
       llmApiUrl: "http://localhost:1234/v1",
     });
   });
