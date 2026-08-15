@@ -35,6 +35,20 @@
 
 设置页需要点击 `Save settings`。阅读器 Appearance 面板中的修改会立即写入本地设置。
 
+### ushome 阅读器部署参数
+
+部署在 `https://ushome.amycat.com:18025` 的阅读器应使用同源代理，避免浏览器对 443 端口发起跨源 CORS 预检：
+
+| 设置项 | 配置值 |
+| --- | --- |
+| `Translation provider` | `Local LLM` |
+| `Grammar LLM API URL` | `https://ushome.amycat.com:18025/openai/v1` |
+| `Grammar LLM API Token` | `/app/devs/TradingNG/.env.gateway-lan` 中 `CODEX_GATEWAY_LAN_API_KEY` 的值 |
+| `Grammar LLM model` | `gpt-5.6-luna` |
+| `Grammar reasoning effort` | `Default`，当前请求体会关闭思考 |
+
+不要在该浏览器部署中将 Grammar URL 设置为 `https://ushome.amycat.com/openai/v1`。阅读器端口 `18025` 与标准 HTTPS 端口 `443` 属于不同 Origin；网关不接受浏览器的跨源预检时，前端只能收到网络/CORS 错误。同源代理继续执行 LAN 白名单和 Bearer Token 校验，并且只开放 `/models` 和 `/chat/completions`。
+
 ## Token 认证和验证
 
 非空 token 会先去除首尾空格，再作为以下请求头发送：
