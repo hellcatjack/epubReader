@@ -2,10 +2,23 @@ import { resolveLlmApiEndpoints } from "./aiEndpoints";
 
 type FetchLike = typeof fetch;
 
+type ListLocalModelsOptions = {
+  apiKey?: string;
+  fetch?: FetchLike;
+  signal?: AbortSignal;
+};
+
 export class LocalModelDiscoveryBlockedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "LocalModelDiscoveryBlockedError";
+  }
+}
+
+export class LocalModelDiscoveryAccessError extends Error {
+  constructor() {
+    super("Access denied. Check the API token and endpoint network policy.");
+    this.name = "LocalModelDiscoveryAccessError";
   }
 }
 
@@ -41,7 +54,7 @@ function extractModelIds(payload: unknown) {
     .filter((id): id is string => typeof id === "string" && id.trim().length > 0);
 }
 
-export async function listLocalModels(endpoint: string, fetchFn: FetchLike = fetch) {
+export async function listLocalModels(endpoint: string, options: ListLocalModelsOptions = {}) {
   const { modelsEndpoint } = resolveLlmApiEndpoints(endpoint);
   if (blocksInsecureHttpModelDiscovery(modelsEndpoint)) {
     throw new LocalModelDiscoveryBlockedError(
@@ -49,9 +62,17 @@ export async function listLocalModels(endpoint: string, fetchFn: FetchLike = fet
     );
   }
 
+  const fetchFn = options.fetch ?? fetch;
+  const apiKey = options.apiKey?.trim() ?? "";
   const response = await fetchFn(modelsEndpoint, {
+    ...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}),
     method: "GET",
+    ...(options.signal ? { signal: options.signal } : {}),
   });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new LocalModelDiscoveryAccessError();
+  }
 
   if (!response.ok) {
     throw response;
