@@ -57,7 +57,7 @@
 **Interfaces:**
 - Produces: `LlmReasoningEffort`, `llmApiKey`, `grammarLlmApiKey`, and `grammarLlmReasoningEffort` on `SettingsInput`.
 
-- [ ] **Step 1: Write failing settings tests**
+- [x] **Step 1: Write failing settings tests**
 
 Add tests that prove defaults are safe and a legacy record is migrated with the new fields:
 
@@ -82,13 +82,13 @@ await expect(getSettings()).resolves.toMatchObject({
 
 Add a save/read assertion using non-empty token values and `"high"` reasoning effort.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `npm test -- src/features/settings/settingsRepository.test.ts`
 
 Expected: FAIL because the settings type/defaults do not contain the new fields.
 
-- [ ] **Step 3: Implement settings fields and migration detection**
+- [x] **Step 3: Implement settings fields and migration detection**
 
 Add:
 
@@ -102,13 +102,13 @@ grammarLlmReasoningEffort: LlmReasoningEffort;
 
 Use empty strings and `"default"` in `createDefaultSettings()`. Extend `isLegacySettingsRecord()` to require both token strings and a recognized reasoning value. Normalize an invalid migrated reasoning value back to `defaultSettings.grammarLlmReasoningEffort`.
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run: `npm test -- src/features/settings/settingsRepository.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/types/settings.ts src/features/settings/settingsRepository.ts src/features/settings/settingsRepository.test.ts
@@ -127,7 +127,7 @@ git commit -m "feat: persist openai-compatible auth settings"
 - Consumes: `LlmReasoningEffort` and settings fields from Task 1.
 - Produces: `createOpenAIAdapter({ apiKey?, reasoningEffort? })` with authenticated requests.
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
 Create an adapter with a whitespace-padded token and `reasoningEffort: "high"`. Exercise translation, Explain, and definition with successful fake responses. Assert every request contains:
 
@@ -147,7 +147,7 @@ expect(explainBody.chat_template_kwargs).toBeUndefined();
 
 Retain the existing default test and assert it has no Authorization header, omits `reasoning_effort`, and contains `{ enable_thinking: false }`.
 
-- [ ] **Step 2: Write failing AiService routing tests**
+- [x] **Step 2: Write failing AiService routing tests**
 
 For normal local translation, expect:
 
@@ -172,13 +172,13 @@ For Grammar Explain, configure only Grammar token/model/reasoning while leaving 
 
 Also cover blank Grammar token/model inheriting `llmApiKey` and `localLlmModel`.
 
-- [ ] **Step 3: Run focused tests and verify RED**
+- [x] **Step 3: Run focused tests and verify RED**
 
 Run: `npm test -- src/features/ai/openaiAdapter.test.ts src/features/ai/aiService.test.ts`
 
 Expected: FAIL because adapter options, Authorization headers, reasoning payload, and fallback routing are absent.
 
-- [ ] **Step 4: Implement request authentication and reasoning**
+- [x] **Step 4: Implement request authentication and reasoning**
 
 Add one shared header builder:
 
@@ -203,13 +203,13 @@ const reasoningOptions =
 
 In `AiService`, trim settings and use Grammar values with normal local values as field-by-field fallbacks. Treat a non-default Grammar reasoning effort as a Grammar override. Keep Gemini routing when no Grammar override exists.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run: `npm test -- src/features/ai/openaiAdapter.test.ts src/features/ai/aiService.test.ts`
 
 Expected: PASS, including existing Gemini tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/ai/openaiAdapter.ts src/features/ai/openaiAdapter.test.ts src/features/ai/aiService.ts src/features/ai/aiService.test.ts
@@ -227,7 +227,7 @@ git commit -m "feat: authenticate openai-compatible ai requests"
 **Interfaces:**
 - Produces: `listLocalModels(endpoint, { apiKey?, fetch?, signal? })` and `useLocalLlmModels(endpoint, { apiKey?, enabled? })`.
 
-- [ ] **Step 1: Write failing model-discovery tests**
+- [x] **Step 1: Write failing model-discovery tests**
 
 Update the existing success test to call:
 
@@ -240,7 +240,7 @@ listLocalModels("https://ushome.amycat.com/openai/v1", {
 
 Assert `GET https://ushome.amycat.com/openai/v1/models` with `Authorization: Bearer model-token`. Add a blank-token test that expects no Authorization header and a `401`/`403` test that rejects with a typed access error without exposing the response body.
 
-- [ ] **Step 2: Write failing hook tests**
+- [x] **Step 2: Write failing hook tests**
 
 Use fake timers and a stubbed global fetch:
 
@@ -265,13 +265,13 @@ expect(result.current.status).toBe("ready");
 
 Add an access-error assertion for the user-facing message without token contents.
 
-- [ ] **Step 3: Run tests and verify RED**
+- [x] **Step 3: Run tests and verify RED**
 
 Run: `npm test -- src/features/ai/localModelDiscovery.test.ts src/features/ai/useLocalLlmModels.test.tsx`
 
 Expected: FAIL because discovery cannot authenticate and the hook has no debounce/token options.
 
-- [ ] **Step 4: Implement authenticated discovery and debounce**
+- [x] **Step 4: Implement authenticated discovery and debounce**
 
 Add options and an access error:
 
@@ -289,13 +289,13 @@ Send Bearer auth only for a non-empty token. Convert `401` and `403` into `Local
 
 In the hook, wait 400 ms, create an `AbortController`, call `listLocalModels`, and on cleanup clear the timer and abort. Ignore `AbortError`. Return messages for ready/access/error/blocked states without including tokens.
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run: `npm test -- src/features/ai/localModelDiscovery.test.ts src/features/ai/useLocalLlmModels.test.tsx`
 
 Expected: PASS with no act warnings or pending timers.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/features/ai/localModelDiscovery.ts src/features/ai/localModelDiscovery.test.ts src/features/ai/useLocalLlmModels.ts src/features/ai/useLocalLlmModels.test.tsx
@@ -318,7 +318,7 @@ git commit -m "feat: authenticate openai-compatible model discovery"
 - Consumes: settings and authenticated discovery from Tasks 1 and 3.
 - Produces: editable normal/Grammar tokens and Grammar reasoning effort on both settings surfaces.
 
-- [ ] **Step 1: Write failing component tests**
+- [x] **Step 1: Write failing component tests**
 
 In `settingsDialog.test.tsx`, store non-empty token/reasoning values, render the dialog, and assert password inputs and select values:
 
@@ -334,13 +334,13 @@ In `AppearancePanel.test.tsx`, render with the three values and spies, then asse
 
 In `ReaderPage.test.tsx`, exercise the in-reader controls and assert the settings repository stores the new values.
 
-- [ ] **Step 2: Run component tests and verify RED**
+- [x] **Step 2: Run component tests and verify RED**
 
 Run: `npm test -- src/features/settings/settingsDialog.test.tsx src/features/reader/panels/AppearancePanel.test.tsx src/features/reader/ReaderPage.test.tsx -t "API Token|reasoning effort"`
 
 Expected: FAIL because the controls and props do not exist.
 
-- [ ] **Step 3: Implement shared options and SettingsDialog controls**
+- [x] **Step 3: Implement shared options and SettingsDialog controls**
 
 Export:
 
@@ -355,7 +355,7 @@ export const llmReasoningEffortOptions: Array<{ label: string; value: LlmReasoni
 
 Pass `llmApiKey` and `grammarLlmApiKey || llmApiKey` to the two model-discovery hooks. Add password inputs after their endpoints and a select after the Grammar model. Do not render token values in summaries or status text.
 
-- [ ] **Step 4: Implement reader settings props and handlers**
+- [x] **Step 4: Implement reader settings props and handlers**
 
 Add values and callbacks through `AppearancePanel` and `RightPanel`, then add `ReaderPage` handlers:
 
@@ -367,17 +367,17 @@ await updateSettings({ grammarLlmReasoningEffort });
 
 Use `type="password"`, `autoComplete="off"`, and the same option list as SettingsDialog.
 
-- [ ] **Step 5: Run component tests and verify GREEN**
+- [x] **Step 5: Run component tests and verify GREEN**
 
 Run: `npm test -- src/features/settings/settingsDialog.test.tsx src/features/reader/panels/AppearancePanel.test.tsx src/features/reader/ReaderPage.test.tsx`
 
 Expected: PASS, including existing model-discovery fallback behavior.
 
-- [ ] **Step 6: Run React quality review**
+- [x] **Step 6: Run React quality review**
 
 Use the `vercel:react-best-practices` skill to review hook dependencies, prop threading, controlled fields, and avoid unnecessary rerenders or token leakage. Apply only findings relevant to the changed components, then rerun the three component test files.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/features/ai/providerOptions.ts src/features/settings/SettingsDialog.tsx src/features/settings/settingsDialog.test.tsx src/features/reader/panels/AppearancePanel.tsx src/features/reader/panels/AppearancePanel.test.tsx src/features/reader/RightPanel.tsx src/features/reader/ReaderPage.tsx src/features/reader/ReaderPage.test.tsx
@@ -395,7 +395,7 @@ git commit -m "feat: configure authenticated grammar models"
 - Consumes: completed behavior from Tasks 1-4.
 - Produces: operator-facing setup instructions and final verification evidence.
 
-- [ ] **Step 1: Write configuration documentation**
+- [x] **Step 1: Write configuration documentation**
 
 Document:
 
@@ -409,25 +409,25 @@ Authentication: Authorization: Bearer <token>
 
 Explain browser-local token storage, model discovery/validation, reasoning choices, Grammar fallback, manual model entry, and server-side LAN/CORS/origin requirements. Do not include a real token.
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run: `npm test -- src/features/settings/settingsRepository.test.ts src/features/ai/openaiAdapter.test.ts src/features/ai/aiService.test.ts src/features/ai/localModelDiscovery.test.ts src/features/ai/useLocalLlmModels.test.tsx src/features/settings/settingsDialog.test.tsx src/features/reader/panels/AppearancePanel.test.tsx src/features/reader/ReaderPage.test.tsx`
 
 Expected: PASS.
 
-- [ ] **Step 3: Run full tests**
+- [x] **Step 3: Run full tests**
 
 Run: `npm test`
 
 Expected: all Vitest files and tests pass.
 
-- [ ] **Step 4: Run production build**
+- [x] **Step 4: Run production build**
 
 Run: `npm run build`
 
 Expected: TypeScript checking and Vite build pass; the existing large-chunk warning is acceptable.
 
-- [ ] **Step 5: Inspect scope and commit documentation**
+- [x] **Step 5: Inspect scope and commit documentation**
 
 Run: `git diff --check && git status --short && git diff --stat HEAD~4`
 
@@ -438,7 +438,7 @@ git add docs/openai-compatible-api.md docs/README.md docs/superpowers/plans/2026
 git commit -m "docs: explain authenticated openai-compatible setup"
 ```
 
-- [ ] **Step 6: Confirm final repository state**
+- [x] **Step 6: Confirm final repository state**
 
 Run: `git status --short && git log -7 --oneline --decorate`
 

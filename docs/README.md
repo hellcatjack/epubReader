@@ -5,6 +5,7 @@
 ## 当前实现说明
 
 - [TTS 功能实现说明](./tts-implementation.md)：整理当前浏览器原生 TTS、连续朗读队列、正文朗读高亮、Follow TTS playback、朗读句子翻译侧注和 Screen Wake Lock 常亮逻辑。
+- [OpenAI 兼容 API 配置与实现说明](./openai-compatible-api.md)：说明兼容接口地址解析、Bearer Token、本地模型发现、Explain 接口和思考程度配置。
 
 ## 截图
 
@@ -14,4 +15,3 @@
 
 - `superpowers/specs/`：历史功能设计说明。
 - `superpowers/plans/`：历史实现计划。
-
