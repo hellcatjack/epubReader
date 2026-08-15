@@ -8,6 +8,7 @@ it("uses the saved local llm settings when creating the local ai adapter", async
   const synthesizeSpeech = vi.fn().mockResolvedValue({ audio: "" });
   const loadSettings = vi.fn().mockResolvedValue({
     ...defaultSettings,
+    llmApiKey: "translation-token",
     localLlmModel: "phi-4-mini",
     llmApiUrl: "http://localhost:1234/v1",
     translationProvider: "local_llm",
@@ -24,6 +25,7 @@ it("uses the saved local llm settings when creating the local ai adapter", async
 
   expect(loadSettings).toHaveBeenCalledTimes(1);
   expect(createLocalAdapter).toHaveBeenCalledWith({
+    apiKey: "translation-token",
     endpoint: "http://localhost:1234/v1",
     textModel: "phi-4-mini",
   });
@@ -95,6 +97,58 @@ it("routes explain requests through grammar-specific endpoint and model when con
   expect(createLocalAdapter).toHaveBeenCalledWith({
     endpoint: "http://localhost:9001/v1/chat/completions",
     textModel: "grammar-model",
+  });
+});
+
+it("routes explain through inherited endpoint with grammar token, model, and reasoning effort", async () => {
+  const explainSelection = vi.fn().mockResolvedValue("语法解析");
+  const loadSettings = vi.fn().mockResolvedValue({
+    ...defaultSettings,
+    grammarLlmApiKey: "grammar-token",
+    grammarLlmModel: "grammar-model",
+    grammarLlmReasoningEffort: "high",
+    llmApiKey: "translation-token",
+    llmApiUrl: "https://example.test/openai/v1",
+    localLlmModel: "translation-model",
+    translationProvider: "local_llm",
+  });
+  const createLocalAdapter = vi.fn().mockReturnValue({
+    explainSelection,
+  });
+  const service = createAiService({ createLocalAdapter, loadSettings });
+
+  await expect(service.explainSelection("A difficult sentence.", { targetLanguage: "zh-CN" })).resolves.toBe(
+    "语法解析",
+  );
+
+  expect(createLocalAdapter).toHaveBeenCalledWith({
+    apiKey: "grammar-token",
+    endpoint: "https://example.test/openai/v1",
+    reasoningEffort: "high",
+    textModel: "grammar-model",
+  });
+});
+
+it("inherits the normal local token and model when grammar values are blank", async () => {
+  const explainSelection = vi.fn().mockResolvedValue("语法解析");
+  const loadSettings = vi.fn().mockResolvedValue({
+    ...defaultSettings,
+    llmApiKey: "translation-token",
+    llmApiUrl: "https://example.test/openai/v1",
+    localLlmModel: "translation-model",
+    translationProvider: "local_llm",
+  });
+  const createLocalAdapter = vi.fn().mockReturnValue({
+    explainSelection,
+  });
+  const service = createAiService({ createLocalAdapter, loadSettings });
+
+  await service.explainSelection("A sentence.", { targetLanguage: "zh-CN" });
+
+  expect(createLocalAdapter).toHaveBeenCalledWith({
+    apiKey: "translation-token",
+    endpoint: "https://example.test/openai/v1",
+    textModel: "translation-model",
   });
 });
 

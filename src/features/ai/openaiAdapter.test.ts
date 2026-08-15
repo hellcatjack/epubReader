@@ -101,6 +101,55 @@ it("sends english definition requests to local chat completions through the expl
   expect(requestBody.temperature).toBe(0.2);
 });
 
+it("authenticates openai-compatible requests and applies reasoning effort only to explain", async () => {
+  const fakeFetch = vi
+    .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ choices: [{ text: "你好" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ choices: [{ message: { content: "<answer>语法解析</answer>" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ choices: [{ message: { content: "<answer>definition</answer>" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  const adapter = createOpenAIAdapter({
+    apiKey: " reader-secret ",
+    endpoint: "https://example.test/openai/v1",
+    fetch: fakeFetch,
+    reasoningEffort: "high",
+    textModel: "reader-model",
+  });
+
+  await adapter.translateSelection("hello", { targetLanguage: "zh-CN" });
+  await adapter.explainSelection("hello", { targetLanguage: "zh-CN" });
+  await adapter.defineSelection("hello", { targetLanguage: "zh-CN" });
+
+  for (const call of fakeFetch.mock.calls) {
+    expect(call[1]?.headers).toEqual({
+      Authorization: "Bearer reader-secret",
+      "Content-Type": "application/json",
+    });
+  }
+
+  const translationBody = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body));
+  const explanationBody = JSON.parse(String(fakeFetch.mock.calls[1]?.[1]?.body));
+  const definitionBody = JSON.parse(String(fakeFetch.mock.calls[2]?.[1]?.body));
+  expect(translationBody.reasoning_effort).toBeUndefined();
+  expect(explanationBody.reasoning_effort).toBe("high");
+  expect(explanationBody.chat_template_kwargs).toBeUndefined();
+  expect(definitionBody.reasoning_effort).toBeUndefined();
+});
+
 it("normalizes a base llm api url into completions and chat-completions endpoints", async () => {
   const fakeFetch = vi
     .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()

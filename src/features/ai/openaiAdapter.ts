@@ -14,6 +14,7 @@ import {
   createEnglishDefinitionUserPrompt,
   extractEnglishDefinitionAnswer,
 } from "./englishDefinitionPrompt";
+import type { LlmReasoningEffort } from "../../lib/types/settings";
 
 type FetchLike = typeof fetch;
 
@@ -29,9 +30,11 @@ type SpeechOptions = {
 };
 
 type OpenAIAdapterDeps = {
+  apiKey?: string;
   fetch?: FetchLike;
   endpoint?: string;
   completionEndpoint?: string;
+  reasoningEffort?: LlmReasoningEffort;
   textModel?: string;
 };
 
@@ -97,19 +100,26 @@ async function assertOk(response: Response) {
   throw response;
 }
 
+function createJsonHeaders(apiKey: string) {
+  const token = apiKey.trim();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 async function requestChatText(
   fetchFn: FetchLike,
   endpoint: string,
   textModel: string,
+  apiKey: string,
   messages: Array<{ role: "system" | "user"; content: string }>,
   signal?: AbortSignal,
   extraBody?: Record<string, unknown>,
 ) {
   const response = await fetchFn(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: createJsonHeaders(apiKey),
     signal,
     body: JSON.stringify({
       model: textModel,
@@ -153,15 +163,14 @@ async function requestCompletionText(
   fetchFn: FetchLike,
   endpoint: string,
   textModel: string,
+  apiKey: string,
   prompt: string,
   mode: SelectionTranslationMode,
   signal?: AbortSignal,
 ) {
   const response = await fetchFn(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: createJsonHeaders(apiKey),
     signal,
     body: JSON.stringify({
       max_tokens: getCompletionMaxTokens(mode),
@@ -181,6 +190,7 @@ async function requestSelectionTranslation(
   fetchFn: FetchLike,
   completionEndpoint: string,
   textModel: string,
+  apiKey: string,
   text: string,
   context: RequestContext,
 ) {
@@ -195,6 +205,7 @@ async function requestSelectionTranslation(
     fetchFn,
     completionEndpoint,
     textModel,
+    apiKey,
     firstPass.prompt,
     firstPass.mode,
     context.signal,
@@ -207,19 +218,16 @@ async function requestGrammarExplain(
   fetchFn: FetchLike,
   endpoint: string,
   textModel: string,
+  apiKey: string,
+  reasoningEffort: LlmReasoningEffort,
   text: string,
   context: RequestContext,
 ) {
   const response = await fetchFn(endpoint, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: createJsonHeaders(apiKey),
     signal: context.signal,
     body: JSON.stringify({
-      chat_template_kwargs: {
-        enable_thinking: false,
-      },
       max_tokens: 1400,
       model: textModel,
       messages: [
@@ -233,6 +241,9 @@ async function requestGrammarExplain(
         },
       ],
       temperature: 0.2,
+      ...(reasoningEffort === "default"
+        ? { chat_template_kwargs: { enable_thinking: false } }
+        : { reasoning_effort: reasoningEffort }),
     }),
   });
 
@@ -247,6 +258,7 @@ async function requestEnglishDefinition(
   fetchFn: FetchLike,
   endpoint: string,
   textModel: string,
+  apiKey: string,
   text: string,
   context: RequestContext,
 ) {
@@ -254,6 +266,7 @@ async function requestEnglishDefinition(
     fetchFn,
     endpoint,
     textModel,
+    apiKey,
     [
       {
         role: "system",
@@ -311,9 +324,11 @@ export function normalizeOpenAIError(error: unknown): OpenAIError {
 }
 
 export function createOpenAIAdapter({
+  apiKey = "",
   fetch: fetchFn = fetch,
   endpoint = DEFAULT_LLM_API_URL,
   completionEndpoint,
+  reasoningEffort = "default",
   textModel = "local-reader-chat",
 }: OpenAIAdapterDeps = {}) {
   const resolvedEndpoints = resolveLlmApiEndpoints(endpoint);
@@ -322,19 +337,19 @@ export function createOpenAIAdapter({
 
   return {
     translateSelection(text: string, context: RequestContext) {
-      return requestSelectionTranslation(fetchFn, resolvedCompletionEndpoint, textModel, text, context).catch(
+      return requestSelectionTranslation(fetchFn, resolvedCompletionEndpoint, textModel, apiKey, text, context).catch(
         (error) => {
           throw normalizeOpenAIError(error);
         },
       );
     },
     explainSelection(text: string, context: RequestContext) {
-      return requestGrammarExplain(fetchFn, chatEndpoint, textModel, text, context).catch((error) => {
+      return requestGrammarExplain(fetchFn, chatEndpoint, textModel, apiKey, reasoningEffort, text, context).catch((error) => {
         throw normalizeOpenAIError(error);
       });
     },
     defineSelection(text: string, context: RequestContext) {
-      return requestEnglishDefinition(fetchFn, chatEndpoint, textModel, text, context).catch((error) => {
+      return requestEnglishDefinition(fetchFn, chatEndpoint, textModel, apiKey, text, context).catch((error) => {
         throw normalizeOpenAIError(error);
       });
     },

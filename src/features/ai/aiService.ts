@@ -36,8 +36,10 @@ export function createAiService({
     }
 
     const endpoint = settings.llmApiUrl.trim();
+    const apiKey = settings.llmApiKey.trim();
     const textModel = settings.localLlmModel.trim();
     return createLocalAdapter({
+      ...(apiKey ? { apiKey } : {}),
       ...(endpoint ? { endpoint } : {}),
       ...(textModel ? { textModel } : {}),
     });
@@ -46,12 +48,19 @@ export function createAiService({
   async function getExplainAdapter() {
     const settings = await loadSettings();
     const grammarEndpoint = settings.grammarLlmApiUrl.trim();
+    const grammarApiKey = settings.grammarLlmApiKey.trim();
     const grammarModel = settings.grammarLlmModel.trim();
+    const reasoningEffort = settings.grammarLlmReasoningEffort;
 
-    if (grammarEndpoint || grammarModel) {
+    if (grammarEndpoint || grammarApiKey || grammarModel || reasoningEffort !== "default") {
+      const endpoint = grammarEndpoint || settings.llmApiUrl.trim();
+      const apiKey = grammarApiKey || settings.llmApiKey.trim();
+      const textModel = grammarModel || settings.localLlmModel.trim();
       return createLocalAdapter({
-        ...(grammarEndpoint ? { endpoint: grammarEndpoint } : {}),
-        ...(grammarModel ? { textModel: grammarModel } : {}),
+        ...(apiKey ? { apiKey } : {}),
+        ...(endpoint ? { endpoint } : {}),
+        ...(reasoningEffort !== "default" ? { reasoningEffort } : {}),
+        ...(textModel ? { textModel } : {}),
       });
     }
 
@@ -63,8 +72,10 @@ export function createAiService({
     }
 
     const endpoint = settings.llmApiUrl.trim();
+    const apiKey = settings.llmApiKey.trim();
     const textModel = settings.localLlmModel.trim();
     return createLocalAdapter({
+      ...(apiKey ? { apiKey } : {}),
       ...(endpoint ? { endpoint } : {}),
       ...(textModel ? { textModel } : {}),
     });
