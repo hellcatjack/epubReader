@@ -326,6 +326,13 @@ export function extractGeneratedTocChildren(doc: Document, baseHref: string, par
   const anchors = Array.from(body.querySelectorAll<HTMLAnchorElement>("a[href]"));
 
   for (const anchor of anchors) {
+    // Prose documents can contain hundreds of footnotes, especially when a
+    // book spans multiple spine items. These links are not child sections.
+    const anchorText = normalizeGeneratedTocText(anchor.textContent ?? "");
+    if (anchor.closest("sup") || /^\d+\s*:\s*\d+$/.test(anchorText)) {
+      continue;
+    }
+
     const href = anchor.getAttribute("href") ?? "";
     const target = resolveGeneratedTocTarget(href, baseHref);
     const label = extractGeneratedTocLinkLabel(anchor);

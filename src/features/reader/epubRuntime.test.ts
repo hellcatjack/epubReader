@@ -1511,6 +1511,38 @@ describe("epubRuntime tts targeting helpers", () => {
 });
 
 describe("epubRuntime generated toc children", () => {
+  it("does not treat Bible footnote references and verse backlinks as child sections", () => {
+    const doc = document.implementation.createHTMLDocument("Psalms");
+    doc.body.innerHTML = `
+      <h2>O LORD, Do Not Delay</h2>
+      <p><b id="v19070001">70:1</b>Make haste, O God, to deliver me!</p>
+      <p>May they fear you<sup><a href="#f19-165" id="b19-165">[165]</a></sup></p>
+      <p>May he have dominion<sup><a href="#f19-166" id="b19-166">[166]</a></sup></p>
+      <p>
+        [164] <a href="ch022.xhtml#b19-164" id="f19-164">69:27</a> Hebrew reading<br />
+        [165] <a href="#b19-165" id="f19-165">72:5</a> Septuagint reading<br />
+        [166] <a href="#b19-166" id="f19-166">72:8</a> That is, the Euphrates
+      </p>
+    `;
+
+    expect(extractGeneratedTocChildren(doc, "ch023.xhtml", "psalm-70", "ch023.xhtml#v19070001")).toEqual([]);
+  });
+
+  it("preserves numbered chapter links when a contents page also has footnotes", () => {
+    const doc = document.implementation.createHTMLDocument("contents");
+    doc.body.innerHTML = `
+      <h1 id="contents">Contents</h1>
+      <p><a href="chapter-1.xhtml">1</a></p>
+      <p><a href="chapter-2.xhtml">2</a></p>
+      <p>Edition note<sup><a href="#note">a</a></sup></p>
+    `;
+
+    expect(extractGeneratedTocChildren(doc, "contents.xhtml", "contents", "contents.xhtml#contents")).toEqual([
+      { children: [], id: "contents::chapter-1.xhtml", label: "1", target: "chapter-1.xhtml" },
+      { children: [], id: "contents::chapter-2.xhtml", label: "2", target: "chapter-2.xhtml" },
+    ]);
+  });
+
   it("treats generated contents-page children as redundant when the same targets already exist in the toc", () => {
     expect(
       areGeneratedTocChildrenRedundant(

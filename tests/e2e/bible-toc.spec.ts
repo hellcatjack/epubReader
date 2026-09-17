@@ -1084,6 +1084,33 @@ test("Bible refresh does not turn Table of Contents into an expandable branch", 
   await expect(page.getByRole("button", { name: /expand table of contents/i })).toHaveCount(0);
 });
 
+test("Psalms chapters stay leaf entries after contents hydration and refresh", async ({ page }) => {
+  test.setTimeout(60000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await importBible(page);
+
+  const toc = page.getByRole("navigation", { name: /table of contents/i });
+  await toc.getByRole("button", { name: /expand psalms/i }).click();
+  await toc.getByRole("button", { name: "Chapter 70", exact: true }).click();
+  await waitForBibleAnchor(page, "v19070001");
+
+  // Contents-page fallback runs after the initial NCX tree is displayed.
+  await page.waitForTimeout(12000);
+  await expect(toc.getByRole("button", { name: /(?:expand|collapse) chapter /i })).toHaveCount(0);
+  await expect(toc.getByRole("button", { name: /^Chapter \d+$/ })).toHaveCount(150);
+  await expect(page.locator(".reader-current-section")).toContainText("PSALMS / Chapter 70");
+
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(toc.getByRole("button", { name: /collapse psalms/i })).toBeVisible();
+  await page.waitForTimeout(12000);
+  await expect(toc.getByRole("button", { name: /(?:expand|collapse) chapter /i })).toHaveCount(0);
+  await expect(toc.getByRole("button", { name: "Chapter 70", exact: true })).toBeVisible();
+  await expect(page.locator(".reader-current-section")).toContainText("PSALMS / Chapter 70");
+  expect(pageErrors).toEqual([]);
+});
+
 test("Bible paginated mode keeps the Genesis chapter branch after delayed relocation updates", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1200 });
   await importBible(page);
