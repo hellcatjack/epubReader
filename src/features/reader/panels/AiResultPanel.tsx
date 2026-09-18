@@ -27,7 +27,7 @@ export function AiResultPanel({
             <div className="reader-ai-meta-row">
               <div className="reader-ai-meta-main">
                 <span className="reader-ai-label">Selection</span>
-                <span className="reader-ai-value">{selectedText}</span>
+                <span className="reader-ai-value reader-ai-selection-preview" title={selectedText}>{selectedText}</span>
               </div>
               <button
                 aria-label="Read selection aloud"
