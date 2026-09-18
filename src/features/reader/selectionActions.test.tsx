@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { db, resetDb } from "../../lib/db/appDb";
@@ -92,6 +92,122 @@ function installChromeDesktopUserAgent() {
   });
 }
 
+describe("selection translation latency", () => {
+  beforeEach(() => {
+    installEdgeDesktopUserAgent();
+    installSpeechSynthesis([
+      { default: true, lang: "en-US", localService: true, name: "English", voiceURI: "english" },
+    ]);
+  });
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+  }
+
+  function selectWord(text: string) {
+    act(() => {
+      selectionBridge.publish({
+        cfiRange: `epubcfi(/6/2!/4/1:${text === "Babylon" ? 0 : 8})`,
+        isReleased: true,
+        selectionRect: { bottom: 246, height: 24, left: 120, right: 196, top: 222, width: 76 },
+        spineItemId: "chap-1",
+        text,
+      });
+    });
+  }
+
+  it.each(["IPA", "English definition"])("shows the translation without waiting for %s", async (slowService) => {
+    const pending = deferred<string>();
+    const ai = {
+      translateSelection: vi.fn(async () => "巴比伦"),
+      explainSelection: vi.fn(async () => ""),
+      defineSelection: vi.fn(() => slowService === "English definition" ? pending.promise : Promise.resolve("An ancient city.")),
+    };
+    const phonetics = {
+      lookupIpa: vi.fn(() => slowService === "IPA" ? pending.promise : Promise.resolve("/ˈbæbɪlən/")),
+    };
+    render(<ReaderPage ai={ai} phonetics={phonetics} />);
+    selectWord("Babylon");
+
+    await waitFor(() => expect(screen.getByLabelText("Translation result")).toHaveTextContent("巴比伦"));
+    expect(screen.getByRole("status", { name: /selection translation/i })).toHaveTextContent("巴比伦");
+    // One optional response is still pending; the other can already render.
+    expect(screen.getByText(slowService === "IPA" ? "An ancient city." : "/ˈbæbɪlən/")).toBeInTheDocument();
+    await act(async () => pending.resolve(slowService === "IPA" ? "/ˈbæbɪlən/" : "An ancient city."));
+    expect(screen.getByText("/ˈbæbɪlən/")).toBeInTheDocument();
+    expect(screen.getByLabelText("English definition result")).toHaveTextContent("An ancient city.");
+    expect(screen.getByLabelText("Translation result")).toHaveTextContent("巴比伦");
+  });
+
+  it("explains when a single word is not in the American dictionary", async () => {
+    render(<ReaderPage ai={{ translateSelection: async () => "译文", explainSelection: async () => "" }} phonetics={{ lookupIpa: async () => null }} />);
+    selectWord("unknownword");
+    expect(await screen.findByText("Not found in the American dictionary.")).toBeInTheDocument();
+    expect(screen.getByText("American IPA")).toBeInTheDocument();
+  });
+
+  it("keeps the translation and definition when the IPA lookup fails", async () => {
+    const ipa = deferred<string>();
+    const ai = {
+      translateSelection: vi.fn(async () => "巴比伦"),
+      explainSelection: vi.fn(async () => ""),
+      defineSelection: vi.fn(async () => "An ancient city."),
+    };
+    render(<ReaderPage ai={ai} phonetics={{ lookupIpa: () => ipa.promise }} />);
+    selectWord("Babylon");
+
+    await act(async () => ipa.reject(new Error("Dictionary unavailable")));
+    await waitFor(() => expect(screen.getByLabelText("Translation result")).toHaveTextContent("巴比伦"));
+    expect(screen.getByLabelText("English definition result")).toHaveTextContent("An ancient city.");
+    expect(screen.queryByText(/Translate failed/)).not.toBeInTheDocument();
+    expect(screen.getByText("Dictionary unavailable. Select the word again to retry.")).toBeInTheDocument();
+  });
+
+  it("does not overwrite a new word with late IPA or English definition results", async () => {
+    const ipa = deferred<string>();
+    const definition = deferred<string>();
+    const ai = {
+      translateSelection: vi.fn(async (text: string) => text === "Babylon" ? "巴比伦" : "第二个"),
+      explainSelection: vi.fn(async () => ""),
+      defineSelection: vi.fn((text: string) => text === "Babylon" ? definition.promise : Promise.resolve("After the first.")),
+    };
+    const phonetics = { lookupIpa: (text: string) => text === "babylon" ? ipa.promise : Promise.resolve("/ˈsekənd/") };
+    render(<ReaderPage ai={ai} phonetics={phonetics} />);
+    selectWord("Babylon");
+    await waitFor(() => expect(ai.defineSelection).toHaveBeenCalled());
+    selectWord("second");
+    await waitFor(() => expect(screen.getByLabelText("Translation result")).toHaveTextContent("第二个"));
+
+    await act(async () => {
+      ipa.resolve("/ˈbæbɪlən/");
+      definition.resolve("An ancient city.");
+    });
+    expect(screen.getByLabelText("Translation result")).toHaveTextContent("第二个");
+    expect(screen.getByText("/ˈsekənd/")).toBeInTheDocument();
+    expect(screen.getByLabelText("English definition result")).toHaveTextContent("After the first.");
+    expect(screen.queryByText("/ˈbæbɪlən/")).not.toBeInTheDocument();
+    expect(screen.queryByText("An ancient city.")).not.toBeInTheDocument();
+  });
+
+  it("shows a translation error without waiting for optional lookups", async () => {
+    const pending = deferred<string>();
+    const ai = {
+      translateSelection: vi.fn(async () => { throw { kind: "provider" }; }),
+      explainSelection: vi.fn(async () => ""),
+      defineSelection: vi.fn(() => pending.promise),
+    };
+    render(<ReaderPage ai={ai} phonetics={{ lookupIpa: () => pending.promise }} />);
+    selectWord("Babylon");
+    await waitFor(() => expect(screen.getByLabelText("Translation result")).toHaveTextContent("Translate failed:"));
+  });
+});
+
 it("automatically translates and auto-reads a new selection while keeping focused selection actions available", async () => {
   const user = userEvent.setup();
   installEdgeDesktopUserAgent();
@@ -167,7 +283,7 @@ it("shows ipa for a released single-word selection", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({
-      json: async () => [{ phonetics: [{ text: "/prest/" }] }],
+      json: async () => ({ pressed: "/prest/" }),
       ok: true,
     })),
   );
@@ -227,7 +343,7 @@ it("hides the stale translation bubble immediately after a new released single-w
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({
-      json: async () => [{ phonetics: [{ text: "/prest/" }] }],
+      json: async () => ({ pressed: "/prest/" }),
       ok: true,
     })),
   );
@@ -304,7 +420,7 @@ it("does not show ipa for a multi-word selection", async () => {
     }
 
     return {
-      json: async () => [{ phonetics: [{ text: "/ignored/" }] }],
+      json: async () => ({ ignored: "/ignored/" }),
       ok: true,
     };
   });
@@ -337,7 +453,7 @@ it("does not show ipa for a multi-word selection", async () => {
 
   expect(await screen.findByRole("status", { name: /selection translation/i })).toHaveTextContent("事情是这样的");
   expect(screen.getByLabelText("Translation result")).not.toHaveTextContent("事情是这样的");
-  expect(screen.queryByText(/^IPA$/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/^American IPA$/i)).not.toBeInTheDocument();
   expect(screen.queryByText("English definition")).not.toBeInTheDocument();
   expect(ai.defineSelection).not.toHaveBeenCalled();
   const phoneticCalls = fetchSpy.mock.calls.filter(([input]) => !String(input).endsWith("/v1/models"));
@@ -358,7 +474,7 @@ it("clears the previous reading assistant translation and ipa when a multi-word 
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({
-      json: async () => [{ phonetics: [{ text: "/prest/" }] }],
+      json: async () => ({ pressed: "/prest/" }),
       ok: true,
     })),
   );
@@ -434,7 +550,7 @@ it("does not start stale ipa requests before delayed auto-translation begins", a
 
     phoneticRequestCount += 1;
     return Promise.resolve({
-      json: async () => [{ phonetics: [{ text: "/sekənd/" }] }],
+      json: async () => ({ second: "/sekənd/" }),
       ok: true,
     });
   });

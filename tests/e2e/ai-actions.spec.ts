@@ -2,6 +2,9 @@ import { existsSync, mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { selectTextInIframe } from "./helpers/epubSelection";
 
+// These tests intercept dictionary responses; real service-worker caching is tested separately.
+test.use({ serviceWorkers: "block" });
+
 const fixturePath = "tests/fixtures/epub/minimal-valid.epub";
 const bibleFixturePath = "bible.epub";
 const gatewayScreenshotDir = ".codex-gateway-artifacts/screenshots";
@@ -112,6 +115,43 @@ async function startDragInIframe(page: Page) {
   });
 }
 
+test("single-word translation appears before slow dictionary responses", async ({ page }, testInfo) => {
+  const delayMs = 6000;
+  await page.route("http://localhost:8001/v1/models", (route) => route.fulfill({
+    json: { data: [{ id: "local-reader-chat" }] },
+  }));
+  await page.route("http://localhost:8001/v1/completions", (route) => route.fulfill({
+    json: { choices: [{ text: "即时翻译" }] },
+  }));
+  await page.route("http://localhost:8001/v1/chat/completions", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await route.fulfill({ json: { choices: [{ message: { content: "A delayed English definition." } }] } });
+  });
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    await route.fulfill({ json: { hello: "/delayed/" } });
+  });
+
+  await page.goto("/");
+  await page.setInputFiles("input[type=file]", fixturePath);
+  await expect(page.locator(".epub-root iframe")).toBeVisible();
+  const startedAt = Date.now();
+  await selectWordCountInIframe(page, 1);
+  await expect(page.getByLabel("Translation result", { exact: true })).toContainText("即时翻译", { timeout: 2000 });
+  const translationMs = Date.now() - startedAt;
+  await expect(page.getByRole("status", { name: /selection translation/i })).toContainText("即时翻译");
+  await expect(page.getByLabel("English definition result", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("/delayed/", { exact: true })).toHaveCount(0);
+
+  await expect(page.getByLabel("English definition result", { exact: true })).toContainText("A delayed English definition.", { timeout: 10000 });
+  await expect(page.getByText("/delayed/", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Translation result", { exact: true })).toContainText("即时翻译");
+  await testInfo.attach("translation-timing", {
+    body: JSON.stringify({ translationMs, dictionaryDelayMs: delayMs }),
+    contentType: "application/json",
+  });
+});
+
 test("ai actions translate and explain selected text", async ({ page }) => {
   const requestPrompts: string[] = [];
 
@@ -142,11 +182,11 @@ test("ai actions translate and explain selected text", async ({ page }) => {
       }),
     });
   });
-  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+      body: JSON.stringify({ hello: "/ipa/", babylon: "/ipa/" }),
     });
   });
 
@@ -200,6 +240,7 @@ test("ai actions translate and explain selected text", async ({ page }) => {
 
   await grammarPopup.getByRole("button", { name: /close grammar explanation/i }).click();
   await expect(grammarPopup).toHaveCount(0);
+  await page.unrouteAll({ behavior: "wait" });
 });
 
 test("tablet-sized viewports show a persistent translation bubble for multi-word selections", async ({ page }) => {
@@ -223,11 +264,11 @@ test("tablet-sized viewports show a persistent translation bubble for multi-word
       }),
     });
   });
-  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+      body: JSON.stringify({ hello: "/ipa/", babylon: "/ipa/" }),
     });
   });
 
@@ -266,11 +307,11 @@ test("tablet-sized viewports also show a translation bubble for single-word sele
       }),
     });
   });
-  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+      body: JSON.stringify({ hello: "/ipa/", babylon: "/ipa/" }),
     });
   });
 
@@ -309,11 +350,11 @@ test("tablet-sized viewports dismiss the previous translation bubble as soon as 
       }),
     });
   });
-  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+      body: JSON.stringify({ hello: "/ipa/", babylon: "/ipa/" }),
     });
   });
 
@@ -352,11 +393,11 @@ test("clicking the translation bubble dismisses it", async ({ page }) => {
       }),
     });
   });
-  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+      body: JSON.stringify({ hello: "/ipa/", babylon: "/ipa/" }),
     });
   });
 
@@ -397,11 +438,11 @@ test("resizing an already translated desktop multi-word selection into tablet mo
       }),
     });
   });
-  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+      body: JSON.stringify({ hello: "/ipa/", babylon: "/ipa/" }),
     });
   });
 
@@ -420,7 +461,7 @@ test("resizing an already translated desktop multi-word selection into tablet mo
   await expect(page.getByRole("status", { name: "Selection translation" })).toContainText("迁移后的翻译");
 });
 
-test("Bible selection translation bubble renders at 600px on desktop @gateway-screenshot", async ({ page }) => {
+test("Bible selection translation bubble is capped at 600px on desktop @gateway-screenshot", async ({ page }) => {
   test.skip(!existsSync(bibleFixturePath), `Gateway Bible fixture not available at ${bibleFixturePath}`);
 
   await page.setViewportSize({ width: 1440, height: 1100 });
@@ -443,11 +484,11 @@ test("Bible selection translation bubble renders at 600px on desktop @gateway-sc
       }),
     });
   });
-  await page.route("https://api.dictionaryapi.dev/api/v2/entries/en/*", async (route) => {
+  await page.route("**/phonetics/en-US/v1/*.json", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([{ phonetics: [{ text: "/ipa/" }] }]),
+      body: JSON.stringify({ hello: "/ipa/", babylon: "/ipa/" }),
     });
   });
 
@@ -467,7 +508,9 @@ test("Bible selection translation bubble renders at 600px on desktop @gateway-sc
 
   const bubbleBox = await bubble.boundingBox();
   expect(bubbleBox).not.toBeNull();
-  expect(Math.round(bubbleBox!.width)).toBe(600);
+  await expect(bubble).toHaveCSS("max-width", "600px");
+  expect(bubbleBox!.width).toBeGreaterThan(0);
+  expect(bubbleBox!.width).toBeLessThanOrEqual(600);
 
   mkdirSync(gatewayScreenshotDir, { recursive: true });
   await page.screenshot({

@@ -42,7 +42,7 @@ export function AiResultPanel({
           {ipa ? (
             <div className="reader-ai-meta-row">
               <div className="reader-ai-meta-main">
-                <span className="reader-ai-label">IPA</span>
+                <span className="reader-ai-label">American IPA</span>
                 <span className="reader-ai-value">{ipa}</span>
               </div>
             </div>

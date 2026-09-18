@@ -30,6 +30,17 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["pwa-192.png", "pwa-512.png"],
+      workbox: {
+        runtimeCaching: [{
+          urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/phonetics\/en-US\/v1\/[a-z]\.json$/.test(url.pathname),
+          handler: "CacheFirst",
+          options: {
+            cacheName: "american-ipa-v1",
+            cacheableResponse: { statuses: [200] },
+            expiration: { maxEntries: 26 },
+          },
+        }],
+      },
       manifest: {
         name: "EPUB Reader",
         short_name: "EPUB Reader",

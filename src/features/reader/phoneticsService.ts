@@ -1,17 +1,3 @@
-type DictionaryPhonetic = {
-  text?: string;
-};
-
-type DictionaryEntry = {
-  phonetic?: string;
-  phonetics?: DictionaryPhonetic[];
-};
-
-function normalizeIpaCandidate(value?: string | null) {
-  const normalized = value?.trim();
-  return normalized ? normalized : null;
-}
-
 export function getEligibleIpaWord(text: string) {
   const normalized = text.trim().replace(/\s+/g, " ");
   if (!normalized || normalized.includes(" ")) {
@@ -25,71 +11,33 @@ export function getEligibleIpaWord(text: string) {
   return normalized.toLowerCase();
 }
 
-export function extractIpaFromEntries(entries: DictionaryEntry[] | null | undefined) {
-  if (!entries?.length) {
-    return null;
-  }
-
-  for (const entry of entries) {
-    for (const phonetic of entry.phonetics ?? []) {
-      const candidate = normalizeIpaCandidate(phonetic.text);
-      if (candidate) {
-        return candidate;
-      }
-    }
-
-    const fallback = normalizeIpaCandidate(entry.phonetic);
-    if (fallback) {
-      return fallback;
-    }
-  }
-
-  return null;
-}
-
-type PhoneticsServiceDeps = {
-  fetchImpl?: typeof fetch;
-};
+type PhoneticsServiceDeps = { fetchImpl?: typeof fetch };
 
 export function createPhoneticsService({ fetchImpl = fetch }: PhoneticsServiceDeps = {}) {
-  const cache = new Map<string, Promise<string | null>>();
-
+  const shards = new Map<string, Promise<Record<string, unknown>>>();
   return {
-    async lookupIpa(word: string) {
-      const normalizedWord = getEligibleIpaWord(word);
-      if (!normalizedWord) {
-        return null;
-      }
-
-      const cached = cache.get(normalizedWord);
-      if (cached) {
-        return cached;
-      }
-
-      const pendingLookup = (async () => {
-        try {
-          const resolvedFetch = fetchImpl ?? globalThis.fetch;
-          if (!resolvedFetch) {
-            return null;
+    async lookupIpa(word: string): Promise<string | null> {
+      const normalized = getEligibleIpaWord(word);
+      if (!normalized) return null;
+      const letter = normalized[0];
+      let shard = shards.get(letter);
+      if (!shard) {
+        shard = (async () => {
+          const response = await fetchImpl(`/phonetics/en-US/v1/${letter}.json`);
+          if (!response.ok) throw new Error("American IPA dictionary unavailable");
+          const data: unknown = await response.json();
+          if (!data || typeof data !== "object" || Array.isArray(data)) {
+            throw new Error("Invalid American IPA dictionary");
           }
-
-          const response = await resolvedFetch(
-            `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalizedWord)}`,
-          );
-
-          if (!response.ok) {
-            return null;
-          }
-
-          const entries = (await response.json()) as DictionaryEntry[];
-          return extractIpaFromEntries(entries);
-        } catch {
-          return null;
-        }
-      })();
-
-      cache.set(normalizedWord, pendingLookup);
-      return pendingLookup;
+          return data as Record<string, unknown>;
+        })();
+        shards.set(letter, shard);
+        // A transient network failure must not suppress IPA for the whole session.
+        void shard.catch(() => { shards.delete(letter); });
+      }
+      const entries = await shard;
+      const value = Object.prototype.hasOwnProperty.call(entries, normalized) ? entries[normalized] : null;
+      return typeof value === "string" && value.trim() ? value : null;
     },
   };
 }

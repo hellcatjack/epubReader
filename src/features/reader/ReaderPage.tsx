@@ -1709,43 +1709,63 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
     const ipaWord = getEligibleIpaWord(nextText);
     const singleWordSelection = isSingleWordSelection(nextText);
     setTranslationError("");
-    setAiIpa("");
+    setAiIpa(ipaWord ? "Loading…" : "");
     setTranslation("");
     setTranslationSelectionKey("");
     setEnglishDefinition("");
     setFloatingSelectionTranslation(null);
 
+    const isCurrentRequest = () => {
+      if (translationRequestVersionRef.current !== requestVersion) {
+        return false;
+      }
+
+      const currentSelectionKey = getSelectionCacheKey(selectionBridge.read());
+      if (requestSelectionKey && (currentSelectionKey || selectionForBubble?.isReleased === false)) {
+        return currentSelectionKey === requestSelectionKey;
+      }
+
+      return true;
+    };
+
     try {
-      const [result, ipa, nextEnglishDefinition] = await Promise.all([
-        ai.translateSelection(nextText, {
+      const translationPromise = ai.translateSelection(nextText, {
+        sentenceContext,
+        targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
+      });
+
+      // Optional dictionary results must not delay the primary translation.
+      if (ipaWord) {
+        void phoneticsServiceRef.current.lookupIpa(ipaWord)
+          .then((ipa) => {
+            if (isCurrentRequest()) {
+              setAiIpa(ipa ?? "Not found in the American dictionary.");
+            }
+          })
+          .catch(() => {
+            if (isCurrentRequest()) setAiIpa("Dictionary unavailable. Select the word again to retry.");
+          });
+      }
+      if (singleWordSelection && typeof ai.defineSelection === "function") {
+        void ai.defineSelection(nextText, {
           sentenceContext,
           targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
-        }),
-        ipaWord ? phoneticsServiceRef.current.lookupIpa(ipaWord) : Promise.resolve(null),
-        singleWordSelection && typeof ai.defineSelection === "function"
-          ? ai
-              .defineSelection(nextText, {
-                sentenceContext,
-                targetLanguage: settings.targetLanguage || navigator.language || "zh-CN",
-              })
-              .then((value) => value.trim())
-              .catch(() => "")
-          : Promise.resolve(""),
-      ]);
-      if (translationRequestVersionRef.current !== requestVersion) {
-        return;
+        })
+          .then((definition) => {
+            if (isCurrentRequest()) {
+              setEnglishDefinition(definition.trim());
+            }
+          })
+          .catch(() => undefined);
       }
-      if (selectionForBubble?.isReleased === false && requestSelectionKey) {
-        const currentSelectionKey = getSelectionCacheKey(selectionBridge.read());
-        if (currentSelectionKey !== requestSelectionKey) {
-          return;
-        }
+
+      const result = await translationPromise;
+      if (!isCurrentRequest()) {
+        return;
       }
       if (singleWordSelection) {
         setTranslation(result);
         setTranslationSelectionKey(requestSelectionKey);
-        setAiIpa(ipa ?? "");
-        setEnglishDefinition(nextEnglishDefinition);
       }
 
       const bubbleSelection = resolveSelectionForFloatingBubble(selectionForBubble, nextText);
@@ -1757,7 +1777,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         });
       }
     } catch (error) {
-      if (translationRequestVersionRef.current !== requestVersion) {
+      if (!isCurrentRequest()) {
         return;
       }
       if (singleWordSelection) {

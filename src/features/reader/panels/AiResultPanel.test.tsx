@@ -21,7 +21,7 @@ describe("AiResultPanel", () => {
     expect(panel.querySelector(".reader-ai-surface-primary")).not.toBeNull();
     expect(panel.querySelector(".reader-ai-surface-secondary")).toBeNull();
     expect(screen.getByText("Selection")).toBeInTheDocument();
-    expect(screen.getByText("IPA")).toBeInTheDocument();
+    expect(screen.getByText("American IPA")).toBeInTheDocument();
     expect(screen.getByText("Translation")).toBeInTheDocument();
     expect(screen.getByText("按压的；紧迫的。")).toBeInTheDocument();
   });
@@ -37,7 +37,7 @@ describe("AiResultPanel", () => {
       />,
     );
 
-    const ipaRow = screen.getByText("IPA").closest(".reader-ai-meta-row");
+    const ipaRow = screen.getByText("American IPA").closest(".reader-ai-meta-row");
     expect(ipaRow?.querySelector(".reader-ai-meta-main")).not.toBeNull();
     expect(ipaRow?.querySelector(".reader-ai-meta-main")?.textContent).toContain("/prest/");
   });
@@ -52,7 +52,7 @@ describe("AiResultPanel", () => {
       />,
     );
 
-    expect(screen.queryByText("IPA")).toBeNull();
+    expect(screen.queryByText("American IPA")).toBeNull();
   });
 
   it("shows a compact read aloud button beside the current selection", async () => {

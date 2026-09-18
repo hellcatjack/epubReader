@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createPhoneticsService, extractIpaFromEntries, getEligibleIpaWord } from "./phoneticsService";
+import { createPhoneticsService, getEligibleIpaWord } from "./phoneticsService";
 
 describe("getEligibleIpaWord", () => {
   it("accepts a single english word and normalizes casing", () => {
@@ -18,48 +18,29 @@ describe("getEligibleIpaWord", () => {
   });
 });
 
-describe("extractIpaFromEntries", () => {
-  it("prefers phonetics text before the legacy phonetic field", () => {
-    expect(
-      extractIpaFromEntries([
-        {
-          phonetic: "/legacy/",
-          phonetics: [{ text: "" }, { text: "/prest/" }],
-        },
-      ]),
-    ).toBe("/prest/");
-  });
-
-  it("falls back to the top-level phonetic field", () => {
-    expect(extractIpaFromEntries([{ phonetic: "/fallback/" }])).toBe("/fallback/");
-  });
-
-  it("returns null when no usable ipa is available", () => {
-    expect(extractIpaFromEntries([{ phonetics: [{ text: "" }] }])).toBeNull();
-  });
-});
-
-describe("createPhoneticsService", () => {
-  it("caches normalized word lookups for the current session", async () => {
-    const fetchImpl = vi.fn(async () => ({
-      json: async () => [{ phonetics: [{ text: "/prest/" }] }],
-      ok: true,
-    })) as unknown as typeof fetch;
-
-    const service = createPhoneticsService({ fetchImpl });
-
-    await expect(service.lookupIpa("Pressed")).resolves.toBe("/prest/");
-    await expect(service.lookupIpa("pressed")).resolves.toBe("/prest/");
+describe("local American IPA", () => {
+  it("shares a letter shard and preserves alternative pronunciations", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL) => new Response(JSON.stringify({babylon: "/ˈbæbəˌɫɑn/", baby: "/ˈbeɪbi/, /alternative/"})));
+    const service = createPhoneticsService({fetchImpl});
+    expect(await Promise.all([service.lookupIpa("Babylon"), service.lookupIpa("baby")])).toEqual(["/ˈbæbəˌɫɑn/", "/ˈbeɪbi/, /alternative/"]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe("/phonetics/en-US/v1/b.json");
+    expect(await service.lookupIpa("bunknown")).toBeNull();
   });
-
-  it("returns null when the dictionary request fails", async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new Error("offline");
-    }) as unknown as typeof fetch;
-
-    const service = createPhoneticsService({ fetchImpl });
-
-    await expect(service.lookupIpa("pressed")).resolves.toBeNull();
+  it("retries unavailable shards instead of caching failures", async () => {
+    const fetchImpl = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(new Response(JSON.stringify({read: "/ˈɹɛd/, /ˈɹid/"})));
+    const service = createPhoneticsService({fetchImpl});
+    await expect(service.lookupIpa("read")).rejects.toThrow();
+    await expect(service.lookupIpa("read")).resolves.toBe("/ˈɹɛd/, /ˈɹid/");
+  });
+  it("does not mistake inherited properties for entries", async () => {
+    const service = createPhoneticsService({fetchImpl: async () => new Response("{}")});
+    expect(await service.lookupIpa("constructor")).toBeNull();
+  });
+  it("rejects an HTML fallback or failed HTTP response", async () => {
+    for (const response of [new Response("<html>fallback</html>"), new Response("{}", {status:503})]) {
+      const service = createPhoneticsService({fetchImpl: async () => response});
+      await expect(service.lookupIpa("hello")).rejects.toThrow();
+    }
   });
 });
