@@ -1543,3 +1543,9 @@
     min-height: min(74dvh, 42rem);
   }
 }
+
+.reader-ai-ipa-unavailable {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

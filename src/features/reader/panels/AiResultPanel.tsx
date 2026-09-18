@@ -43,7 +43,7 @@ export function AiResultPanel({
             <div className="reader-ai-meta-row">
               <div className="reader-ai-meta-main">
                 <span className="reader-ai-label">American IPA</span>
-                <span className="reader-ai-value">{ipa}</span>
+                <span className={ipa === "IPA unavailable" ? "reader-ai-value reader-ai-ipa-unavailable" : "reader-ai-value"}>{ipa}</span>
               </div>
             </div>
           ) : null}

@@ -1739,7 +1739,7 @@ export function ReaderPage({ ai = aiService, phonetics, runtime }: ReaderPagePro
         void phoneticsServiceRef.current.lookupIpa(ipaWord)
           .then((ipa) => {
             if (isCurrentRequest()) {
-              setAiIpa(ipa ?? "Not found in the American dictionary.");
+              setAiIpa(ipa ?? "IPA unavailable");
             }
           })
           .catch(() => {

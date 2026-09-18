@@ -148,7 +148,7 @@ describe("selection translation latency", () => {
   it("explains when a single word is not in the American dictionary", async () => {
     render(<ReaderPage ai={{ translateSelection: async () => "译文", explainSelection: async () => "" }} phonetics={{ lookupIpa: async () => null }} />);
     selectWord("unknownword");
-    expect(await screen.findByText("Not found in the American dictionary.")).toBeInTheDocument();
+    expect(await screen.findByText("IPA unavailable")).toBeInTheDocument();
     expect(screen.getByText("American IPA")).toBeInTheDocument();
   });
 
