@@ -10,8 +10,8 @@ export function ReaderStatusPanel({
   return (
     <section className="reader-panel reader-panel-muted" aria-label="Reading session">
       <h2>Reading session</h2>
-      <p className="reader-status">{status}</p>
-      {selectedText ? <p className="reader-selection-preview">Selection: {selectedText}</p> : null}
+      <p className="reader-status" title={status}>{status}</p>
+      {selectedText ? <p className="reader-selection-preview" title={selectedText}>Selection: {selectedText}</p> : null}
     </section>
   );
 }

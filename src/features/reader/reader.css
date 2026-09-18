@@ -1062,6 +1062,11 @@
 .reader-status,
 .reader-selection-preview {
   margin: 0;
+  line-height: 1.45;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: #5c4635;
 }
 
